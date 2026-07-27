@@ -10,6 +10,9 @@
     chatStore,
     registerConversationsInvalidator,
   } from "./lib/stores/chat.svelte";
+  import { settingsStore } from "./lib/stores/settings.svelte";
+
+  settingsStore.init();
 
   const queryClient = new QueryClient({
     defaultOptions: {

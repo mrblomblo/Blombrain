@@ -205,3 +205,27 @@ export interface AttachmentOut {
   sizeBytes: number;
   createdAt: number;
 }
+
+// ---------------------------------------------------------------------------
+// Global Settings / User Profile
+// ---------------------------------------------------------------------------
+
+export interface GlobalSettingsRow {
+  id: string;
+  user_name: string;
+  user_avatar: string | null;
+  theme: string;
+}
+
+export interface GlobalSettingsOut {
+  id: string;
+  userName: string;
+  userAvatar: string | null;
+  theme: string;
+}
+
+export interface GlobalSettingsWriteBody {
+  userName?: string;
+  userAvatar?: string | null;
+  theme?: string;
+}

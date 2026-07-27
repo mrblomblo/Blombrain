@@ -3,6 +3,7 @@
   import type { ChatMessage as ChatMessageType } from "../types";
   import { serveUploadUrl, fetchModels } from "../api";
   import { chatStore } from "../stores/chat.svelte";
+  import { settingsStore } from "../stores/settings.svelte";
   import { Paperclip, Check, Send as SendIcon, X, Info } from "@lucide/svelte";
   import ThinkingBlock from "./ThinkingBlock.svelte";
   import MessageTimestamp from "./MessageTimestamp.svelte";
@@ -98,11 +99,19 @@
     class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden border border-line bg-bg-elevated shadow-xs select-none"
   >
     {#if message.role === "user"}
-      <div
-        class="flex h-full w-full items-center justify-center bg-accent text-accent-fg font-semibold text-xs uppercase"
-      >
-        you
-      </div>
+      {#if settingsStore.userAvatar}
+        <img
+          src={settingsStore.userAvatar}
+          alt={settingsStore.userName || "User"}
+          class="h-full w-full object-cover"
+        />
+      {:else}
+        <div
+          class="flex h-full w-full items-center justify-center bg-accent text-accent-fg font-semibold text-xs uppercase"
+        >
+          {settingsStore.userName ? settingsStore.userName.slice(0, 2) : "YOU"}
+        </div>
+      {/if}
     {:else if currentModelInfo?.icon}
       <img
         src={currentModelInfo.icon}
@@ -126,15 +135,19 @@
     <!-- Header: Sender Name, Timestamp, Info, Branch Navigator -->
     <div class="flex flex-wrap items-center gap-2 text-xs">
       {#if message.role === "user"}
-        <!-- Branch Navigator (far left for user messages) -->
+        <!-- Branch Navigator -->
         <BranchNavigator
           parentId={message.parentId ?? null}
           {siblings}
           currentId={message.id}
         />
 
-        <!-- Timestamp (left of "You") -->
+        <!-- Timestamp -->
         <MessageTimestamp timestamp={message.createdAt} />
+
+        <span class="font-medium text-fg">
+          {settingsStore.userName || "You"}
+        </span>
       {:else}
         <span class="font-medium text-fg">
           {currentModelInfo?.name || "Assistant"}
@@ -143,7 +156,7 @@
         <!-- Timestamp -->
         <MessageTimestamp timestamp={message.createdAt} />
 
-        <!-- Inline stats ⓘ for assistant messages -->
+        <!-- Inline stats icon for assistant messages -->
         {#if message.stats}
           {@const s = message.stats}
           <div class="relative group/stats">

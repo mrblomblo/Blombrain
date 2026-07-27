@@ -11,6 +11,7 @@ import { modelsRoutes } from "./routes/models.js";
 import { chatRoutes } from "./routes/chat.js";
 import { conversationsRoutes } from "./routes/conversations.js";
 import { uploadsRoutes } from "./routes/uploads.js";
+import { settingsRoutes } from "./routes/settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 4300);
@@ -26,6 +27,7 @@ async function main() {
   await app.register(chatRoutes);
   await app.register(conversationsRoutes);
   await app.register(uploadsRoutes);
+  await app.register(settingsRoutes);
 
   // If the frontend has been built (frontend/dist), serve it directly so the
   // whole app can run as a single process. During `npm run dev` this

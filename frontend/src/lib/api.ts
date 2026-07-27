@@ -345,3 +345,26 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
     onError(err instanceof Error ? err.message : "Stream reading failed");
   }
 }
+
+export interface GlobalSettingsOut {
+  id: string;
+  userName: string;
+  userAvatar: string | null;
+  theme: string;
+}
+
+export async function fetchGlobalSettings(): Promise<GlobalSettingsOut> {
+  const res = await fetch("/api/settings");
+  return jsonOrThrow<GlobalSettingsOut>(res);
+}
+
+export async function updateGlobalSettings(
+  patch: Partial<{ userName: string; userAvatar: string | null; theme: string }>,
+): Promise<GlobalSettingsOut> {
+  const res = await fetch("/api/settings", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return jsonOrThrow<GlobalSettingsOut>(res);
+}

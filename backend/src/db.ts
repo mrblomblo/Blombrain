@@ -86,6 +86,17 @@ db.exec(`
     is_default        INTEGER NOT NULL DEFAULT 0
   );
 
+  -- Global App / User Settings
+  CREATE TABLE IF NOT EXISTS global_settings (
+    id           TEXT PRIMARY KEY,
+    user_name    TEXT NOT NULL DEFAULT 'You',
+    user_avatar  TEXT,
+    theme        TEXT NOT NULL DEFAULT 'slate-ember'
+  );
+
+  INSERT OR IGNORE INTO global_settings (id, user_name, user_avatar, theme)
+  VALUES ('default', 'You', NULL, 'slate-ember');
+
   -- Migration helper to ensure existing DBs get the new columns
   CREATE INDEX IF NOT EXISTS idx_attachments_conv ON attachments(conversation_id);
   CREATE INDEX IF NOT EXISTS idx_attachments_msg  ON attachments(message_id);

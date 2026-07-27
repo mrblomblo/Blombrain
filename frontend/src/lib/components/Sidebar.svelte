@@ -4,7 +4,6 @@
   import { fetchBackends, fetchConversations, deleteConversation } from "../api";
   import { chatStore } from "../stores/chat.svelte";
   import type { ConversationSummary } from "../types";
-  import ThemeSwitcher from "./ThemeSwitcher.svelte";
 
   interface Props {
     onOpenSettings: () => void;
@@ -251,13 +250,11 @@
       onclick={onOpenSettings}
       aria-label="Settings"
       title="Settings"
-      class="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+      class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
     >
       <Settings size={15} />
       <span class="font-medium">Settings</span>
     </button>
-
-    <ThemeSwitcher />
   </div>
 </aside>
 {/if}

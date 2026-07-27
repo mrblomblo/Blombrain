@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { X, Layers, Server } from "@lucide/svelte";
+  import { X, Layers, Server, Sliders } from "@lucide/svelte";
   import BackendsTab from "./settings/BackendsTab.svelte";
   import ModelsTab from "./settings/ModelsTab.svelte";
+  import GeneralTab from "./settings/GeneralTab.svelte";
 
-  type Tab = "models" | "backends";
+  type Tab = "general" | "models" | "backends";
 
   interface Props {
     open: boolean;
@@ -11,7 +12,7 @@
   }
   const { open, onClose }: Props = $props();
 
-  let activeTab = $state<Tab>("models");
+  let activeTab = $state<Tab>("general");
 
   function handleBackdropClick(e: MouseEvent) {
     if (e.target === e.currentTarget) onClose();
@@ -53,8 +54,21 @@
         <div class="flex items-center gap-2 mt-3 -mb-px">
           <button
             type="button"
+            onclick={() => (activeTab = "general")}
+            class="flex items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
+            'general'
+              ? 'border-accent text-accent'
+              : 'border-transparent text-fg-muted hover:text-fg'}"
+          >
+            <Sliders size={14} />
+            <span>General</span>
+          </button>
+
+          <button
+            type="button"
             onclick={() => (activeTab = "models")}
-            class="flex items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab === 'models'
+            class="flex items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
+            'models'
               ? 'border-accent text-accent'
               : 'border-transparent text-fg-muted hover:text-fg'}"
           >
@@ -65,19 +79,22 @@
           <button
             type="button"
             onclick={() => (activeTab = "backends")}
-            class="flex items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab === 'backends'
+            class="flex items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
+            'backends'
               ? 'border-accent text-accent'
               : 'border-transparent text-fg-muted hover:text-fg'}"
           >
             <Server size={14} />
-            <span>Inference Backends</span>
+            <span>Backends</span>
           </button>
         </div>
       </div>
 
       <!-- Body Content Area -->
       <div class="flex-1 overflow-y-auto p-5">
-        {#if activeTab === "models"}
+        {#if activeTab === "general"}
+          <GeneralTab />
+        {:else if activeTab === "models"}
           <ModelsTab />
         {:else if activeTab === "backends"}
           <BackendsTab />
