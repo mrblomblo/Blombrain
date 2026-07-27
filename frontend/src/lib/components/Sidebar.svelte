@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
-  import { Plus, Trash2, Settings } from "@lucide/svelte";
+  import { Plus, Trash2, Settings, Layers } from "@lucide/svelte";
   import { fetchBackends, fetchConversations, deleteConversation } from "../api";
   import { chatStore } from "../stores/chat.svelte";
   import type { ConversationSummary } from "../types";
@@ -8,8 +8,9 @@
 
   interface Props {
     onOpenSettings: () => void;
+    onOpenModelEditor: () => void;
   }
-  const { onOpenSettings }: Props = $props();
+  const { onOpenSettings, onOpenModelEditor }: Props = $props();
 
   const queryClient = useQueryClient();
 
@@ -155,8 +156,17 @@
   <div class="flex items-center justify-between border-t border-line px-4 py-3">
     <div class="flex items-center gap-2">
       <button
+        onclick={onOpenModelEditor}
+        aria-label="Models & Presets"
+        title="Models & Presets"
+        class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+      >
+        <Layers size={13} />
+      </button>
+      <button
         onclick={onOpenSettings}
         aria-label="Settings"
+        title="Backends Settings"
         class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
       >
         <Settings size={13} />

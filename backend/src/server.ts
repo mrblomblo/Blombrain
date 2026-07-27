@@ -10,7 +10,6 @@ import { backendsRoutes } from "./routes/backends.js";
 import { modelsRoutes } from "./routes/models.js";
 import { chatRoutes } from "./routes/chat.js";
 import { conversationsRoutes } from "./routes/conversations.js";
-import { modelConfigsRoutes } from "./routes/modelConfigs.js";
 import { uploadsRoutes } from "./routes/uploads.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,7 +25,6 @@ async function main() {
   await app.register(modelsRoutes);
   await app.register(chatRoutes);
   await app.register(conversationsRoutes);
-  await app.register(modelConfigsRoutes);
   await app.register(uploadsRoutes);
 
   // If the frontend has been built (frontend/dist), serve it directly so the

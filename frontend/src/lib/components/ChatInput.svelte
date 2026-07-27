@@ -2,32 +2,33 @@
   import { Send, Square, Paperclip, X } from "@lucide/svelte";
   import { chatStore } from "../stores/chat.svelte";
   import Button from "./ui/Button.svelte";
-  import { serveUploadUrl } from "../api";
+  import { serveUploadUrl, fetchModels } from "../api";
   import { createQuery } from "@tanstack/svelte-query";
-  import { fetchModelConfigs } from "../api";
 
   let draft = $state("");
   let textarea: HTMLTextAreaElement | undefined = $state();
   let fileInput: HTMLInputElement | undefined = $state();
   let isUploading = $state(false);
 
-  const modelConfigsQuery = createQuery(() => ({
-    queryKey: ["modelConfigs"],
-    queryFn: fetchModelConfigs,
+  const modelsQuery = createQuery(() => ({
+    queryKey: ["models"],
+    queryFn: fetchModels,
   }));
 
-  let caps = $derived(
-    chatStore.selectedModel && modelConfigsQuery.data 
-      ? modelConfigsQuery.data[chatStore.selectedModel] 
-      : { canImage: false, canAudio: false, canVideo: false }
+  let selectedModelInfo = $derived(
+    chatStore.selectedModel && modelsQuery.data
+      ? modelsQuery.data.find((m) => m.id === chatStore.selectedModel)
+      : undefined
   );
 
   let allowedAccepts = $derived.by(() => {
-    if (!caps) return "";
-    const types = [];
-    if (caps.canImage) types.push("image/*");
-    if (caps.canAudio) types.push("audio/*");
-    if (caps.canVideo) types.push("video/*");
+    const types: string[] = [
+      ".txt", ".md", ".pdf", ".py", ".ts", ".js", ".svelte", ".html", ".css", ".json",
+      ".csv", ".c", ".cpp", ".rs", ".go", ".java", ".sh", ".yaml", ".yml", ".xml", ".doc", ".docx"
+    ];
+    if (selectedModelInfo?.canImage) types.push("image/*");
+    if (selectedModelInfo?.canAudio) types.push("audio/*");
+    if (selectedModelInfo?.canVideo) types.push("video/*");
     return types.join(",");
   });
 
@@ -65,9 +66,8 @@
       }
     }
     isUploading = false;
-    input.value = ""; // clear input
+    input.value = "";
   }
-
 </script>
 
 <div class="border-t border-line bg-bg px-6 py-4">
@@ -85,9 +85,10 @@
             {/if}
             <button
               onclick={() => chatStore.removeAttachment(att.id)}
-              class="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-bg border border-line text-fg-muted opacity-0 transition-opacity group-hover:opacity-100 hover:text-danger"
+              class="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-black/70 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black hover:text-danger"
+              aria-label="Remove attachment"
             >
-              <X size={12} />
+              <X size={10} />
             </button>
           </div>
         {/each}

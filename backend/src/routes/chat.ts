@@ -1,10 +1,11 @@
 import { Readable } from "node:stream";
 import fs from "node:fs";
+import path from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { backendRegistry } from "../registry.js";
 import { persistChatTurn } from "./conversations.js";
 import db from "../db.js";
-import type { AttachmentRow } from "../types.js";
+import type { AttachmentRow, ModelSettingRow } from "../types.js";
 
 interface ChatCompletionBody {
   model: string;
@@ -28,22 +29,43 @@ export async function chatRoutes(app: FastifyInstance) {
       return sendJsonError(reply, 400, "Request body must include `model` and `messages`.");
     }
 
-    const resolved = backendRegistry.resolveModelId(body.model);
+    let targetModelId = body.model;
+    const settingRow = db.prepare("SELECT * FROM model_settings WHERE id = ?").get(body.model) as ModelSettingRow | undefined;
+
+    if (settingRow && settingRow.is_preset && settingRow.base_model_id) {
+      targetModelId = settingRow.base_model_id;
+    }
+
+    const resolved = backendRegistry.resolveModelId(targetModelId);
     if (!resolved) {
       return sendJsonError(
         reply,
         400,
-        `Model id "${body.model}" doesn't match any configured backend prefix. Expected "<prefix>:<model-id>".`,
+        `Model id "${body.model}" (resolved to "${targetModelId}") doesn't match any configured backend prefix.`,
       );
     }
     const { backend, rawModelId } = resolved;
 
-    // Find the last user message in the payload -- that's the new turn we'll save.
-    const lastUserMsg = [...body.messages].reverse().find((m) => m.role === "user");
+    // Build the messages array, prepending system prompt if configured
+    let outgoingMessages = [...body.messages];
+    if (settingRow?.system_prompt) {
+      // Check if a system message is already present at the start
+      if (outgoingMessages.length > 0 && outgoingMessages[0].role === "system") {
+        outgoingMessages[0] = { ...outgoingMessages[0], content: settingRow.system_prompt };
+      } else {
+        outgoingMessages.unshift({ role: "system", content: settingRow.system_prompt });
+      }
+    }
+
+    // Find the last user message in the payload
+    const lastUserMsg = [...outgoingMessages].reverse().find((m) => m.role === "user");
     const userMessageId = crypto.randomUUID();
     const assistantMessageId = crypto.randomUUID();
 
-    const { model: _incomingModel, conversationId: _incomingConvId, attachments: attachmentIds, ...rest } = body;
+    const { model: _incomingModel, conversationId: _incomingConvId, attachments: attachmentIds, messages: _msgs, ...rest } = body;
+
+    // Temperature precedence: preset/setting override > body request > default undefined
+    const finalTemperature = settingRow?.temperature ?? body.temperature;
     
     // Build attachments content array if present
     const contentParts: any[] = [];
@@ -67,16 +89,30 @@ export async function chatRoutes(app: FastifyInstance) {
           } else if (row.mime_type.startsWith("video/")) {
             contentParts.push({ type: "image_url", image_url: { url: `data:${row.mime_type};base64,${base64}` } });
           } else if (row.mime_type.startsWith("audio/")) {
-            // we re-encoded to wav on frontend
             contentParts.push({ type: "input_audio", input_audio: { data: base64, format: "wav" } });
+          } else {
+            // Text files, code files (.py, .ts, .svelte, .html, .json, .md, .pdf, etc.)
+            try {
+              const textContent = fileData.toString("utf-8");
+              // Basic check to strip any null bytes or non-printable binary characters
+              const sanitizedText = textContent.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+              const ext = path.extname(row.original_name).replace(".", "") || "text";
+              contentParts.push({
+                type: "text",
+                text: `\n\n--- Attached Document: ${row.original_name} ---\n\`\`\`${ext}\n${sanitizedText}\n\`\`\``,
+              });
+            } catch {
+              contentParts.push({
+                type: "text",
+                text: `\n\n--- Attached File: ${row.original_name} (binary attachment) ---`,
+              });
+            }
           }
         }
       }
     }
 
-    // Apply the constructed parts back to the last user message
     if (lastUserMsg && contentParts.length > 0) {
-      // If we only have text and no attachments, we can leave it as a string. But since there might be attachments:
       if (contentParts.length === 1 && contentParts[0].type === "text") {
         lastUserMsg.content = contentParts[0].text;
       } else {
@@ -84,7 +120,13 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
-    const upstreamBody = { ...rest, model: rawModelId, stream: true };
+    const upstreamBody = {
+      ...rest,
+      model: rawModelId,
+      messages: outgoingMessages,
+      ...(finalTemperature !== undefined ? { temperature: finalTemperature } : {}),
+      stream: true,
+    };
 
     let upstream: Response;
     try {
@@ -118,7 +160,6 @@ export async function chatRoutes(app: FastifyInstance) {
       Connection: "keep-alive",
     });
 
-    // Collect the full assistant response so we can persist it after the stream ends.
     let assistantContent = "";
     let streamError: string | undefined;
 
@@ -135,10 +176,8 @@ export async function chatRoutes(app: FastifyInstance) {
         const text = typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
         buffer += text;
 
-        // Forward raw bytes to the client immediately.
         reply.raw.write(chunk);
 
-        // Also parse the SSE to accumulate the assistant response.
         let sepIndex: number;
         while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
           const rawEvent = buffer.slice(0, sepIndex);
@@ -155,14 +194,13 @@ export async function chatRoutes(app: FastifyInstance) {
               const errMsg: string | undefined = parsed?.error?.message;
               if (errMsg) streamError = errMsg;
             } catch {
-              // Partial/malformed chunk -- the buffer logic handles this.
+              // Partial chunk
             }
           }
         }
       });
 
       nodeStream.on("end", () => {
-        // Persist the completed turn to SQLite.
         try {
           const savedTurn = persistChatTurn({
             conversationId: body.conversationId ?? null,
@@ -174,7 +212,6 @@ export async function chatRoutes(app: FastifyInstance) {
             assistantError: streamError,
           });
 
-          // Bind attachments to the saved user message
           if (attachmentIds && Array.isArray(attachmentIds)) {
             const updateStmt = db.prepare(`UPDATE attachments SET message_id = ?, conversation_id = ? WHERE id = ?`);
             for (const id of attachmentIds) {
@@ -182,7 +219,6 @@ export async function chatRoutes(app: FastifyInstance) {
             }
           }
 
-          // Emit a trailing meta event so the frontend knows the conversation id / title.
           const metaEvent =
             `data: ${JSON.stringify({
               type: "meta",
@@ -194,7 +230,6 @@ export async function chatRoutes(app: FastifyInstance) {
             })}\n\n`;
           reply.raw.write(metaEvent);
         } catch (err) {
-          // Don't crash the response if persistence fails -- the client already got the answer.
           console.error("[blombrain] failed to persist chat turn:", err);
         }
         reply.raw.end();

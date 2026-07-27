@@ -1,15 +1,12 @@
 <script lang="ts">
   import { X } from "@lucide/svelte";
   import BackendsTab from "./settings/BackendsTab.svelte";
-  import ModelConfigsTab from "./settings/ModelConfigsTab.svelte";
 
   interface Props {
     open: boolean;
     onClose: () => void;
   }
   const { open, onClose }: Props = $props();
-
-  let activeTab = $state<"backends" | "models">("backends");
 
   function handleBackdropClick(e: MouseEvent) {
     if (e.target === e.currentTarget) onClose();
@@ -37,7 +34,7 @@
     >
       <!-- Header -->
       <div class="flex items-center justify-between border-b border-line px-5 py-4">
-        <h2 class="text-sm font-semibold">Settings</h2>
+        <h2 class="text-sm font-semibold">Settings - Backends</h2>
         <button
           onclick={onClose}
           aria-label="Close"
@@ -47,37 +44,9 @@
         </button>
       </div>
 
-      <!-- Tabs -->
-      <div class="flex border-b border-line px-5 gap-4">
-        <button
-          class="py-2 text-sm font-medium transition-colors border-b-2"
-          class:border-accent={activeTab === "backends"}
-          class:text-fg={activeTab === "backends"}
-          class:border-transparent={activeTab !== "backends"}
-          class:text-fg-muted={activeTab !== "backends"}
-          onclick={() => (activeTab = "backends")}
-        >
-          Backends
-        </button>
-        <button
-          class="py-2 text-sm font-medium transition-colors border-b-2"
-          class:border-accent={activeTab === "models"}
-          class:text-fg={activeTab === "models"}
-          class:border-transparent={activeTab !== "models"}
-          class:text-fg-muted={activeTab !== "models"}
-          onclick={() => (activeTab = "models")}
-        >
-          Model Configurations
-        </button>
-      </div>
-
       <!-- Body -->
       <div class="flex-1 overflow-y-auto p-5">
-        {#if activeTab === "backends"}
-          <BackendsTab />
-        {:else if activeTab === "models"}
-          <ModelConfigsTab />
-        {/if}
+        <BackendsTab />
       </div>
     </div>
   </div>

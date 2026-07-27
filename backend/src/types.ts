@@ -44,6 +44,14 @@ export interface ModelInfo {
   rawId: string;
   backendId: string;
   backendName: string;
+  isPreset?: boolean;
+  baseModelId?: string;
+  name?: string;
+  systemPrompt?: string;
+  canImage?: boolean;
+  canAudio?: boolean;
+  canVideo?: boolean;
+  temperature?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,20 +107,31 @@ export interface ConversationPatchBody {
 }
 
 // ---------------------------------------------------------------------------
-// Model Config & Multimodal attachments
+// Model Settings & Presets
 // ---------------------------------------------------------------------------
 
-export interface ModelConfigRow {
-  model_id: string;
+export interface ModelSettingRow {
+  id: string;
+  is_preset: number;
+  name: string | null;
+  base_model_id: string | null;
+  system_prompt: string | null;
   can_image: number;
   can_audio: number;
   can_video: number;
+  temperature: number | null;
 }
 
-export interface ModelCapabilities {
-  canImage: boolean;
-  canAudio: boolean;
-  canVideo: boolean;
+export interface ModelSettingWriteBody {
+  id?: string;
+  isPreset?: boolean;
+  name?: string;
+  baseModelId?: string;
+  systemPrompt?: string;
+  canImage?: boolean;
+  canAudio?: boolean;
+  canVideo?: boolean;
+  temperature?: number;
 }
 
 export interface AttachmentRow {

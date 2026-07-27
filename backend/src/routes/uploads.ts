@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { pipeline } from "node:stream/promises";
 import db, { DATA_DIR } from "../db.js";
 import type { AttachmentOut, AttachmentRow } from "../types.js";
 
@@ -56,7 +57,7 @@ export async function uploadsRoutes(app: FastifyInstance) {
     const diskPath = path.join(targetDir, diskFilename);
 
     const writeStream = fs.createWriteStream(diskPath);
-    await require("node:stream/promises").pipeline(data.file, writeStream);
+    await pipeline(data.file, writeStream);
 
     const stat = fs.statSync(diskPath);
 
@@ -92,11 +93,20 @@ export async function uploadsRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "File missing on disk" });
     }
 
-    // Set headers and pipe file
-    reply.header("Content-Type", row.mime_type);
+    // Security headers to prevent arbitrary script execution in the browser context
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("Content-Security-Policy", "default-src 'none'");
+
+    const isMedia = row.mime_type.startsWith("image/") || row.mime_type.startsWith("audio/") || row.mime_type.startsWith("video/");
+    if (isMedia) {
+      reply.header("Content-Type", row.mime_type);
+    } else {
+      // Force safe text or attachment download for non-media files (e.g. .html, .svg, .js, .py)
+      reply.header("Content-Type", "text/plain; charset=utf-8");
+      reply.header("Content-Disposition", `inline; filename="${encodeURIComponent(row.original_name)}"`);
+    }
     reply.header("Content-Length", row.size_bytes);
-    
-    // Using fastify reply.send with a read stream
+
     const readStream = fs.createReadStream(row.disk_path);
     return reply.send(readStream);
   });

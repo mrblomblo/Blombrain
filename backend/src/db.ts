@@ -53,12 +53,19 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_conv
     ON messages(conversation_id, created_at);
 
-  -- Per-model capability overrides (user-configured; not read from the server)
-  CREATE TABLE IF NOT EXISTS model_configs (
-    model_id   TEXT PRIMARY KEY,
-    can_image  INTEGER NOT NULL DEFAULT 0,
-    can_audio  INTEGER NOT NULL DEFAULT 0,
-    can_video  INTEGER NOT NULL DEFAULT 0
+  -- Drop old model_configs table if present and replace with model_settings
+  DROP TABLE IF EXISTS model_configs;
+
+  CREATE TABLE IF NOT EXISTS model_settings (
+    id             TEXT PRIMARY KEY,
+    is_preset      INTEGER NOT NULL DEFAULT 0,
+    name           TEXT,
+    base_model_id  TEXT,
+    system_prompt  TEXT,
+    can_image      INTEGER NOT NULL DEFAULT 0,
+    can_audio      INTEGER NOT NULL DEFAULT 0,
+    can_video      INTEGER NOT NULL DEFAULT 0,
+    temperature    REAL
   );
 
   -- Uploaded attachment files

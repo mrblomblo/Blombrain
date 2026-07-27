@@ -25,18 +25,31 @@ export interface BackendUpdateBody {
 }
 
 export interface ModelInfo {
-  /** Prefixed id, e.g. "local:llama-3.1-8b-instruct" -- what the UI/chat API deals in. */
+  /** Prefixed id, e.g. "local:llama-3.1-8b-instruct" or "preset_123" */
   id: string;
-  /** Raw id as reported by the backend itself, e.g. "llama-3.1-8b-instruct". */
   rawId: string;
   backendId: string;
   backendName: string;
+  isPreset?: boolean;
+  baseModelId?: string;
+  name?: string;
+  systemPrompt?: string;
+  canImage?: boolean;
+  canAudio?: boolean;
+  canVideo?: boolean;
+  temperature?: number;
 }
 
-export interface ModelCapabilities {
-  canImage: boolean;
-  canAudio: boolean;
-  canVideo: boolean;
+export interface ModelSettingWriteBody {
+  id?: string;
+  isPreset?: boolean;
+  name?: string;
+  baseModelId?: string;
+  systemPrompt?: string;
+  canImage?: boolean;
+  canAudio?: boolean;
+  canVideo?: boolean;
+  temperature?: number;
 }
 
 export type ChatRole = "system" | "user" | "assistant";

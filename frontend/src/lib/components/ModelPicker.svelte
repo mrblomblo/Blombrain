@@ -21,9 +21,11 @@
     const models = modelsQuery.data ?? [];
     const map = new Map<string, { name: string; models: typeof models }>();
     for (const m of models) {
-      const entry = map.get(m.backendId) ?? { name: m.backendName, models: [] };
+      const groupKey = m.backendId;
+      const groupName = m.backendName;
+      const entry = map.get(groupKey) ?? { name: groupName, models: [] };
       entry.models.push(m);
-      map.set(m.backendId, entry);
+      map.set(groupKey, entry);
     }
     return [...map.values()];
   });
@@ -43,19 +45,19 @@
   {:else if modelsQuery.isError}
     <span class="text-sm text-danger">Couldn't reach the Blombrain backend</span>
   {:else if grouped.length === 0}
-    <span class="text-sm text-fg-muted"
-      >No models found. Check your backend registry config.</span
-    >
+    <span class="text-sm text-fg-muted">No models found. Check your backend registry config.</span>
   {:else}
     <select
-      class="h-8 rounded-md border border-line bg-bg-elevated px-2 font-mono text-xs text-fg outline-none"
+      class="h-8 rounded-md border border-line bg-bg-elevated px-2 text-xs text-fg outline-none"
       value={chatStore.selectedModel}
       onchange={(e) => chatStore.setModel(e.currentTarget.value)}
     >
       {#each grouped as group (group.name)}
         <optgroup label={group.name}>
           {#each group.models as model (model.id)}
-            <option value={model.id}>{model.rawId}</option>
+            <option value={model.id}>
+              {model.isPreset ? `✨ ${model.name || model.id}` : (model.name ? `${model.name} (${model.rawId})` : model.rawId)}
+            </option>
           {/each}
         </optgroup>
       {/each}

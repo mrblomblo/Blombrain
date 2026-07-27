@@ -7,7 +7,6 @@ import type {
   ConversationDetail,
   MessageOut,
   ModelInfo,
-  ModelCapabilities,
   AttachmentOut,
 } from "./types";
 
@@ -64,31 +63,30 @@ export async function fetchModels(): Promise<ModelInfo[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Model Configs
+// Model Settings & Presets
 // ---------------------------------------------------------------------------
 
-export async function fetchModelConfigs(): Promise<Record<string, ModelCapabilities>> {
-  const res = await fetch("/api/model-configs");
-  return jsonOrThrow<Record<string, ModelCapabilities>>(res);
+export async function createPreset(data: { name: string; baseModelId: string; systemPrompt?: string; canImage?: boolean; canAudio?: boolean; canVideo?: boolean; temperature?: number }): Promise<ModelInfo> {
+  const res = await fetch("/api/models", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return jsonOrThrow<ModelInfo>(res);
 }
 
-export async function fetchModelConfig(modelId: string): Promise<ModelCapabilities> {
-  const res = await fetch(`/api/model-configs/${encodeURIComponent(modelId)}`);
-  return jsonOrThrow<ModelCapabilities>(res);
-}
-
-export async function upsertModelConfig(modelId: string, caps: ModelCapabilities): Promise<void> {
-  const res = await fetch(`/api/model-configs/${encodeURIComponent(modelId)}`, {
+export async function updateModelSettings(modelId: string, data: Partial<import("./types").ModelSettingWriteBody>): Promise<void> {
+  const res = await fetch(`/api/models/${encodeURIComponent(modelId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(caps),
+    body: JSON.stringify(data),
   });
-  await jsonOrThrow<{ success: boolean }>(res);
+  await jsonOrThrow<{ ok: boolean }>(res);
 }
 
-export async function deleteModelConfig(modelId: string): Promise<void> {
-  const res = await fetch(`/api/model-configs/${encodeURIComponent(modelId)}`, { method: "DELETE" });
-  await jsonOrThrow<{ success: boolean }>(res);
+export async function deleteModelSettings(modelId: string): Promise<void> {
+  const res = await fetch(`/api/models/${encodeURIComponent(modelId)}`, { method: "DELETE" });
+  await jsonOrThrow<{ ok: boolean }>(res);
 }
 
 // ---------------------------------------------------------------------------
