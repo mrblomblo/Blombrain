@@ -7,7 +7,10 @@
   import Sidebar from "./lib/components/Sidebar.svelte";
   import SettingsModal from "./lib/components/SettingsModal.svelte";
   import ModelEditorModal from "./lib/components/ModelEditorModal.svelte";
-  import { chatStore, registerConversationsInvalidator } from "./lib/stores/chat.svelte";
+  import {
+    chatStore,
+    registerConversationsInvalidator,
+  } from "./lib/stores/chat.svelte";
 
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -25,6 +28,7 @@
   let settingsOpen = $state(false);
   let modelEditorOpen = $state(false);
   let mobileSidebarOpen = $state(false);
+  let desktopSidebarOpen = $state(true);
 </script>
 
 <QueryClientProvider client={queryClient}>
@@ -34,6 +38,8 @@
       <Sidebar
         onOpenSettings={() => (settingsOpen = true)}
         onOpenModelEditor={() => (modelEditorOpen = true)}
+        onToggleSidebar={() => (desktopSidebarOpen = !desktopSidebarOpen)}
+        collapsed={!desktopSidebarOpen}
       />
     </div>
 
@@ -45,7 +51,9 @@
         class="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs md:hidden"
         onclick={() => (mobileSidebarOpen = false)}
       ></div>
-      <div class="fixed inset-y-0 left-0 z-50 w-64 md:hidden shadow-2xl animate-in slide-in-from-left duration-200">
+      <div
+        class="fixed inset-y-0 left-0 z-50 w-64 md:hidden shadow-2xl animate-in slide-in-from-left duration-200"
+      >
         <Sidebar
           onOpenSettings={() => {
             settingsOpen = true;
@@ -62,8 +70,11 @@
 
     <!-- Main Content Pane -->
     <main class="flex min-w-0 flex-1 flex-col h-full">
-      <header class="flex items-center justify-between border-b border-line px-4 sm:px-6 py-2.5 bg-bg">
-        <div class="flex items-center gap-3 min-w-0">
+      <header
+        class="flex items-center justify-between border-b border-line px-2.5 py-2.5 bg-bg"
+      >
+        <div class="flex items-center gap-3 min-w-0 flex-1">
+          <!-- Mobile Menu -->
           <button
             type="button"
             onclick={() => (mobileSidebarOpen = true)}
@@ -72,13 +83,11 @@
           >
             <Menu size={18} />
           </button>
-          <h1 class="truncate text-sm font-semibold text-fg">
-            {chatStore.activeConversationTitle}
-          </h1>
-        </div>
 
-        <div class="flex items-center gap-2 shrink-0">
-          <ModelPicker />
+          <!-- Model Picker taking the place of conversation title -->
+          <div class="min-w-0">
+            <ModelPicker />
+          </div>
         </div>
       </header>
 
@@ -88,5 +97,8 @@
   </div>
 
   <SettingsModal open={settingsOpen} onClose={() => (settingsOpen = false)} />
-  <ModelEditorModal open={modelEditorOpen} onClose={() => (modelEditorOpen = false)} />
+  <ModelEditorModal
+    open={modelEditorOpen}
+    onClose={() => (modelEditorOpen = false)}
+  />
 </QueryClientProvider>

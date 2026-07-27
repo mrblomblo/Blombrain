@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
-  import { Plus, Trash2, Settings, Layers, X, ChevronDown, ChevronRight } from "@lucide/svelte";
+  import { PanelLeftClose, PanelLeftOpen, SquarePen, Trash2, Settings, Layers, X, ChevronDown, ChevronRight } from "@lucide/svelte";
   import { fetchBackends, fetchConversations, deleteConversation } from "../api";
   import { chatStore } from "../stores/chat.svelte";
   import type { ConversationSummary } from "../types";
@@ -10,8 +10,10 @@
     onOpenSettings: () => void;
     onOpenModelEditor: () => void;
     onCloseMobile?: () => void;
+    onToggleSidebar?: () => void;
+    collapsed?: boolean;
   }
-  const { onOpenSettings, onOpenModelEditor, onCloseMobile }: Props = $props();
+  const { onOpenSettings, onOpenModelEditor, onCloseMobile, onToggleSidebar, collapsed = false }: Props = $props();
 
   const queryClient = useQueryClient();
 
@@ -68,6 +70,48 @@
   }
 </script>
 
+{#if collapsed}
+  <aside class="hidden md:flex h-full w-14 shrink-0 flex-col items-center justify-between border-r border-line bg-bg-inset py-3">
+    <!-- Top header icon (Expand sidebar) -->
+    <div class="flex items-center justify-center py-1">
+      {#if onToggleSidebar}
+        <button
+          onclick={onToggleSidebar}
+          aria-label="Expand sidebar"
+          title="Expand sidebar"
+          class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+        >
+          <PanelLeftOpen size={18} />
+        </button>
+      {/if}
+    </div>
+
+    <!-- Body icon (New Chat, positioned at top of body) -->
+    <div class="mt-4 flex flex-1 flex-col items-center">
+      <button
+        onclick={handleNewChat}
+        disabled={chatStore.isStreaming}
+        aria-label="New Chat"
+        title="New Chat"
+        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-bg-elevated text-accent transition-colors hover:bg-bg-hover disabled:pointer-events-none disabled:opacity-40"
+      >
+        <SquarePen size={16} />
+      </button>
+    </div>
+
+    <!-- Footer icon (Settings) -->
+    <div class="flex flex-col items-center gap-2 pt-2 border-t border-line w-full">
+      <button
+        onclick={onOpenSettings}
+        aria-label="Settings"
+        title="Backends Settings"
+        class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+      >
+        <Settings size={16} />
+      </button>
+    </div>
+  </aside>
+{:else}
 <aside class="flex h-full w-64 shrink-0 flex-col border-r border-line bg-bg-inset">
   <!-- Logo + new chat + mobile close -->
   <div class="flex items-center justify-between px-4 py-4">
@@ -76,14 +120,16 @@
       <span class="text-sm font-semibold tracking-wide text-fg">Blombrain</span>
     </div>
     <div class="flex items-center gap-1">
-      <button
-        onclick={handleNewChat}
-        disabled={chatStore.isStreaming}
-        aria-label="New conversation"
-        class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg disabled:pointer-events-none disabled:opacity-40"
-      >
-        <Plus size={15} />
-      </button>
+      {#if onToggleSidebar}
+        <button
+          onclick={onToggleSidebar}
+          aria-label="Collapse sidebar"
+          title="Collapse sidebar"
+          class="hidden md:flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+        >
+          <PanelLeftClose size={16} />
+        </button>
+      {/if}
 
       {#if onCloseMobile}
         <button
@@ -98,6 +144,18 @@
   </div>
 
   <div class="flex-1 overflow-y-auto px-2 py-1">
+    <!-- New Chat Button -->
+    <div class="mb-3 px-1">
+      <button
+        onclick={handleNewChat}
+        disabled={chatStore.isStreaming}
+        class="flex w-full items-center gap-2 rounded-lg border border-line bg-bg-elevated px-3 py-2 text-xs font-medium text-fg shadow-xs transition-colors hover:bg-bg-hover hover:border-line-strong disabled:pointer-events-none disabled:opacity-40"
+      >
+        <SquarePen size={15} class="text-accent" />
+        <span>New Chat</span>
+      </button>
+    </div>
+
     <!-- Conversations -->
     <p class="mb-1.5 px-2 text-[11px] font-semibold tracking-wider text-fg-subtle uppercase">
       Conversations
@@ -189,8 +247,8 @@
   </div>
 
   <!-- Footer -->
-  <div class="flex items-center justify-between border-t border-line px-4 py-3">
-    <div class="flex items-center gap-2">
+  <div class="flex items-center justify-between border-t border-line px-3 py-2.5">
+    <div class="flex items-center gap-1">
       <button
         onclick={onOpenModelEditor}
         aria-label="Models & Presets"
@@ -207,7 +265,9 @@
       >
         <Settings size={14} />
       </button>
-      <ThemeSwitcher />
     </div>
+
+    <ThemeSwitcher />
   </div>
 </aside>
+{/if}

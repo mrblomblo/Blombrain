@@ -149,7 +149,16 @@ export async function uploadsRoutes(app: FastifyInstance) {
   setTimeout(() => {
     try {
       const oneHourAgo = Date.now() - 3600 * 1000;
-      const orphans = db.prepare(`SELECT * FROM attachments WHERE message_id IS NULL AND created_at < ?`).all(oneHourAgo) as AttachmentRow[];
+      const orphans = db.prepare(`
+        SELECT * FROM attachments 
+        WHERE message_id IS NULL 
+          AND created_at < ?
+          AND id NOT IN (
+            SELECT REPLACE(icon, '/api/uploads/', '') 
+            FROM model_settings 
+            WHERE icon IS NOT NULL
+          )
+      `).all(oneHourAgo) as AttachmentRow[];
       
       for (const row of orphans) {
         if (fs.existsSync(row.disk_path)) {

@@ -83,6 +83,7 @@ export interface ResponseStats {
   completionTokens?: number;
   totalTokens?: number;
   durationMs?: number;
+  thinkingTimeMs?: number;
 }
 
 export interface AttachmentOut {
@@ -107,6 +108,7 @@ export interface ChatMessage {
   createdAt?: number;
   thinkingContent?: string;
   thinkingDone?: boolean;
+  thinkingTimeMs?: number;
   stats?: ResponseStats;
 }
 
@@ -132,6 +134,7 @@ export interface MessageOut {
   role: ChatRole;
   content: string;
   error: string | null;
+  stats?: ResponseStats;
   createdAt: number;
   attachments?: AttachmentOut[];
 }

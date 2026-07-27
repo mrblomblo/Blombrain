@@ -340,8 +340,8 @@ class ChatStore {
   private async triggerAssistantResponse(userMsg: { id: string; content: string; role: string; parentId?: string | null; createdAt?: number; attachments?: AttachmentOut[] }, attachmentIds?: string[]) {
     if (!this.selectedModel) return;
 
-    let currentUserId = userMsg.id;
-    let currentAsstId = makeId();
+    let currentUserId: string = userMsg.id;
+    let currentAsstId: string = makeId();
 
     const assistantMessage: ChatMessage = {
       id: currentAsstId,

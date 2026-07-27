@@ -32,13 +32,6 @@
 </script>
 
 <div class="flex items-center gap-2">
-  <span
-    class="h-2 w-2 shrink-0 rotate-45"
-    class:bg-success={!modelsQuery.isError && (modelsQuery.data?.length ?? 0) > 0}
-    class:bg-fg-subtle={modelsQuery.isLoading}
-    class:bg-danger={modelsQuery.isError || (modelsQuery.data && modelsQuery.data.length === 0)}
-    aria-hidden="true"
-  ></span>
 
   {#if modelsQuery.isLoading}
     <span class="text-sm text-fg-muted">Looking for backends…</span>
