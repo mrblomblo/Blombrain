@@ -266,6 +266,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let reasoningMode: "oob" | "inband" | null = null;
 
   try {
     for (;;) {
@@ -283,8 +284,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
           if (!trimmed.startsWith("data:")) continue;
           const payload = trimmed.slice(5).trim();
           if (payload === "[DONE]") {
-            onDone();
-            return;
+            continue;
           }
           try {
             const parsed = JSON.parse(payload);
@@ -294,7 +294,28 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
               continue;
             }
             const delta: string | undefined = parsed?.choices?.[0]?.delta?.content;
-            if (delta) onToken(delta);
+            const reasoning: string | undefined = parsed?.choices?.[0]?.delta?.reasoning_content;
+            
+            if (reasoning) {
+              if (!reasoningMode) {
+                reasoningMode = "oob";
+                onToken("<think>\n");
+              }
+              onToken(reasoning);
+            }
+            if (delta) {
+              if (reasoningMode === "oob") {
+                reasoningMode = null;
+                onToken("\n</think>\n");
+              }
+              if (delta.includes("<think>")) {
+                reasoningMode = "inband";
+              }
+              if (reasoningMode === "inband" && delta.includes("</think>")) {
+                reasoningMode = null;
+              }
+              onToken(delta);
+            }
             const errMsg: string | undefined = parsed?.error?.message;
             if (errMsg) onError(errMsg);
           } catch {
@@ -302,6 +323,9 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
           }
         }
       }
+    }
+    if (reasoningMode === "oob") {
+      onToken("\n</think>");
     }
     onDone();
   } catch (err) {

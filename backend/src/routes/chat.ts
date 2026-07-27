@@ -187,12 +187,14 @@ export async function chatRoutes(app: FastifyInstance) {
 
     let assistantContent = "";
     let streamError: string | undefined;
-    let usageStats: { promptTokens?: number; completionTokens?: number; totalTokens?: number; durationMs?: number } | undefined;
+    let usageStats: { promptTokens?: number; completionTokens?: number; totalTokens?: number; durationMs?: number; thinkingTimeMs?: number } | undefined;
     const startTime = Date.now();
 
     const nodeStream = Readable.fromWeb(upstream.body as import("stream/web").ReadableStream);
     const decoder = new TextDecoder();
     let buffer = "";
+    let reasoningMode: "oob" | "inband" | null = null;
+    let thinkingStartMs = 0;
 
     req.raw.on("close", () => {
       if (!nodeStream.destroyed) nodeStream.destroy();
@@ -217,18 +219,48 @@ export async function chatRoutes(app: FastifyInstance) {
             try {
               const parsed = JSON.parse(payload);
               const delta: string | undefined = parsed?.choices?.[0]?.delta?.content;
-              if (delta) assistantContent += delta;
+              const reasoning: string | undefined = parsed?.choices?.[0]?.delta?.reasoning_content;
+              
+              if (reasoning) {
+                if (!reasoningMode) {
+                  reasoningMode = "oob";
+                  thinkingStartMs = Date.now();
+                  assistantContent += "<think>\n";
+                }
+                assistantContent += reasoning;
+              }
+              
+              if (delta) {
+                if (reasoningMode === "oob") {
+                  reasoningMode = null;
+                  if (!usageStats) usageStats = {};
+                  usageStats.thinkingTimeMs = Date.now() - (thinkingStartMs || startTime);
+                  assistantContent += "\n</think>\n";
+                }
+
+                if (delta.includes("<think>")) {
+                  reasoningMode = "inband";
+                  thinkingStartMs = Date.now();
+                }
+
+                if (reasoningMode === "inband" && delta.includes("</think>")) {
+                  reasoningMode = null;
+                  if (!usageStats) usageStats = {};
+                  usageStats.thinkingTimeMs = Date.now() - (thinkingStartMs || startTime);
+                }
+
+                assistantContent += delta;
+              }
               const errMsg: string | undefined = parsed?.error?.message;
               if (errMsg) streamError = errMsg;
 
               const usage = parsed?.usage || parsed?.x_groq?.usage;
               if (usage) {
-                usageStats = {
-                  promptTokens: usage.prompt_tokens ?? usageStats?.promptTokens,
-                  completionTokens: usage.completion_tokens ?? usageStats?.completionTokens,
-                  totalTokens: usage.total_tokens ?? usageStats?.totalTokens,
-                  durationMs: Date.now() - startTime,
-                };
+                if (!usageStats) usageStats = {};
+                usageStats.promptTokens = usage.prompt_tokens ?? usageStats.promptTokens;
+                usageStats.completionTokens = usage.completion_tokens ?? usageStats.completionTokens;
+                usageStats.totalTokens = usage.total_tokens ?? usageStats.totalTokens;
+                usageStats.durationMs = Date.now() - startTime;
               }
             } catch {
               // Partial chunk
@@ -239,8 +271,16 @@ export async function chatRoutes(app: FastifyInstance) {
 
       nodeStream.on("end", () => {
         try {
-          if (!usageStats && Date.now() - startTime > 0) {
-            usageStats = { durationMs: Date.now() - startTime };
+          if (!usageStats) usageStats = {};
+          if (!usageStats.durationMs && Date.now() - startTime > 0) {
+            usageStats.durationMs = Date.now() - startTime;
+          }
+
+          if (reasoningMode) {
+            if (reasoningMode === "oob") {
+              assistantContent += "\n</think>";
+            }
+            usageStats.thinkingTimeMs = Date.now() - (thinkingStartMs || startTime);
           }
 
           const savedTurn = persistChatTurn({
@@ -252,6 +292,7 @@ export async function chatRoutes(app: FastifyInstance) {
             assistantMessageId,
             assistantContent,
             assistantError: streamError,
+            assistantStats: usageStats,
           });
 
           if (attachmentIds && Array.isArray(attachmentIds)) {

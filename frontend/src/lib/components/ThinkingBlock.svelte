@@ -1,51 +1,62 @@
 <script lang="ts">
   import { ChevronDown, ChevronRight, Brain } from "@lucide/svelte";
+  import { slide } from "svelte/transition";
 
   interface Props {
     thinkingContent?: string;
     thinkingDone?: boolean;
     streaming?: boolean;
+    thinkingTimeMs?: number;
   }
-  const { thinkingContent, thinkingDone, streaming }: Props = $props();
+  const { thinkingContent, thinkingDone, streaming, thinkingTimeMs }: Props = $props();
 
   let isOpen = $state(false);
+  let startTime = $state(0);
+  let elapsedSeconds = $state(0);
 
-  // Auto-open when streaming thinking content, auto-close when thinking finishes
   $effect(() => {
     if (streaming && !thinkingDone) {
       isOpen = true;
-    } else if (thinkingDone) {
+      if (startTime === 0) startTime = Date.now();
+      const interval = setInterval(() => {
+        elapsedSeconds = (Date.now() - startTime) / 1000;
+      }, 100);
+      return () => clearInterval(interval);
+    } else {
       isOpen = false;
+      startTime = 0;
     }
   });
 </script>
 
-{#if thinkingContent}
-  <div class="mb-2 rounded-lg border border-line bg-bg-inset/60 overflow-hidden text-xs">
+{#if thinkingContent !== undefined}
+  <div class="mb-2 text-xs">
     <button
       type="button"
       onclick={() => (isOpen = !isOpen)}
-      class="flex w-full items-center justify-between px-3 py-2 text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg"
+      class="flex w-full items-center gap-1 text-fg-muted transition-colors hover:text-fg font-medium"
     >
-      <div class="flex items-center gap-2 font-mono text-[11px]">
+      {#if isOpen}
+        <ChevronDown size={14} class="shrink-0" />
+      {:else}
+        <ChevronRight size={14} class="shrink-0" />
+      {/if}
+      <div class="flex items-center gap-1.5">
         <Brain size={13} class={streaming && !thinkingDone ? "animate-pulse text-accent" : "text-fg-subtle"} />
         <span>
           {#if streaming && !thinkingDone}
-            Thinking…
+            Thinking ({elapsedSeconds.toFixed(1)}s)
+          {:else if thinkingTimeMs}
+            Thought for {(thinkingTimeMs / 1000).toFixed(1)}s
           {:else}
-            Thinking process ({thinkingContent.length} chars)
+            Thought process
           {/if}
         </span>
       </div>
-      {#if isOpen}
-        <ChevronDown size={14} />
-      {:else}
-        <ChevronRight size={14} />
-      {/if}
     </button>
 
     {#if isOpen}
-      <div class="border-t border-line/50 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-fg-muted whitespace-pre-wrap max-h-60 overflow-y-auto bg-bg-inset">
+      <div transition:slide={{ duration: 200 }} class="mt-1.5 pl-6 font-mono text-[11px] leading-relaxed text-fg-muted whitespace-pre-wrap opacity-90 border-l-2 border-line/50 ml-1.5 py-1">
         {thinkingContent}
       </div>
     {/if}

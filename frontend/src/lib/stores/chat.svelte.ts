@@ -33,7 +33,7 @@ function parseThinking(raw: string): { content: string; thinkingContent?: string
     };
   }
   return {
-    content: raw.slice(end + 8),
+    content: raw.slice(end + 8).trimStart(),
     thinkingContent: raw.slice(start + 7, end).trim(),
     thinkingDone: true,
   };
@@ -162,6 +162,8 @@ class ChatStore {
             content: parsed.content,
             thinkingContent: parsed.thinkingContent,
             thinkingDone: parsed.thinkingDone,
+            thinkingTimeMs: m.stats?.thinkingTimeMs,
+            stats: m.stats,
             error: m.error,
             createdAt: m.createdAt,
             attachments: m.attachments,
@@ -348,6 +350,10 @@ class ChatStore {
       content: "",
       createdAt: Date.now(),
       streaming: true,
+      thinkingContent: undefined,
+      thinkingDone: false,
+      thinkingTimeMs: undefined,
+      stats: undefined,
     };
     this.messages.push(assistantMessage);
     this.setBranchSelection(currentUserId, currentAsstId);
@@ -363,6 +369,7 @@ class ChatStore {
 
     let rawBuffer = "";
     let insideThink = false;
+    let thinkingStartMs = 0;
 
     await streamChatCompletion({
       model: this.selectedModel,
@@ -382,6 +389,7 @@ class ChatStore {
         // Parsing <think>...</think> tags dynamically
         if (!insideThink && rawBuffer.includes("<think>")) {
           insideThink = true;
+          thinkingStartMs = Date.now();
         }
 
         if (insideThink) {
@@ -389,7 +397,11 @@ class ChatStore {
             insideThink = false;
             const endIdx = rawBuffer.indexOf("</think>");
             const thinkStr = rawBuffer.slice(rawBuffer.indexOf("<think>") + 7, endIdx);
-            const mainStr = rawBuffer.slice(endIdx + 8);
+            const mainStr = rawBuffer.slice(endIdx + 8).trimStart();
+            
+            if (thinkingStartMs > 0 && !msg.thinkingTimeMs) {
+              msg.thinkingTimeMs = Date.now() - thinkingStartMs;
+            }
 
             msg.thinkingContent = thinkStr.trim();
             msg.thinkingDone = true;

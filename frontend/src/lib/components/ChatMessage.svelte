@@ -168,15 +168,6 @@
       </div>
     {/if}
 
-    <!-- Thinking Block -->
-    {#if message.role === "assistant"}
-      <ThinkingBlock
-        thinkingContent={message.thinkingContent}
-        thinkingDone={message.thinkingDone}
-        streaming={message.streaming}
-      />
-    {/if}
-
     <!-- Message Content or Edit Input -->
     {#if isEditing}
       <div class="edit-container w-full max-w-2xl flex flex-col gap-2 rounded-lg border bg-bg p-3 shadow-md">
@@ -224,18 +215,26 @@
       </div>
     {:else if message.content || message.error || message.streaming}
       <div
-        class="relative rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap max-w-full break-words
+        class="relative rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-full break-words
           {message.role === 'user' 
             ? 'bg-accent-muted/90 text-fg rounded-tr-xs' 
             : 'bg-bg-elevated border border-line/60 text-fg rounded-tl-xs shadow-xs'}"
       >
+        {#if message.role === "assistant"}
+          <ThinkingBlock
+            thinkingContent={message.thinkingContent}
+            thinkingDone={message.thinkingDone}
+            streaming={message.streaming}
+            thinkingTimeMs={message.thinkingTimeMs}
+          />
+        {/if}
         {#if message.error}
           <p class="font-medium text-danger">{message.error}</p>
         {:else if message.content}
-          {message.content}{#if message.streaming}<span
+          <span class="whitespace-pre-wrap">{message.content}</span>{#if message.streaming}<span
               class="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-accent"
             ></span>{/if}
-        {:else if message.streaming}
+        {:else if message.streaming && (message.thinkingContent === undefined || message.thinkingDone)}
           <span class="inline-flex gap-1 py-1">
             <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-fg-subtle [animation-delay:-0.3s]"></span>
             <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-fg-subtle [animation-delay:-0.15s]"></span>
@@ -252,6 +251,9 @@
       </div>
     {/if}
   </div>
+
+  <!-- Spacer to balance hover background padding on the opposite side of avatar -->
+  <div class="w-8 shrink-0 invisible"></div>
 </div>
 
 <style>

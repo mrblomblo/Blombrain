@@ -33,6 +33,7 @@ function rowToMessage(row: MessageRow): MessageOut {
     role: row.role,
     content: row.content,
     error: row.error,
+    stats: row.stats ? JSON.parse(row.stats) : undefined,
     createdAt: row.created_at,
   };
 }
@@ -69,8 +70,8 @@ const updateConversationMeta = db.prepare(
 const deleteConversation = db.prepare("DELETE FROM conversations WHERE id = ?");
 
 const insertMessage = db.prepare(
-  `INSERT INTO messages (id, conversation_id, parent_id, role, content, error, created_at)
-   VALUES (@id, @conversationId, @parentId, @role, @content, @error, @createdAt)`,
+  `INSERT INTO messages (id, conversation_id, parent_id, role, content, error, stats, created_at)
+   VALUES (@id, @conversationId, @parentId, @role, @content, @error, @stats, @createdAt)`,
 );
 
 // ---------------------------------------------------------------------------
@@ -235,6 +236,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
       role: "user",
       content: content ?? "",
       error: null,
+      stats: null,
       createdAt: now,
     });
 
@@ -332,6 +334,7 @@ export function persistChatTurn(opts: {
   assistantMessageId: string;
   assistantContent: string;
   assistantError?: string;
+  assistantStats?: any;
 }): { conversationId: string; title: string; isNew: boolean } {
   const {
     conversationId: incomingId,
@@ -342,6 +345,7 @@ export function persistChatTurn(opts: {
     assistantMessageId,
     assistantContent,
     assistantError,
+    assistantStats,
   } = opts;
 
   const isNew = !incomingId;
@@ -385,6 +389,7 @@ export function persistChatTurn(opts: {
         role: "user",
         content: userContent,
         error: null,
+        stats: null,
         createdAt: now,
       });
     }
@@ -396,6 +401,7 @@ export function persistChatTurn(opts: {
       role: "assistant",
       content: assistantContent,
       error: assistantError ?? null,
+      stats: assistantStats ? JSON.stringify(assistantStats) : null,
       createdAt: now + 1,
     });
 

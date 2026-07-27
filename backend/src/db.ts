@@ -48,6 +48,7 @@ db.exec(`
     role            TEXT NOT NULL CHECK(role IN ('system','user','assistant')),
     content         TEXT NOT NULL DEFAULT '',
     error           TEXT,
+    stats           TEXT,
     created_at      INTEGER NOT NULL
   );
 
@@ -121,6 +122,19 @@ if (!msgCols.includes("parent_id")) {
 try {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);`);
 } catch (e) {}
+
+export const insertMessage = db.prepare<{
+  id: string;
+  conversationId: string;
+  parentId: string | null;
+  role: "system" | "user" | "assistant";
+  content: string;
+  error: string | null;
+  stats: string | null;
+  createdAt: number;
+}>(
+  "INSERT INTO messages (id, conversation_id, parent_id, role, content, error, stats, created_at) VALUES (@id, @conversationId, @parentId, @role, @content, @error, @stats, @createdAt)"
+);
 
 // Backfill parent_id for existing linear conversations if null
 try {

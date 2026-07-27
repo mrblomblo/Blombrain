@@ -85,6 +85,7 @@ export interface MessageRow {
   role: "system" | "user" | "assistant";
   content: string;
   error: string | null;
+  stats: string | null;
   created_at: number;
 }
 
@@ -110,6 +111,7 @@ export interface MessageOut {
   role: "system" | "user" | "assistant";
   content: string;
   error: string | null;
+  stats?: any;
   createdAt: number;
   attachments?: AttachmentOut[];
 }

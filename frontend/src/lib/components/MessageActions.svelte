@@ -42,9 +42,10 @@
   <button
     type="button"
     onclick={handleCopy}
+    disabled={chatStore.isStreaming}
     aria-label="Copy text"
     title="Copy"
-    class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg"
+    class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
   >
     {#if copied}
       <Check size={13} class="text-success" />
@@ -57,9 +58,10 @@
   <button
     type="button"
     onclick={onStartEdit}
+    disabled={chatStore.isStreaming}
     aria-label="Edit message"
     title="Edit"
-    class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg"
+    class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
   >
     <Pencil size={13} />
   </button>
