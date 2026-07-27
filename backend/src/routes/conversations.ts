@@ -71,8 +71,8 @@ const updateConversationMeta = db.prepare(
 const deleteConversation = db.prepare("DELETE FROM conversations WHERE id = ?");
 
 const insertMessage = db.prepare(
-  `INSERT INTO messages (id, conversation_id, parent_id, role, content, error, stats, created_at)
-   VALUES (@id, @conversationId, @parentId, @role, @content, @error, @stats, @createdAt)`,
+  `INSERT INTO messages (id, conversation_id, parent_id, role, content, error, stats, model, created_at)
+   VALUES (@id, @conversationId, @parentId, @role, @content, @error, @stats, @model, @createdAt)`,
 );
 
 // ---------------------------------------------------------------------------
