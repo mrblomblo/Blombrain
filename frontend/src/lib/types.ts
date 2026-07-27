@@ -38,6 +38,18 @@ export interface ModelInfo {
   canAudio?: boolean;
   canVideo?: boolean;
   temperature?: number;
+  icon?: string;
+  seed?: number;
+  reasoningEffort?: string;
+  thinking?: boolean;
+  maxTokens?: number;
+  topK?: number;
+  topP?: number;
+  minP?: number;
+  presencePenalty?: number;
+  frequencyPenalty?: number;
+  repeatPenalty?: number;
+  ctxLength?: number;
 }
 
 export interface ModelSettingWriteBody {
@@ -50,6 +62,18 @@ export interface ModelSettingWriteBody {
   canAudio?: boolean;
   canVideo?: boolean;
   temperature?: number;
+  icon?: string;
+  seed?: number;
+  reasoningEffort?: string;
+  thinking?: boolean;
+  maxTokens?: number;
+  topK?: number;
+  topP?: number;
+  minP?: number;
+  presencePenalty?: number;
+  frequencyPenalty?: number;
+  repeatPenalty?: number;
+  ctxLength?: number;
 }
 
 export type ChatRole = "system" | "user" | "assistant";

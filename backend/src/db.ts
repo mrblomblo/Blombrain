@@ -57,31 +57,59 @@ db.exec(`
   DROP TABLE IF EXISTS model_configs;
 
   CREATE TABLE IF NOT EXISTS model_settings (
-    id             TEXT PRIMARY KEY,
-    is_preset      INTEGER NOT NULL DEFAULT 0,
-    name           TEXT,
-    base_model_id  TEXT,
-    system_prompt  TEXT,
-    can_image      INTEGER NOT NULL DEFAULT 0,
-    can_audio      INTEGER NOT NULL DEFAULT 0,
-    can_video      INTEGER NOT NULL DEFAULT 0,
-    temperature    REAL
+    id                TEXT PRIMARY KEY,
+    is_preset         INTEGER NOT NULL DEFAULT 0,
+    name              TEXT,
+    base_model_id     TEXT,
+    system_prompt     TEXT,
+    can_image         INTEGER NOT NULL DEFAULT 0,
+    can_audio         INTEGER NOT NULL DEFAULT 0,
+    can_video         INTEGER NOT NULL DEFAULT 0,
+    temperature       REAL,
+    icon              TEXT,
+    seed              INTEGER,
+    reasoning_effort  TEXT,
+    thinking          INTEGER NOT NULL DEFAULT 0,
+    max_tokens        INTEGER,
+    top_k             INTEGER,
+    top_p             REAL,
+    min_p             REAL,
+    presence_penalty  REAL,
+    frequency_penalty REAL,
+    repeat_penalty    REAL,
+    ctx_length        INTEGER
   );
 
-  -- Uploaded attachment files
-  CREATE TABLE IF NOT EXISTS attachments (
-    id              TEXT PRIMARY KEY,
-    conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
-    message_id      TEXT,
-    original_name   TEXT NOT NULL,
-    mime_type       TEXT NOT NULL,
-    disk_path       TEXT NOT NULL,
-    size_bytes      INTEGER NOT NULL,
-    created_at      INTEGER NOT NULL
-  );
-
+  -- Migration helper to ensure existing DBs get the new columns
   CREATE INDEX IF NOT EXISTS idx_attachments_conv ON attachments(conversation_id);
   CREATE INDEX IF NOT EXISTS idx_attachments_msg  ON attachments(message_id);
 `);
+
+// Add missing columns if upgrading from earlier table definition
+const columnsToAdd = [
+  { name: "icon", type: "TEXT" },
+  { name: "seed", type: "INTEGER" },
+  { name: "reasoning_effort", type: "TEXT" },
+  { name: "thinking", type: "INTEGER NOT NULL DEFAULT 0" },
+  { name: "max_tokens", type: "INTEGER" },
+  { name: "top_k", type: "INTEGER" },
+  { name: "top_p", type: "REAL" },
+  { name: "min_p", type: "REAL" },
+  { name: "presence_penalty", type: "REAL" },
+  { name: "frequency_penalty", type: "REAL" },
+  { name: "repeat_penalty", type: "REAL" },
+  { name: "ctx_length", type: "INTEGER" },
+];
+
+const existingCols = (db.pragma("table_info(model_settings)") as { name: string }[]).map(c => c.name);
+for (const col of columnsToAdd) {
+  if (!existingCols.includes(col.name)) {
+    try {
+      db.exec(`ALTER TABLE model_settings ADD COLUMN ${col.name} ${col.type}`);
+    } catch (e) {
+      // Ignore if already added
+    }
+  }
+}
 
 export default db;

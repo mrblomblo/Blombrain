@@ -120,8 +120,22 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
+    const extraParams: Record<string, any> = {};
+    if (settingRow) {
+      if (settingRow.seed !== null && settingRow.seed !== undefined) extraParams.seed = settingRow.seed;
+      if (settingRow.max_tokens !== null && settingRow.max_tokens !== undefined) extraParams.max_tokens = settingRow.max_tokens;
+      if (settingRow.top_k !== null && settingRow.top_k !== undefined) extraParams.top_k = settingRow.top_k;
+      if (settingRow.top_p !== null && settingRow.top_p !== undefined) extraParams.top_p = settingRow.top_p;
+      if (settingRow.min_p !== null && settingRow.min_p !== undefined) extraParams.min_p = settingRow.min_p;
+      if (settingRow.presence_penalty !== null && settingRow.presence_penalty !== undefined) extraParams.presence_penalty = settingRow.presence_penalty;
+      if (settingRow.frequency_penalty !== null && settingRow.frequency_penalty !== undefined) extraParams.frequency_penalty = settingRow.frequency_penalty;
+      if (settingRow.repeat_penalty !== null && settingRow.repeat_penalty !== undefined) extraParams.repeat_penalty = settingRow.repeat_penalty;
+      if (settingRow.reasoning_effort) extraParams.reasoning_effort = settingRow.reasoning_effort;
+    }
+
     const upstreamBody = {
       ...rest,
+      ...extraParams,
       model: rawModelId,
       messages: outgoingMessages,
       ...(finalTemperature !== undefined ? { temperature: finalTemperature } : {}),

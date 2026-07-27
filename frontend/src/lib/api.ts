@@ -66,7 +66,7 @@ export async function fetchModels(): Promise<ModelInfo[]> {
 // Model Settings & Presets
 // ---------------------------------------------------------------------------
 
-export async function createPreset(data: { name: string; baseModelId: string; systemPrompt?: string; canImage?: boolean; canAudio?: boolean; canVideo?: boolean; temperature?: number }): Promise<ModelInfo> {
+export async function createPreset(data: import("./types").ModelSettingWriteBody): Promise<ModelInfo> {
   const res = await fetch("/api/models", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

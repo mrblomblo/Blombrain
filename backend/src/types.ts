@@ -52,6 +52,18 @@ export interface ModelInfo {
   canAudio?: boolean;
   canVideo?: boolean;
   temperature?: number;
+  icon?: string;
+  seed?: number;
+  reasoningEffort?: string;
+  thinking?: boolean;
+  maxTokens?: number;
+  topK?: number;
+  topP?: number;
+  minP?: number;
+  presencePenalty?: number;
+  frequencyPenalty?: number;
+  repeatPenalty?: number;
+  ctxLength?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +132,18 @@ export interface ModelSettingRow {
   can_audio: number;
   can_video: number;
   temperature: number | null;
+  icon: string | null;
+  seed: number | null;
+  reasoning_effort: string | null;
+  thinking: number;
+  max_tokens: number | null;
+  top_k: number | null;
+  top_p: number | null;
+  min_p: number | null;
+  presence_penalty: number | null;
+  frequency_penalty: number | null;
+  repeat_penalty: number | null;
+  ctx_length: number | null;
 }
 
 export interface ModelSettingWriteBody {
@@ -132,6 +156,18 @@ export interface ModelSettingWriteBody {
   canAudio?: boolean;
   canVideo?: boolean;
   temperature?: number;
+  icon?: string;
+  seed?: number;
+  reasoningEffort?: string;
+  thinking?: boolean;
+  maxTokens?: number;
+  topK?: number;
+  topP?: number;
+  minP?: number;
+  presencePenalty?: number;
+  frequencyPenalty?: number;
+  repeatPenalty?: number;
+  ctxLength?: number;
 }
 
 export interface AttachmentRow {
