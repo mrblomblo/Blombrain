@@ -89,6 +89,15 @@ export async function deleteModelSettings(modelId: string): Promise<void> {
   await jsonOrThrow<{ ok: boolean }>(res);
 }
 
+export async function updateModelOrder(orders: Array<{ id: string; sortOrder: number; isPreset?: boolean }>): Promise<void> {
+  const res = await fetch("/api/models/order", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orders }),
+  });
+  await jsonOrThrow<{ ok: boolean }>(res);
+}
+
 // ---------------------------------------------------------------------------
 // Uploads
 // ---------------------------------------------------------------------------

@@ -79,7 +79,10 @@ db.exec(`
     presence_penalty  REAL,
     frequency_penalty REAL,
     repeat_penalty    REAL,
-    ctx_length        INTEGER
+    ctx_length        INTEGER,
+    is_hidden         INTEGER NOT NULL DEFAULT 0,
+    sort_order        INTEGER NOT NULL DEFAULT 0,
+    is_default        INTEGER NOT NULL DEFAULT 0
   );
 
   -- Migration helper to ensure existing DBs get the new columns
@@ -101,6 +104,9 @@ const columnsToAdd = [
   { name: "frequency_penalty", type: "REAL" },
   { name: "repeat_penalty", type: "REAL" },
   { name: "ctx_length", type: "INTEGER" },
+  { name: "is_hidden", type: "INTEGER NOT NULL DEFAULT 0" },
+  { name: "sort_order", type: "INTEGER NOT NULL DEFAULT 0" },
+  { name: "is_default", type: "INTEGER NOT NULL DEFAULT 0" },
 ];
 const modelSettingCols = (db.pragma("table_info(model_settings)") as { name: string }[]).map(c => c.name);
 for (const col of columnsToAdd) {

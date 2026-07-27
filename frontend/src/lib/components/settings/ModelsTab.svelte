@@ -1,8 +1,9 @@
 <script lang="ts">
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
-  import { Plus, Pencil, Trash2, Check, Upload, ChevronDown, ChevronRight } from "@lucide/svelte";
+  import { Plus, Pencil, Trash2, Check, Upload, ChevronDown, ChevronRight, Eye, EyeOff, Star, Copy, ArrowUpDown } from "@lucide/svelte";
   import { fetchModels, createPreset, updateModelSettings, deleteModelSettings, uploadFile, serveUploadUrl } from "../../api";
   import type { ModelInfo, ModelSettingWriteBody } from "../../types";
+  import ModelReorderModal from "./ModelReorderModal.svelte";
 
   const queryClient = useQueryClient();
 
@@ -14,6 +15,7 @@
   type FormMode = "idle" | "add_preset" | "edit";
   let formMode = $state<FormMode>("idle");
   let selectedModelId = $state<string | null>(null);
+  let reorderModalOpen = $state(false);
 
   // Core Form Fields
   let formName = $state("");
@@ -107,6 +109,66 @@
     formMode = "idle";
     selectedModelId = null;
     formError = null;
+  }
+
+  async function handleToggleHide(model: ModelInfo) {
+    try {
+      await updateModelSettings(model.id, {
+        isPreset: model.isPreset,
+        baseModelId: model.baseModelId,
+        isHidden: !model.isHidden,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["models"] });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to toggle hide state.");
+    }
+  }
+
+  async function handleToggleDefault(model: ModelInfo) {
+    if (model.isHidden && !model.isDefault) {
+      alert("A hidden model cannot be set as default.");
+      return;
+    }
+    try {
+      await updateModelSettings(model.id, {
+        isPreset: model.isPreset,
+        baseModelId: model.baseModelId,
+        isDefault: !model.isDefault,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["models"] });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to set default model.");
+    }
+  }
+
+  async function handleDuplicatePreset(model: ModelInfo) {
+    try {
+      const copyName = `${model.name || model.id} - Copy`;
+      await createPreset({
+        name: copyName,
+        baseModelId: model.baseModelId ?? model.id,
+        systemPrompt: model.systemPrompt,
+        canImage: model.canImage,
+        canAudio: model.canAudio,
+        canVideo: model.canVideo,
+        temperature: model.temperature,
+        icon: model.icon,
+        seed: model.seed,
+        reasoningEffort: model.reasoningEffort,
+        thinking: model.thinking,
+        maxTokens: model.maxTokens,
+        topK: model.topK,
+        topP: model.topP,
+        minP: model.minP,
+        presencePenalty: model.presencePenalty,
+        frequencyPenalty: model.frequencyPenalty,
+        repeatPenalty: model.repeatPenalty,
+        ctxLength: model.ctxLength,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["models"] });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to duplicate preset.");
+    }
   }
 
   async function handleImageUpload(e: Event) {
@@ -214,13 +276,24 @@
         <h3 class="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
           Models ({allModels.length})
         </h3>
-        <button
-          onclick={startAddPreset}
-          class="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
-        >
-          <Plus size={13} />
-          Create Preset
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            onclick={() => (reorderModalOpen = true)}
+            class="flex items-center gap-1.5 rounded-md border border-line bg-bg-elevated px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-bg-hover"
+            title="Reorder models & presets"
+          >
+            <ArrowUpDown size={13} />
+            <span>Sort Order</span>
+          </button>
+          <button
+            onclick={startAddPreset}
+            class="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            <Plus size={13} />
+            Create Preset
+          </button>
+        </div>
       </div>
 
       <!-- Presets Section -->
@@ -229,7 +302,7 @@
           <span class="mb-2 block text-xs font-medium text-fg-muted">Presets</span>
           <ul class="flex flex-col gap-2">
             {#each presets as model (model.id)}
-              <li class="flex items-center justify-between rounded-lg border border-accent/40 bg-bg-elevated px-4 py-3 text-sm">
+              <li class="flex items-center justify-between rounded-lg border border-accent/40 bg-bg-elevated px-4 py-3 text-sm transition-opacity {model.isHidden ? 'opacity-50' : ''}">
                 <div class="flex items-center gap-3 min-w-0 flex-1">
                   {#if model.icon}
                     <img src={model.icon} alt="Icon" class="h-7 w-7 rounded-md object-cover border border-line" />
@@ -242,21 +315,44 @@
                     <div class="flex items-center gap-2">
                       <span class="font-medium text-fg">{model.name || model.id}</span>
                       <span class="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] font-mono text-accent">Preset</span>
+                      {#if model.isDefault}
+                        <span class="rounded bg-amber-500/20 text-amber-500 px-1.5 py-0.5 text-[10px] font-semibold">Default</span>
+                      {/if}
                     </div>
                     <p class="truncate text-xs text-fg-subtle mt-0.5">Base: {model.baseModelId}</p>
                   </div>
                 </div>
 
                 <div class="flex shrink-0 gap-1">
+                  <!-- Star / Set Default -->
+                  <button
+                    onclick={() => handleToggleDefault(model)}
+                    class="flex h-7 w-7 items-center justify-center rounded transition-colors {model.isDefault ? 'text-amber-400' : 'text-fg-muted hover:bg-bg hover:text-amber-400'}"
+                    title={model.isDefault ? "Current Default Model" : "Set as Default Model"}
+                  >
+                    <Star size={13} class={model.isDefault ? "fill-amber-400" : ""} />
+                  </button>
+                  <!-- Copy / Duplicate Preset -->
+                  <button
+                    onclick={() => handleDuplicatePreset(model)}
+                    class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-fg"
+                    title="Duplicate Preset"
+                  >
+                    <Copy size={13} />
+                  </button>
+                  <!-- Edit -->
                   <button
                     onclick={() => startEdit(model)}
                     class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-fg"
+                    title="Edit preset"
                   >
                     <Pencil size={13} />
                   </button>
+                  <!-- Delete -->
                   <button
                     onclick={() => handleDelete(model)}
                     class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-danger"
+                    title="Delete preset"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -272,7 +368,7 @@
         <span class="mb-2 block text-xs font-medium text-fg-muted">Base Models</span>
         <ul class="flex flex-col gap-2">
           {#each baseModels as model (model.id)}
-            <li class="flex items-center justify-between rounded-lg border border-line px-4 py-3 text-sm">
+            <li class="flex items-center justify-between rounded-lg border border-line px-4 py-3 text-sm transition-opacity {model.isHidden ? 'opacity-50 bg-bg-inset/40' : ''}">
               <div class="flex items-center gap-3 min-w-0 flex-1">
                 {#if model.icon}
                   <img src={model.icon} alt="Icon" class="h-7 w-7 rounded-md object-cover border border-line" />
@@ -287,6 +383,12 @@
                     <span class="rounded bg-bg px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle ring-1 ring-line">
                       {model.backendName}
                     </span>
+                    {#if model.isDefault}
+                      <span class="rounded bg-amber-500/20 text-amber-500 px-1.5 py-0.5 text-[10px] font-semibold">Default</span>
+                    {/if}
+                    {#if model.isHidden}
+                      <span class="rounded bg-bg-inset text-fg-subtle px-1.5 py-0.5 text-[10px]">Hidden</span>
+                    {/if}
                   </div>
                   {#if model.systemPrompt}
                     <p class="truncate text-xs text-fg-subtle mt-0.5">Prompt: "{model.systemPrompt}"</p>
@@ -295,6 +397,28 @@
               </div>
 
               <div class="flex shrink-0 gap-1">
+                <!-- Star / Set Default -->
+                <button
+                  onclick={() => handleToggleDefault(model)}
+                  disabled={model.isHidden && !model.isDefault}
+                  class="flex h-7 w-7 items-center justify-center rounded transition-colors {model.isDefault ? 'text-amber-400' : 'text-fg-muted hover:bg-bg hover:text-amber-400'} disabled:opacity-30 disabled:hover:text-fg-muted cursor-pointer disabled:cursor-not-allowed"
+                  title={model.isHidden && !model.isDefault ? "Hidden models cannot be set as default" : (model.isDefault ? "Current Default Model" : "Set as Default Model")}
+                >
+                  <Star size={13} class={model.isDefault ? "fill-amber-400" : ""} />
+                </button>
+                <!-- Hide / Show Eye Icon -->
+                <button
+                  onclick={() => handleToggleHide(model)}
+                  class="flex h-7 w-7 items-center justify-center rounded transition-colors {model.isHidden ? 'text-accent' : 'text-fg-muted hover:bg-bg hover:text-fg'}"
+                  title={model.isHidden ? "Unhide model" : "Hide model from picker"}
+                >
+                  {#if model.isHidden}
+                    <EyeOff size={13} />
+                  {:else}
+                    <Eye size={13} />
+                  {/if}
+                </button>
+                <!-- Edit -->
                 <button
                   onclick={() => startEdit(model)}
                   class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-fg"
@@ -609,3 +733,10 @@
     {/if}
   {/if}
 </div>
+
+<!-- Reorder Modal -->
+<ModelReorderModal
+  open={reorderModalOpen}
+  models={modelsQuery.data ?? []}
+  onClose={() => (reorderModalOpen = false)}
+/>

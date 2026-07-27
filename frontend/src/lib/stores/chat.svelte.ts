@@ -197,6 +197,7 @@ class ChatStore {
     this.activeConversationTitle = "New conversation";
     this.pendingAttachments = [];
     this.branchSelections = {};
+    this.selectedModel = null;
   }
 
   /** Edit a message content in place (Save option) */

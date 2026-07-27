@@ -50,6 +50,9 @@ export interface ModelInfo {
   frequencyPenalty?: number;
   repeatPenalty?: number;
   ctxLength?: number;
+  isHidden?: boolean;
+  sortOrder?: number;
+  isDefault?: boolean;
 }
 
 export interface ModelSettingWriteBody {
@@ -74,6 +77,9 @@ export interface ModelSettingWriteBody {
   frequencyPenalty?: number;
   repeatPenalty?: number;
   ctxLength?: number;
+  isHidden?: boolean;
+  sortOrder?: number;
+  isDefault?: boolean;
 }
 
 export type ChatRole = "system" | "user" | "assistant";

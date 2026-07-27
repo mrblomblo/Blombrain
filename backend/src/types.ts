@@ -64,6 +64,9 @@ export interface ModelInfo {
   frequencyPenalty?: number;
   repeatPenalty?: number;
   ctxLength?: number;
+  isHidden?: boolean;
+  sortOrder?: number;
+  isDefault?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +151,9 @@ export interface ModelSettingRow {
   frequency_penalty: number | null;
   repeat_penalty: number | null;
   ctx_length: number | null;
+  is_hidden: number;
+  sort_order: number;
+  is_default: number;
 }
 
 export interface ModelSettingWriteBody {
@@ -172,6 +178,9 @@ export interface ModelSettingWriteBody {
   frequencyPenalty?: number;
   repeatPenalty?: number;
   ctxLength?: number;
+  isHidden?: boolean;
+  sortOrder?: number;
+  isDefault?: boolean;
 }
 
 export interface AttachmentRow {

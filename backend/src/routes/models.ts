@@ -71,6 +71,9 @@ export async function modelsRoutes(app: FastifyInstance) {
         frequencyPenalty: setting.frequency_penalty ?? undefined,
         repeatPenalty: setting.repeat_penalty ?? undefined,
         ctxLength: setting.ctx_length ?? undefined,
+        isHidden: Boolean(setting.is_hidden),
+        sortOrder: setting.sort_order ?? 0,
+        isDefault: Boolean(setting.is_default),
       };
     });
 
@@ -102,10 +105,15 @@ export async function modelsRoutes(app: FastifyInstance) {
         frequencyPenalty: p.frequency_penalty ?? undefined,
         repeatPenalty: p.repeat_penalty ?? undefined,
         ctxLength: p.ctx_length ?? undefined,
+        isHidden: Boolean(p.is_hidden),
+        sortOrder: p.sort_order ?? 0,
+        isDefault: Boolean(p.is_default),
       };
     });
 
-    return [...augmentedBaseModels, ...presetModels];
+    const allModels = [...augmentedBaseModels, ...presetModels];
+    allModels.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    return allModels;
   });
 
   // POST /api/models - Create a new Preset
@@ -113,10 +121,14 @@ export async function modelsRoutes(app: FastifyInstance) {
     const {
       name, baseModelId, systemPrompt, canImage, canAudio, canVideo, temperature,
       icon, seed, reasoningEffort, thinking, maxTokens, topK, topP, minP,
-      presencePenalty, frequencyPenalty, repeatPenalty, ctxLength
+      presencePenalty, frequencyPenalty, repeatPenalty, ctxLength, isHidden, sortOrder, isDefault
     } = req.body;
     if (!name || !baseModelId) {
       return reply.code(400).send({ error: "name and baseModelId are required for creating a preset" });
+    }
+
+    if (isDefault) {
+      db.prepare("UPDATE model_settings SET is_default = 0").run();
     }
 
     const id = `preset_${crypto.randomUUID()}`;
@@ -124,9 +136,10 @@ export async function modelsRoutes(app: FastifyInstance) {
       INSERT INTO model_settings (
         id, is_preset, name, base_model_id, system_prompt, can_image, can_audio, can_video, temperature,
         icon, seed, reasoning_effort, thinking, max_tokens, top_k, top_p, min_p,
-        presence_penalty, frequency_penalty, repeat_penalty, ctx_length
+        presence_penalty, frequency_penalty, repeat_penalty, ctx_length,
+        is_hidden, sort_order, is_default
       )
-      VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       name,
@@ -147,7 +160,10 @@ export async function modelsRoutes(app: FastifyInstance) {
       presencePenalty ?? null,
       frequencyPenalty ?? null,
       repeatPenalty ?? null,
-      ctxLength ?? null
+      ctxLength ?? null,
+      isHidden ? 1 : 0,
+      sortOrder ?? 0,
+      isDefault ? 1 : 0
     );
 
     return {
@@ -172,8 +188,40 @@ export async function modelsRoutes(app: FastifyInstance) {
       frequencyPenalty,
       repeatPenalty,
       ctxLength,
+      isHidden: Boolean(isHidden),
+      sortOrder: sortOrder ?? 0,
+      isDefault: Boolean(isDefault),
     };
   });
+
+  // PUT /api/models/order - Bulk update model sort orders
+  app.put<{ Body: { orders: Array<{ id: string; sortOrder: number; isPreset?: boolean }> } }>(
+    "/api/models/order",
+    async (req) => {
+      const { orders } = req.body ?? {};
+      if (!Array.isArray(orders)) return { ok: false };
+
+      const checkStmt = db.prepare("SELECT id FROM model_settings WHERE id = ?");
+      const updateStmt = db.prepare("UPDATE model_settings SET sort_order = ? WHERE id = ?");
+      const insertStmt = db.prepare(
+        "INSERT INTO model_settings (id, is_preset, sort_order) VALUES (?, ?, ?)"
+      );
+
+      const transaction = db.transaction(() => {
+        for (const item of orders) {
+          const row = checkStmt.get(item.id);
+          if (row) {
+            updateStmt.run(item.sortOrder, item.id);
+          } else {
+            insertStmt.run(item.id, item.isPreset ? 1 : 0, item.sortOrder);
+          }
+        }
+      });
+
+      transaction();
+      return { ok: true };
+    }
+  );
 
   // PUT /api/models/* - Update settings for a Base Model or a Preset
   app.put<{ Params: { "*": string }; Body: ModelSettingWriteBody }>("/api/models/*", async (req, reply) => {
@@ -185,17 +233,36 @@ export async function modelsRoutes(app: FastifyInstance) {
     const {
       name, baseModelId, systemPrompt, canImage, canAudio, canVideo, temperature, isPreset,
       icon, seed, reasoningEffort, thinking, maxTokens, topK, topP, minP,
-      presencePenalty, frequencyPenalty, repeatPenalty, ctxLength
+      presencePenalty, frequencyPenalty, repeatPenalty, ctxLength,
+      isHidden, sortOrder, isDefault
     } = req.body;
 
     const existing = db.prepare("SELECT * FROM model_settings WHERE id = ?").get(modelId) as ModelSettingRow | undefined;
+    const willBeHidden = isHidden !== undefined ? Boolean(isHidden) : (existing ? Boolean(existing.is_hidden) : false);
+
+    if (isDefault === true) {
+      if (willBeHidden) {
+        return reply.code(400).send({ error: "A hidden model cannot be set as default" });
+      }
+      db.prepare("UPDATE model_settings SET is_default = 0").run();
+    }
+
+    let nextIsDefault: number;
+    if (willBeHidden) {
+      nextIsDefault = 0;
+    } else if (isDefault !== undefined) {
+      nextIsDefault = isDefault ? 1 : 0;
+    } else {
+      nextIsDefault = existing ? existing.is_default : 0;
+    }
 
     if (existing) {
       db.prepare(`
         UPDATE model_settings
         SET name = ?, base_model_id = ?, system_prompt = ?, can_image = ?, can_audio = ?, can_video = ?, temperature = ?,
             icon = ?, seed = ?, reasoning_effort = ?, thinking = ?, max_tokens = ?, top_k = ?, top_p = ?, min_p = ?,
-            presence_penalty = ?, frequency_penalty = ?, repeat_penalty = ?, ctx_length = ?
+            presence_penalty = ?, frequency_penalty = ?, repeat_penalty = ?, ctx_length = ?,
+            is_hidden = ?, sort_order = ?, is_default = ?
         WHERE id = ?
       `).run(
         name ?? existing.name,
@@ -217,6 +284,9 @@ export async function modelsRoutes(app: FastifyInstance) {
         frequencyPenalty !== undefined ? frequencyPenalty : existing.frequency_penalty,
         repeatPenalty !== undefined ? repeatPenalty : existing.repeat_penalty,
         ctxLength !== undefined ? ctxLength : existing.ctx_length,
+        isHidden !== undefined ? (isHidden ? 1 : 0) : existing.is_hidden,
+        sortOrder !== undefined ? sortOrder : existing.sort_order,
+        nextIsDefault,
         modelId
       );
     } else {
@@ -224,9 +294,10 @@ export async function modelsRoutes(app: FastifyInstance) {
         INSERT INTO model_settings (
           id, is_preset, name, base_model_id, system_prompt, can_image, can_audio, can_video, temperature,
           icon, seed, reasoning_effort, thinking, max_tokens, top_k, top_p, min_p,
-          presence_penalty, frequency_penalty, repeat_penalty, ctx_length
+          presence_penalty, frequency_penalty, repeat_penalty, ctx_length,
+          is_hidden, sort_order, is_default
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         modelId,
         isPreset ? 1 : 0,
@@ -248,7 +319,10 @@ export async function modelsRoutes(app: FastifyInstance) {
         presencePenalty ?? null,
         frequencyPenalty ?? null,
         repeatPenalty ?? null,
-        ctxLength ?? null
+        ctxLength ?? null,
+        isHidden ? 1 : 0,
+        sortOrder ?? 0,
+        nextIsDefault
       );
     }
 
