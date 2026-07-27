@@ -1,5 +1,6 @@
-import { streamChatCompletion, fetchConversation, createConversation } from "../api";
-import type { ChatMessage, ConversationSummary } from "../types";
+import { streamChatCompletion, fetchConversation, createConversation, uploadFile, deleteUpload } from "../api";
+import { encodeToWav } from "../audio";
+import type { ChatMessage, ConversationSummary, AttachmentOut } from "../types";
 
 function makeId() {
   return crypto.randomUUID();
@@ -21,10 +22,30 @@ class ChatStore {
   /** Title of the active conversation (kept in sync after each save). */
   activeConversationTitle = $state<string>("New conversation");
 
+  pendingAttachments = $state<AttachmentOut[]>([]);
+
   private abortController: AbortController | null = null;
 
   setModel(modelId: string) {
     this.selectedModel = modelId;
+  }
+
+  async addAttachment(file: File) {
+    let fileToUpload = file;
+    if (file.type.startsWith("audio/")) {
+      fileToUpload = await encodeToWav(file);
+    }
+    const attachment = await uploadFile(fileToUpload, this.activeConversationId);
+    this.pendingAttachments.push(attachment);
+  }
+
+  async removeAttachment(id: string) {
+    this.pendingAttachments = this.pendingAttachments.filter(a => a.id !== id);
+    try {
+      await deleteUpload(id);
+    } catch (e) {
+      console.warn("Failed to delete upload from backend", e);
+    }
   }
 
   /** Load a persisted conversation into the main pane. */
@@ -37,9 +58,11 @@ class ChatStore {
         role: m.role,
         content: m.content,
         error: m.error,
+        attachments: m.attachments,
       }));
       this.activeConversationId = detail.id;
       this.activeConversationTitle = detail.title;
+      this.pendingAttachments = [];
       if (detail.model) this.selectedModel = detail.model;
     } catch (err) {
       console.error("[chatStore] failed to load conversation:", err);
@@ -52,11 +75,13 @@ class ChatStore {
     this.messages = [];
     this.activeConversationId = null;
     this.activeConversationTitle = "New conversation";
+    this.pendingAttachments = [];
   }
 
   async send(content: string) {
     const trimmed = content.trim();
-    if (!trimmed || this.isStreaming) return;
+    if (!trimmed && this.pendingAttachments.length === 0) return;
+    if (this.isStreaming) return;
 
     if (!this.selectedModel) {
       this.messages.push({
@@ -68,7 +93,16 @@ class ChatStore {
       return;
     }
 
-    const userMessage: ChatMessage = { id: makeId(), role: "user", content: trimmed };
+    const attachmentIds = this.pendingAttachments.map(a => a.id);
+    const userAttachments = [...this.pendingAttachments];
+    this.pendingAttachments = [];
+
+    const userMessage: ChatMessage = { 
+      id: makeId(), 
+      role: "user", 
+      content: trimmed,
+      attachments: userAttachments.length > 0 ? userAttachments : undefined,
+    };
     const assistantMessage: ChatMessage = {
       id: makeId(),
       role: "assistant",
@@ -90,6 +124,7 @@ class ChatStore {
         const words = trimmed.split(/\s+/);
         let excerpt = words.slice(0, 8).join(" ");
         if (excerpt.length > 60) excerpt = excerpt.slice(0, 57) + "…";
+        if (!excerpt) excerpt = "Attachment"; // fallback if only an attachment was sent
         
         const conv = await createConversation({ title: excerpt, model: this.selectedModel ?? undefined });
         this.activeConversationId = conv.id;
@@ -104,6 +139,7 @@ class ChatStore {
       model: this.selectedModel,
       messages: historyForModel,
       conversationId: this.activeConversationId,
+      attachmentIds,
       signal: this.abortController.signal,
 
       onToken: (delta) => {
@@ -151,6 +187,7 @@ class ChatStore {
     this.messages = [];
     this.activeConversationId = null;
     this.activeConversationTitle = "New conversation";
+    this.pendingAttachments = [];
   }
 }
 

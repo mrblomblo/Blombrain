@@ -7,9 +7,9 @@
   import ThemeSwitcher from "./ThemeSwitcher.svelte";
 
   interface Props {
-    onOpenBackendEditor: () => void;
+    onOpenSettings: () => void;
   }
-  const { onOpenBackendEditor }: Props = $props();
+  const { onOpenSettings }: Props = $props();
 
   const queryClient = useQueryClient();
 
@@ -155,14 +155,13 @@
   <div class="flex items-center justify-between border-t border-line px-4 py-3">
     <div class="flex items-center gap-2">
       <button
-        onclick={onOpenBackendEditor}
-        aria-label="Manage backends"
+        onclick={onOpenSettings}
+        aria-label="Settings"
         class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
       >
         <Settings size={13} />
       </button>
-      <span class="text-xs text-fg-muted">Theme</span>
+      <ThemeSwitcher />
     </div>
-    <ThemeSwitcher />
   </div>
 </aside>

@@ -1,14 +1,18 @@
 import { Readable } from "node:stream";
+import fs from "node:fs";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { backendRegistry } from "../registry.js";
 import { persistChatTurn } from "./conversations.js";
+import db from "../db.js";
+import type { AttachmentRow } from "../types.js";
 
 interface ChatCompletionBody {
   model: string;
-  messages: Array<{ role: string; content: string }>;
+  messages: Array<{ role: string; content: string | any[] }>;
   temperature?: number;
   /** Optional: resume an existing conversation. When omitted a new one is created. */
   conversationId?: string;
+  attachments?: string[];
   [key: string]: unknown;
 }
 
@@ -39,7 +43,47 @@ export async function chatRoutes(app: FastifyInstance) {
     const userMessageId = crypto.randomUUID();
     const assistantMessageId = crypto.randomUUID();
 
-    const { model: _incomingModel, conversationId: _incomingConvId, ...rest } = body;
+    const { model: _incomingModel, conversationId: _incomingConvId, attachments: attachmentIds, ...rest } = body;
+    
+    // Build attachments content array if present
+    const contentParts: any[] = [];
+    if (lastUserMsg && typeof lastUserMsg.content === "string") {
+      contentParts.push({ type: "text", text: lastUserMsg.content });
+    } else if (lastUserMsg && Array.isArray(lastUserMsg.content)) {
+      contentParts.push(...lastUserMsg.content);
+    }
+
+    const dbAttachments: AttachmentRow[] = [];
+    if (attachmentIds && Array.isArray(attachmentIds)) {
+      for (const id of attachmentIds) {
+        const row = db.prepare(`SELECT * FROM attachments WHERE id = ?`).get(id) as AttachmentRow | undefined;
+        if (row && fs.existsSync(row.disk_path)) {
+          dbAttachments.push(row);
+          const fileData = fs.readFileSync(row.disk_path);
+          const base64 = fileData.toString("base64");
+          
+          if (row.mime_type.startsWith("image/")) {
+            contentParts.push({ type: "image_url", image_url: { url: `data:${row.mime_type};base64,${base64}` } });
+          } else if (row.mime_type.startsWith("video/")) {
+            contentParts.push({ type: "image_url", image_url: { url: `data:${row.mime_type};base64,${base64}` } });
+          } else if (row.mime_type.startsWith("audio/")) {
+            // we re-encoded to wav on frontend
+            contentParts.push({ type: "input_audio", input_audio: { data: base64, format: "wav" } });
+          }
+        }
+      }
+    }
+
+    // Apply the constructed parts back to the last user message
+    if (lastUserMsg && contentParts.length > 0) {
+      // If we only have text and no attachments, we can leave it as a string. But since there might be attachments:
+      if (contentParts.length === 1 && contentParts[0].type === "text") {
+        lastUserMsg.content = contentParts[0].text;
+      } else {
+        lastUserMsg.content = contentParts;
+      }
+    }
+
     const upstreamBody = { ...rest, model: rawModelId, stream: true };
 
     let upstream: Response;
@@ -124,11 +168,19 @@ export async function chatRoutes(app: FastifyInstance) {
             conversationId: body.conversationId ?? null,
             model: body.model,
             userMessageId,
-            userContent: lastUserMsg?.content ?? "",
+            userContent: typeof lastUserMsg?.content === "string" ? lastUserMsg.content : JSON.stringify(lastUserMsg?.content ?? ""),
             assistantMessageId,
             assistantContent,
             assistantError: streamError,
           });
+
+          // Bind attachments to the saved user message
+          if (attachmentIds && Array.isArray(attachmentIds)) {
+            const updateStmt = db.prepare(`UPDATE attachments SET message_id = ?, conversation_id = ? WHERE id = ?`);
+            for (const id of attachmentIds) {
+              updateStmt.run(userMessageId, savedTurn.conversationId, id);
+            }
+          }
 
           // Emit a trailing meta event so the frontend knows the conversation id / title.
           const metaEvent =

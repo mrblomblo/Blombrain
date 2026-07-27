@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import db from "../db.js";
+import fs from "node:fs";
+import path from "node:path";
+import db, { DATA_DIR } from "../db.js";
 import type {
   ConversationRow,
   MessageRow,
@@ -101,7 +103,25 @@ export async function conversationsRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const row = getConversation.get(id);
     if (!row) return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
+    
     const messages = getMessages.all(id).map(rowToMessage);
+    
+    // Attachments fetching
+    const attachRows = db.prepare(`SELECT * FROM attachments WHERE conversation_id = ?`).all(id) as import("../types.js").AttachmentRow[];
+    for (const msg of messages) {
+      msg.attachments = attachRows
+        .filter(a => a.message_id === msg.id)
+        .map(a => ({
+          id: a.id,
+          conversationId: a.conversation_id,
+          messageId: a.message_id,
+          originalName: a.original_name,
+          mimeType: a.mime_type,
+          sizeBytes: a.size_bytes,
+          createdAt: a.created_at,
+        }));
+    }
+
     const detail: ConversationDetail = { ...rowToSummary(row), messages };
     return detail;
   });
@@ -129,6 +149,16 @@ export async function conversationsRoutes(app: FastifyInstance) {
     if (result.changes === 0) {
       return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
     }
+    // Note: Database ON DELETE CASCADE deletes the attachment rows, but we should also delete the files on disk.
+    // The cleanup job won't catch them if they are deleted from DB.
+    // Let's delete the uploads folder for this conversation:
+    try {
+      const convDir = path.join(DATA_DIR, "uploads", id);
+      if (fs.existsSync(convDir)) {
+        fs.rmSync(convDir, { recursive: true, force: true });
+      }
+    } catch(e) {}
+    
     return reply.code(204).send();
   });
 
@@ -138,7 +168,22 @@ export async function conversationsRoutes(app: FastifyInstance) {
     if (!getConversation.get(id)) {
       return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
     }
-    return getMessages.all(id).map(rowToMessage);
+    const messages = getMessages.all(id).map(rowToMessage);
+    const attachRows = db.prepare(`SELECT * FROM attachments WHERE conversation_id = ?`).all(id) as import("../types.js").AttachmentRow[];
+    for (const msg of messages) {
+      msg.attachments = attachRows
+        .filter(a => a.message_id === msg.id)
+        .map(a => ({
+          id: a.id,
+          conversationId: a.conversation_id,
+          messageId: a.message_id,
+          originalName: a.original_name,
+          mimeType: a.mime_type,
+          sizeBytes: a.size_bytes,
+          createdAt: a.created_at,
+        }));
+    }
+    return messages;
   });
 
   /**

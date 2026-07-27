@@ -33,7 +33,23 @@ export interface ModelInfo {
   backendName: string;
 }
 
+export interface ModelCapabilities {
+  canImage: boolean;
+  canAudio: boolean;
+  canVideo: boolean;
+}
+
 export type ChatRole = "system" | "user" | "assistant";
+
+export interface AttachmentOut {
+  id: string;
+  conversationId: string;
+  messageId: string | null;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: number;
+}
 
 export interface ChatMessage {
   id: string;
@@ -42,6 +58,7 @@ export interface ChatMessage {
   /** Set while a streaming assistant response is still arriving. */
   streaming?: boolean;
   error?: string | null;
+  attachments?: AttachmentOut[];
 }
 
 /** A conversation list item (no messages). */
@@ -66,4 +83,5 @@ export interface MessageOut {
   content: string;
   error: string | null;
   createdAt: number;
+  attachments?: AttachmentOut[];
 }

@@ -4,12 +4,14 @@ import { existsSync } from "node:fs";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
-// Import db first so the schema is created before any routes run.
+import fastifyMultipart from "@fastify/multipart";
 import "./db.js";
 import { backendsRoutes } from "./routes/backends.js";
 import { modelsRoutes } from "./routes/models.js";
 import { chatRoutes } from "./routes/chat.js";
 import { conversationsRoutes } from "./routes/conversations.js";
+import { modelConfigsRoutes } from "./routes/modelConfigs.js";
+import { uploadsRoutes } from "./routes/uploads.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 4300);
@@ -18,11 +20,14 @@ async function main() {
   const app = Fastify({ logger: true });
 
   await app.register(cors, { origin: true });
+  await app.register(fastifyMultipart, { limits: { fileSize: 100 * 1024 * 1024 } }); // 100MB max
 
   await app.register(backendsRoutes);
   await app.register(modelsRoutes);
   await app.register(chatRoutes);
   await app.register(conversationsRoutes);
+  await app.register(modelConfigsRoutes);
+  await app.register(uploadsRoutes);
 
   // If the frontend has been built (frontend/dist), serve it directly so the
   // whole app can run as a single process. During `npm run dev` this

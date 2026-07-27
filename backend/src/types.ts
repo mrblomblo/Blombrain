@@ -89,10 +89,49 @@ export interface MessageOut {
   content: string;
   error: string | null;
   createdAt: number;
+  attachments?: AttachmentOut[];
 }
 
 /** Body accepted by PATCH /api/conversations/:id */
 export interface ConversationPatchBody {
   title?: string;
   model?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Model Config & Multimodal attachments
+// ---------------------------------------------------------------------------
+
+export interface ModelConfigRow {
+  model_id: string;
+  can_image: number;
+  can_audio: number;
+  can_video: number;
+}
+
+export interface ModelCapabilities {
+  canImage: boolean;
+  canAudio: boolean;
+  canVideo: boolean;
+}
+
+export interface AttachmentRow {
+  id: string;
+  conversation_id: string;
+  message_id: string | null;
+  original_name: string;
+  mime_type: string;
+  disk_path: string;
+  size_bytes: number;
+  created_at: number;
+}
+
+export interface AttachmentOut {
+  id: string;
+  conversationId: string;
+  messageId: string | null;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: number;
 }

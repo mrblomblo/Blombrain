@@ -7,6 +7,8 @@ import type {
   ConversationDetail,
   MessageOut,
   ModelInfo,
+  ModelCapabilities,
+  AttachmentOut,
 } from "./types";
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
@@ -59,6 +61,58 @@ export async function deleteBackend(id: string): Promise<void> {
 export async function fetchModels(): Promise<ModelInfo[]> {
   const res = await fetch("/api/models");
   return jsonOrThrow<ModelInfo[]>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Model Configs
+// ---------------------------------------------------------------------------
+
+export async function fetchModelConfigs(): Promise<Record<string, ModelCapabilities>> {
+  const res = await fetch("/api/model-configs");
+  return jsonOrThrow<Record<string, ModelCapabilities>>(res);
+}
+
+export async function fetchModelConfig(modelId: string): Promise<ModelCapabilities> {
+  const res = await fetch(`/api/model-configs/${encodeURIComponent(modelId)}`);
+  return jsonOrThrow<ModelCapabilities>(res);
+}
+
+export async function upsertModelConfig(modelId: string, caps: ModelCapabilities): Promise<void> {
+  const res = await fetch(`/api/model-configs/${encodeURIComponent(modelId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(caps),
+  });
+  await jsonOrThrow<{ success: boolean }>(res);
+}
+
+export async function deleteModelConfig(modelId: string): Promise<void> {
+  const res = await fetch(`/api/model-configs/${encodeURIComponent(modelId)}`, { method: "DELETE" });
+  await jsonOrThrow<{ success: boolean }>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Uploads
+// ---------------------------------------------------------------------------
+
+export async function uploadFile(file: File, conversationId?: string | null): Promise<AttachmentOut> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const url = conversationId ? `/api/uploads?conversationId=${encodeURIComponent(conversationId)}` : "/api/uploads";
+  const res = await fetch(url, {
+    method: "POST",
+    body: formData,
+  });
+  return jsonOrThrow<AttachmentOut>(res);
+}
+
+export async function deleteUpload(id: string): Promise<void> {
+  const res = await fetch(`/api/uploads/${encodeURIComponent(id)}`, { method: "DELETE" });
+  await jsonOrThrow<{ success: boolean }>(res);
+}
+
+export function serveUploadUrl(id: string): string {
+  return `/api/uploads/${encodeURIComponent(id)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +170,7 @@ export interface StreamChatOptions {
   messages: Pick<ChatMessage, "role" | "content">[];
   temperature?: number;
   conversationId?: string | null;
+  attachmentIds?: string[];
   signal?: AbortSignal;
   onToken: (delta: string) => void;
   onMeta: (meta: {
@@ -141,6 +196,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
     messages,
     temperature,
     conversationId,
+    attachmentIds,
     signal,
     onToken,
     onMeta,
@@ -153,7 +209,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
     res = await fetch("/api/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages, temperature, conversationId, stream: true }),
+      body: JSON.stringify({ model, messages, temperature, conversationId, attachments: attachmentIds, stream: true }),
       signal,
     });
   } catch (err) {

@@ -5,7 +5,7 @@ import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const DATA_DIR = process.env.BLOMBRAIN_DATA_DIR ?? path.join(__dirname, "..", "data");
+export const DATA_DIR = process.env.BLOMBRAIN_DATA_DIR ?? path.join(__dirname, "..", "data");
 mkdirSync(DATA_DIR, { recursive: true });
 
 const DB_PATH = path.join(DATA_DIR, "blombrain.db");
@@ -19,8 +19,7 @@ db.pragma("foreign_keys = ON");
 
 /**
  * Schema migrations run synchronously at startup.
- * Each migration is guarded by IF NOT EXISTS / IF NOT EXISTS on columns,
- * so re-running is safe.
+ * Each migration is guarded by IF NOT EXISTS so re-running is safe.
  */
 db.exec(`
   -- Inference backends (replaces the old config/backends.json)
@@ -53,6 +52,29 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_messages_conv
     ON messages(conversation_id, created_at);
+
+  -- Per-model capability overrides (user-configured; not read from the server)
+  CREATE TABLE IF NOT EXISTS model_configs (
+    model_id   TEXT PRIMARY KEY,
+    can_image  INTEGER NOT NULL DEFAULT 0,
+    can_audio  INTEGER NOT NULL DEFAULT 0,
+    can_video  INTEGER NOT NULL DEFAULT 0
+  );
+
+  -- Uploaded attachment files
+  CREATE TABLE IF NOT EXISTS attachments (
+    id              TEXT PRIMARY KEY,
+    conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
+    message_id      TEXT,
+    original_name   TEXT NOT NULL,
+    mime_type       TEXT NOT NULL,
+    disk_path       TEXT NOT NULL,
+    size_bytes      INTEGER NOT NULL,
+    created_at      INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_attachments_conv ON attachments(conversation_id);
+  CREATE INDEX IF NOT EXISTS idx_attachments_msg  ON attachments(message_id);
 `);
 
 export default db;

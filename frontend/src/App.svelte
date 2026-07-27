@@ -4,7 +4,7 @@
   import ChatMessageList from "./lib/components/ChatMessageList.svelte";
   import ModelPicker from "./lib/components/ModelPicker.svelte";
   import Sidebar from "./lib/components/Sidebar.svelte";
-  import BackendEditor from "./lib/components/BackendEditor.svelte";
+  import SettingsModal from "./lib/components/SettingsModal.svelte";
   import { chatStore, registerConversationsInvalidator } from "./lib/stores/chat.svelte";
 
   const queryClient = new QueryClient({
@@ -22,12 +22,12 @@
     queryClient.invalidateQueries({ queryKey: ["conversations"] });
   });
 
-  let backendEditorOpen = $state(false);
+  let settingsOpen = $state(false);
 </script>
 
 <QueryClientProvider client={queryClient}>
   <div class="flex h-screen w-screen bg-bg text-fg">
-    <Sidebar onOpenBackendEditor={() => (backendEditorOpen = true)} />
+    <Sidebar onOpenSettings={() => (settingsOpen = true)} />
 
     <main class="flex min-w-0 flex-1 flex-col">
       <header class="flex items-center justify-between border-b border-line px-6 py-3">
@@ -42,5 +42,5 @@
     </main>
   </div>
 
-  <BackendEditor open={backendEditorOpen} onClose={() => (backendEditorOpen = false)} />
+  <SettingsModal open={settingsOpen} onClose={() => (settingsOpen = false)} />
 </QueryClientProvider>
