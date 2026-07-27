@@ -1,0 +1,194 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   BLOMBRAIN THEME SYSTEM
+   ----------------------------------------------------------------------------
+   Every color used anywhere in the app comes from a semantic CSS variable
+   below. Components never hardcode a hex value or a Tailwind color like
+   `bg-slate-800` -- they use `bg-[var(--bg-elevated)]` / the mapped utility
+   classes (`bg-elevated`, `text-fg`, `border-line`, etc, see @theme block).
+
+   Adding a new theme = adding one new `[data-theme="..."]` block here. The
+   active theme is set via `document.documentElement.dataset.theme` from
+   `src/lib/theme.ts` and persisted client-side only -- it is a UI preference,
+   not app data, so it doesn't touch the backend.
+   ========================================================================= */
+
+:root {
+  /* ---- Slate Ember (default, dark) ------------------------------------
+     Graphite, not pure black; a cool indigo signal color instead of the
+     ubiquitous "AI orange" or acid-green terminal accent. */
+  --bg: #14161b;
+  --bg-elevated: #1c1f26;
+  --bg-inset: #0e1014;
+  --bg-hover: #232733;
+  --fg: #e7e6e2;
+  --fg-muted: #8b8d97;
+  --fg-subtle: #5b5e69;
+  --line: #2b2e37;
+  --line-strong: #383c48;
+  --accent: #7c8cf8;
+  --accent-fg: #10121a;
+  --accent-muted: #2c3050;
+  --danger: #e5484d;
+  --danger-fg: #1a0d0e;
+  --success: #3dd68c;
+  --warning: #e5b84d;
+  --shadow: rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="slate-ember"] {
+  --bg: #14161b;
+  --bg-elevated: #1c1f26;
+  --bg-inset: #0e1014;
+  --bg-hover: #232733;
+  --fg: #e7e6e2;
+  --fg-muted: #8b8d97;
+  --fg-subtle: #5b5e69;
+  --line: #2b2e37;
+  --line-strong: #383c48;
+  --accent: #7c8cf8;
+  --accent-fg: #10121a;
+  --accent-muted: #2c3050;
+  --danger: #e5484d;
+  --danger-fg: #1a0d0e;
+  --success: #3dd68c;
+  --warning: #e5b84d;
+  --shadow: rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="paper-fern"] {
+  /* Light theme. Deliberately not the cream-paper + terracotta combo that
+     shows up in every second AI-generated UI -- cooler paper tone, a fern
+     green signal color instead of clay/orange. */
+  --bg: #f1f0ec;
+  --bg-elevated: #ffffff;
+  --bg-inset: #e9e7e0;
+  --bg-hover: #e3e1d9;
+  --fg: #22241f;
+  --fg-muted: #6b6e63;
+  --fg-subtle: #93968b;
+  --line: #dad7cc;
+  --line-strong: #c7c3b5;
+  --accent: #3f6b4f;
+  --accent-fg: #f6f5f0;
+  --accent-muted: #d9e3da;
+  --danger: #b3261e;
+  --danger-fg: #ffffff;
+  --success: #2e7d4f;
+  --warning: #8a6416;
+  --shadow: rgba(30, 30, 20, 0.12);
+}
+
+[data-theme="nightshade"] {
+  /* A second dark theme with a totally different signal color, to prove
+     this is a theme system and not a light/dark toggle in disguise. */
+  --bg: #17131a;
+  --bg-elevated: #201a26;
+  --bg-inset: #100d14;
+  --bg-hover: #2a2231;
+  --fg: #ece6ea;
+  --fg-muted: #9b8fa0;
+  --fg-subtle: #635a6b;
+  --line: #322939;
+  --line-strong: #40354a;
+  --accent: #e8698f;
+  --accent-fg: #1a0d13;
+  --accent-muted: #402633;
+  --danger: #f2555b;
+  --danger-fg: #1a0d0e;
+  --success: #5ecf9c;
+  --warning: #e8b15f;
+  --shadow: rgba(0, 0, 0, 0.5);
+}
+
+@theme {
+  /* Map semantic variables into Tailwind's utility namespace so classes
+     like `bg-elevated`, `text-fg-muted`, `border-line` are generated. */
+  --color-bg: var(--bg);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-inset: var(--bg-inset);
+  --color-bg-hover: var(--bg-hover);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-muted: var(--accent-muted);
+  --color-danger: var(--danger);
+  --color-danger-fg: var(--danger-fg);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  /* Typography: system stacks only. This is a fully local/offline tool, so
+     we deliberately don't reach out to a font CDN for display type -- the
+     OS's own UI font is the right choice here, with a monospace stack used
+     throughout for anything "technical" (model ids, backend prefixes,
+     token counts, code) to visually separate machine facts from prose. */
+  --font-sans: -apple-system, "Segoe UI", "Inter", "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  height: 100%;
+}
+
+* {
+  border-color: var(--line);
+}
+
+::selection {
+  background: var(--accent-muted);
+  color: var(--fg);
+}
+
+/* Thin, theme-aware scrollbars -- Firefox + WebKit */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--line-strong);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Visible keyboard focus everywhere, theme-driven */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
