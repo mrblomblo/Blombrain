@@ -303,7 +303,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
               continue;
             }
             const delta: string | undefined = parsed?.choices?.[0]?.delta?.content;
-            const reasoning: string | undefined = parsed?.choices?.[0]?.delta?.reasoning_content;
+            const reasoning: string | undefined = parsed?.choices?.[0]?.delta?.reasoning_content || parsed?.choices?.[0]?.delta?.reasoning;
             
             if (reasoning) {
               if (!reasoningMode) {
