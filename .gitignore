@@ -9,6 +9,9 @@ dist/
 .env
 .env.local
 
+# Database (SQLite -- never commit user data)
+backend/data/
+
 # Editor/OS cruft
 .DS_Store
 *.log

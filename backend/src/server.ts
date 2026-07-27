@@ -4,9 +4,12 @@ import { existsSync } from "node:fs";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
+// Import db first so the schema is created before any routes run.
+import "./db.js";
 import { backendsRoutes } from "./routes/backends.js";
 import { modelsRoutes } from "./routes/models.js";
 import { chatRoutes } from "./routes/chat.js";
+import { conversationsRoutes } from "./routes/conversations.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 4300);
@@ -19,6 +22,7 @@ async function main() {
   await app.register(backendsRoutes);
   await app.register(modelsRoutes);
   await app.register(chatRoutes);
+  await app.register(conversationsRoutes);
 
   // If the frontend has been built (frontend/dist), serve it directly so the
   // whole app can run as a single process. During `npm run dev` this
@@ -36,7 +40,9 @@ async function main() {
     });
     app.log.info(`Serving built frontend from ${frontendDist}`);
   } else {
-    app.log.info("No built frontend found -- run the Vite dev server separately (npm run dev in frontend/).");
+    app.log.info(
+      "No built frontend found -- run the Vite dev server separately (npm run dev in frontend/).",
+    );
   }
 
   await app.listen({ port: PORT, host: "0.0.0.0" });

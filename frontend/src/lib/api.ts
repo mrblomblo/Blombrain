@@ -1,4 +1,13 @@
-import type { BackendInfo, ChatMessage, ModelInfo } from "./types";
+import type {
+  BackendInfo,
+  BackendCreateBody,
+  BackendUpdateBody,
+  ChatMessage,
+  ConversationSummary,
+  ConversationDetail,
+  MessageOut,
+  ModelInfo,
+} from "./types";
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -8,40 +17,143 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// ---------------------------------------------------------------------------
+// Backends
+// ---------------------------------------------------------------------------
+
 export async function fetchBackends(): Promise<BackendInfo[]> {
   const res = await fetch("/api/backends");
   return jsonOrThrow<BackendInfo[]>(res);
 }
+
+export async function createBackend(data: BackendCreateBody): Promise<BackendInfo> {
+  const res = await fetch("/api/backends", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return jsonOrThrow<BackendInfo>(res);
+}
+
+export async function updateBackend(id: string, data: BackendUpdateBody): Promise<BackendInfo> {
+  const res = await fetch(`/api/backends/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return jsonOrThrow<BackendInfo>(res);
+}
+
+export async function deleteBackend(id: string): Promise<void> {
+  const res = await fetch(`/api/backends/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
 
 export async function fetchModels(): Promise<ModelInfo[]> {
   const res = await fetch("/api/models");
   return jsonOrThrow<ModelInfo[]>(res);
 }
 
+// ---------------------------------------------------------------------------
+// Conversations
+// ---------------------------------------------------------------------------
+
+export async function fetchConversations(): Promise<ConversationSummary[]> {
+  const res = await fetch("/api/conversations");
+  return jsonOrThrow<ConversationSummary[]>(res);
+}
+
+export async function fetchConversation(id: string): Promise<ConversationDetail> {
+  const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`);
+  return jsonOrThrow<ConversationDetail>(res);
+}
+
+export async function createConversation(opts?: {
+  title?: string;
+  model?: string;
+}): Promise<ConversationSummary> {
+  const res = await fetch("/api/conversations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts ?? {}),
+  });
+  return jsonOrThrow<ConversationSummary>(res);
+}
+
+export async function updateConversation(
+  id: string,
+  patch: { title?: string; model?: string },
+): Promise<ConversationSummary> {
+  const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return jsonOrThrow<ConversationSummary>(res);
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Chat streaming
+// ---------------------------------------------------------------------------
+
 export interface StreamChatOptions {
   model: string;
   messages: Pick<ChatMessage, "role" | "content">[];
   temperature?: number;
+  conversationId?: string | null;
   signal?: AbortSignal;
   onToken: (delta: string) => void;
+  onMeta: (meta: {
+    conversationId: string;
+    title: string;
+    isNew: boolean;
+    userMessageId: string;
+    assistantMessageId: string;
+  }) => void;
   onDone: () => void;
   onError: (message: string) => void;
 }
 
 /**
  * POSTs to the backend's chat-completions proxy and incrementally parses the
- * OpenAI-style Server-Sent-Events stream it forwards back, calling onToken
- * for every content delta as it arrives.
+ * OpenAI-style SSE stream, calling onToken for every content delta.
+ * After the stream, a trailing `meta` event is emitted with the persisted
+ * conversationId, title, and message IDs.
  */
 export async function streamChatCompletion(opts: StreamChatOptions): Promise<void> {
-  const { model, messages, temperature, signal, onToken, onDone, onError } = opts;
+  const {
+    model,
+    messages,
+    temperature,
+    conversationId,
+    signal,
+    onToken,
+    onMeta,
+    onDone,
+    onError,
+  } = opts;
 
   let res: Response;
   try {
     res = await fetch("/api/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages, temperature, stream: true }),
+      body: JSON.stringify({ model, messages, temperature, conversationId, stream: true }),
       signal,
     });
   } catch (err) {
@@ -65,8 +177,6 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
 
-      // SSE events are separated by a blank line; each event may contain
-      // multiple "data: ..." lines but OpenAI-style servers emit one per event.
       let sepIndex: number;
       while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
         const rawEvent = buffer.slice(0, sepIndex);
@@ -82,13 +192,17 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
           }
           try {
             const parsed = JSON.parse(payload);
+            // Trailing meta event from the persistence layer.
+            if (parsed?.type === "meta") {
+              onMeta(parsed);
+              continue;
+            }
             const delta: string | undefined = parsed?.choices?.[0]?.delta?.content;
             if (delta) onToken(delta);
             const errMsg: string | undefined = parsed?.error?.message;
             if (errMsg) onError(errMsg);
           } catch {
-            // Ignore malformed/partial chunks; the buffer logic above should
-            // prevent this in practice, but backends vary.
+            // Ignore malformed/partial chunks.
           }
         }
       }

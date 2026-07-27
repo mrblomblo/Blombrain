@@ -1,18 +1,17 @@
-/** Shape of each entry in config/backends.json. */
-export interface BackendConfig {
+// ---------------------------------------------------------------------------
+// Backend types
+// ---------------------------------------------------------------------------
+
+/** A backend row as stored in SQLite (api_key may be undefined). */
+export interface BackendRow {
   id: string;
   name: string;
-  /** Base URL of an OpenAI-compatible endpoint, e.g. http://127.0.0.1:8080 */
-  baseUrl: string;
-  /** Prefix applied to model ids when aggregating across backends, e.g. "local" -> "local:llama-3". Defaults to `id`. */
-  prefix?: string;
-  /** Literal API key. Prefer apiKeyEnv for anything that isn't a fully-local endpoint. */
-  apiKey?: string;
-  /** Name of an environment variable to read the API key from at startup. Takes precedence over apiKey. */
-  apiKeyEnv?: string;
+  base_url: string;
+  prefix: string;
+  api_key: string | null;
 }
 
-/** A backend after config has been loaded and env-based keys resolved. */
+/** A backend after loading from DB with snake_case mapped to camelCase. */
 export interface ResolvedBackend {
   id: string;
   name: string;
@@ -31,9 +30,69 @@ export interface BackendInfo {
   status: "online" | "offline" | "unknown";
 }
 
+/** Body accepted by POST /api/backends and PUT /api/backends/:id */
+export interface BackendWriteBody {
+  id?: string;   // required on POST, ignored on PUT (taken from URL)
+  name: string;
+  baseUrl: string;
+  prefix: string;
+  apiKey?: string;
+}
+
 export interface ModelInfo {
   id: string;
   rawId: string;
   backendId: string;
   backendName: string;
+}
+
+// ---------------------------------------------------------------------------
+// Conversation / message types
+// ---------------------------------------------------------------------------
+
+export interface ConversationRow {
+  id: string;
+  title: string;
+  model: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface MessageRow {
+  id: string;
+  conversation_id: string;
+  role: "system" | "user" | "assistant";
+  content: string;
+  error: string | null;
+  created_at: number;
+}
+
+/** Summary sent in list responses (no messages). */
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  model: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Full conversation with messages, sent on GET /api/conversations/:id */
+export interface ConversationDetail extends ConversationSummary {
+  messages: MessageOut[];
+}
+
+/** Message shape sent to the frontend. */
+export interface MessageOut {
+  id: string;
+  conversationId: string;
+  role: "system" | "user" | "assistant";
+  content: string;
+  error: string | null;
+  createdAt: number;
+}
+
+/** Body accepted by PATCH /api/conversations/:id */
+export interface ConversationPatchBody {
+  title?: string;
+  model?: string;
 }

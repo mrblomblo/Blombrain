@@ -1,8 +1,14 @@
-import { streamChatCompletion } from "../api";
-import type { ChatMessage } from "../types";
+import { streamChatCompletion, fetchConversation, createConversation } from "../api";
+import type { ChatMessage, ConversationSummary } from "../types";
 
 function makeId() {
   return crypto.randomUUID();
+}
+
+/** Registered by App.svelte once the QueryClientProvider is mounted. */
+let _invalidateConversations: (() => void) | null = null;
+export function registerConversationsInvalidator(fn: () => void) {
+  _invalidateConversations = fn;
 }
 
 class ChatStore {
@@ -10,10 +16,42 @@ class ChatStore {
   isStreaming = $state(false);
   selectedModel = $state<string | null>(null);
 
+  /** The conversation currently shown in the main pane. null = new, unsaved chat. */
+  activeConversationId = $state<string | null>(null);
+  /** Title of the active conversation (kept in sync after each save). */
+  activeConversationTitle = $state<string>("New conversation");
+
   private abortController: AbortController | null = null;
 
   setModel(modelId: string) {
     this.selectedModel = modelId;
+  }
+
+  /** Load a persisted conversation into the main pane. */
+  async loadConversation(summary: ConversationSummary) {
+    if (this.isStreaming) return;
+    try {
+      const detail = await fetchConversation(summary.id);
+      this.messages = detail.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        error: m.error,
+      }));
+      this.activeConversationId = detail.id;
+      this.activeConversationTitle = detail.title;
+      if (detail.model) this.selectedModel = detail.model;
+    } catch (err) {
+      console.error("[chatStore] failed to load conversation:", err);
+    }
+  }
+
+  /** Start a fresh, empty chat. */
+  newConversation() {
+    if (this.isStreaming) return;
+    this.messages = [];
+    this.activeConversationId = null;
+    this.activeConversationTitle = "New conversation";
   }
 
   async send(content: string) {
@@ -46,22 +84,60 @@ class ChatStore {
     this.isStreaming = true;
     this.abortController = new AbortController();
 
+    // Create the conversation on the backend first if it's new, so the sidebar updates immediately.
+    if (!this.activeConversationId) {
+      try {
+        const words = trimmed.split(/\s+/);
+        let excerpt = words.slice(0, 8).join(" ");
+        if (excerpt.length > 60) excerpt = excerpt.slice(0, 57) + "…";
+        
+        const conv = await createConversation({ title: excerpt, model: this.selectedModel ?? undefined });
+        this.activeConversationId = conv.id;
+        this.activeConversationTitle = conv.title;
+        _invalidateConversations?.();
+      } catch (err) {
+        console.error("[chatStore] Failed to pre-create conversation:", err);
+      }
+    }
+
     await streamChatCompletion({
       model: this.selectedModel,
       messages: historyForModel,
+      conversationId: this.activeConversationId,
       signal: this.abortController.signal,
+
       onToken: (delta) => {
         const msg = this.messages.find((m) => m.id === assistantMessage.id);
         if (msg) msg.content += delta;
       },
+
+      onMeta: (meta) => {
+        // Update the in-memory IDs to match what was persisted so the store
+        // stays in sync if the user edits messages later.
+        const userMsg = this.messages.find((m) => m.id === userMessage.id);
+        if (userMsg) userMsg.id = meta.userMessageId;
+        const assistantMsg = this.messages.find((m) => m.id === assistantMessage.id);
+        if (assistantMsg) assistantMsg.id = meta.assistantMessageId;
+
+        this.activeConversationId = meta.conversationId;
+        this.activeConversationTitle = meta.title;
+
+        // Tell TanStack Query the conversations list is stale.
+        _invalidateConversations?.();
+      },
+
       onDone: () => {
         const msg = this.messages.find((m) => m.id === assistantMessage.id);
         if (msg) msg.streaming = false;
         this.isStreaming = false;
       },
+
       onError: (message) => {
         const msg = this.messages.find((m) => m.id === assistantMessage.id);
-        if (msg) { msg.streaming = false; msg.error = message; }
+        if (msg) {
+          msg.streaming = false;
+          msg.error = message;
+        }
         this.isStreaming = false;
       },
     });
@@ -73,6 +149,8 @@ class ChatStore {
 
   clear() {
     this.messages = [];
+    this.activeConversationId = null;
+    this.activeConversationTitle = "New conversation";
   }
 }
 
