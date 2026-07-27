@@ -29,6 +29,7 @@ function rowToMessage(row: MessageRow): MessageOut {
   return {
     id: row.id,
     conversationId: row.conversation_id,
+    parentId: row.parent_id ?? null,
     role: row.role,
     content: row.content,
     error: row.error,
@@ -68,8 +69,8 @@ const updateConversationMeta = db.prepare(
 const deleteConversation = db.prepare("DELETE FROM conversations WHERE id = ?");
 
 const insertMessage = db.prepare(
-  `INSERT INTO messages (id, conversation_id, role, content, error, created_at)
-   VALUES (@id, @conversationId, @role, @content, @error, @createdAt)`,
+  `INSERT INTO messages (id, conversation_id, parent_id, role, content, error, created_at)
+   VALUES (@id, @conversationId, @parentId, @role, @content, @error, @createdAt)`,
 );
 
 // ---------------------------------------------------------------------------
@@ -149,9 +150,6 @@ export async function conversationsRoutes(app: FastifyInstance) {
     if (result.changes === 0) {
       return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
     }
-    // Note: Database ON DELETE CASCADE deletes the attachment rows, but we should also delete the files on disk.
-    // The cleanup job won't catch them if they are deleted from DB.
-    // Let's delete the uploads folder for this conversation:
     try {
       const convDir = path.join(DATA_DIR, "uploads", id);
       if (fs.existsSync(convDir)) {
@@ -160,6 +158,90 @@ export async function conversationsRoutes(app: FastifyInstance) {
     } catch(e) {}
     
     return reply.code(204).send();
+  });
+
+  /** PATCH /api/conversations/:convId/messages/:msgId -- update message content. */
+  app.patch("/api/conversations/:convId/messages/:msgId", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { convId, msgId } = req.params as { convId: string; msgId: string };
+    const { content, error } = (req.body ?? {}) as { content?: string; error?: string | null };
+
+    const row = db.prepare<[string, string], MessageRow>(
+      "SELECT * FROM messages WHERE id = ? AND conversation_id = ?"
+    ).get(msgId, convId);
+
+    if (!row) {
+      return reply.code(404).send({ error: { message: `Message "${msgId}" not found.` } });
+    }
+
+    const newContent = content !== undefined ? content : row.content;
+    const newError = error !== undefined ? error : row.error;
+
+    db.prepare("UPDATE messages SET content = ?, error = ? WHERE id = ?").run(newContent, newError, msgId);
+    updateConversationMeta.run({ id: convId, title: null, model: null, updatedAt: Date.now() });
+
+    const updatedRow = db.prepare<[string], MessageRow>("SELECT * FROM messages WHERE id = ?").get(msgId)!;
+    return rowToMessage(updatedRow);
+  });
+
+  /** DELETE /api/conversations/:convId/messages/:msgId -- delete a message + following assistant pair if user. */
+  app.delete("/api/conversations/:convId/messages/:msgId", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { convId, msgId } = req.params as { convId: string; msgId: string };
+
+    const row = db.prepare<[string, string], MessageRow>(
+      "SELECT * FROM messages WHERE id = ? AND conversation_id = ?"
+    ).get(msgId, convId);
+
+    if (!row) {
+      return reply.code(404).send({ error: { message: `Message "${msgId}" not found.` } });
+    }
+
+    if (row.role === "user") {
+      // Find following assistant message that claims row.id as parent or created immediately after
+      const childAsst = db.prepare<[string, string], MessageRow>(
+        "SELECT * FROM messages WHERE conversation_id = ? AND role = 'assistant' AND parent_id = ?"
+      ).get(convId, msgId);
+
+      if (childAsst) {
+        db.prepare("DELETE FROM messages WHERE id = ?").run(childAsst.id);
+      }
+    }
+
+    db.prepare("DELETE FROM messages WHERE id = ?").run(msgId);
+    updateConversationMeta.run({ id: convId, title: null, model: null, updatedAt: Date.now() });
+
+    return reply.code(204).send();
+  });
+
+  /** POST /api/conversations/:convId/messages/:msgId/branch -- create a sibling branch user message. */
+  app.post("/api/conversations/:convId/messages/:msgId/branch", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { convId, msgId } = req.params as { convId: string; msgId: string };
+    const { content } = (req.body ?? {}) as { content: string };
+
+    const target = db.prepare<[string, string], MessageRow>(
+      "SELECT * FROM messages WHERE id = ? AND conversation_id = ?"
+    ).get(msgId, convId);
+
+    if (!target) {
+      return reply.code(404).send({ error: { message: `Target message "${msgId}" not found.` } });
+    }
+
+    const newMsgId = crypto.randomUUID();
+    const now = Date.now();
+
+    insertMessage.run({
+      id: newMsgId,
+      conversationId: convId,
+      parentId: target.parent_id, // Sibling has same parent_id
+      role: "user",
+      content: content ?? "",
+      error: null,
+      createdAt: now,
+    });
+
+    updateConversationMeta.run({ id: convId, title: null, model: null, updatedAt: now });
+
+    const insertedRow = db.prepare<[string], MessageRow>("SELECT * FROM messages WHERE id = ?").get(newMsgId)!;
+    return reply.code(201).send(rowToMessage(insertedRow));
   });
 
   /** GET /api/conversations/:id/messages -- messages only. */
@@ -188,7 +270,6 @@ export async function conversationsRoutes(app: FastifyInstance) {
 
   /**
    * POST /api/conversations/:id/messages -- append a single message.
-   * Used by the chat route and optionally directly.
    */
   app.post("/api/conversations/:id/messages", async (req: FastifyRequest, reply: FastifyReply) => {
     const { id } = req.params as { id: string };
@@ -198,6 +279,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
     }
     const body = req.body as {
       id?: string;
+      parentId?: string;
       role: "system" | "user" | "assistant";
       content: string;
       error?: string;
@@ -210,6 +292,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
     insertMessage.run({
       id: msgId,
       conversationId: id,
+      parentId: body.parentId ?? null,
       role: body.role,
       content: body.content,
       error: body.error ?? null,
@@ -244,6 +327,7 @@ export function persistChatTurn(opts: {
   conversationId: string | null;
   model: string;
   userMessageId: string;
+  userParentId?: string | null;
   userContent: string;
   assistantMessageId: string;
   assistantContent: string;
@@ -253,6 +337,7 @@ export function persistChatTurn(opts: {
     conversationId: incomingId,
     model,
     userMessageId,
+    userParentId,
     userContent,
     assistantMessageId,
     assistantContent,
@@ -276,28 +361,42 @@ export function persistChatTurn(opts: {
         updatedAt: now,
       });
     } else {
-      // Update model + timestamp on the existing conversation.
       updateConversationMeta.run({ id: conversationId, title: null, model, updatedAt: now });
       const row = getConversation.get(conversationId);
       title = row?.title ?? title;
     }
 
-    insertMessage.run({
-      id: userMessageId,
-      conversationId,
-      role: "user",
-      content: userContent,
-      error: null,
-      createdAt: now,
-    });
+    // Determine parentId for userMessage if not specified
+    let parentId = userParentId ?? null;
+    if (userParentId === undefined && !isNew) {
+      const lastMsg = db.prepare("SELECT id FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1").get(conversationId) as { id: string } | undefined;
+      if (lastMsg && lastMsg.id !== userMessageId) {
+        parentId = lastMsg.id;
+      }
+    }
+
+    // Check if userMessageId already exists (e.g. inserted via branch endpoint)
+    const existingUserMsg = db.prepare("SELECT id FROM messages WHERE id = ?").get(userMessageId);
+    if (!existingUserMsg) {
+      insertMessage.run({
+        id: userMessageId,
+        conversationId,
+        parentId,
+        role: "user",
+        content: userContent,
+        error: null,
+        createdAt: now,
+      });
+    }
 
     insertMessage.run({
       id: assistantMessageId,
       conversationId,
+      parentId: userMessageId, // Assistant parent is always the user message
       role: "assistant",
       content: assistantContent,
       error: assistantError ?? null,
-      createdAt: now + 1, // +1ms so messages always sort user-before-assistant
+      createdAt: now + 1,
     });
 
     return title;

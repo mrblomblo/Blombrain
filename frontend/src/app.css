@@ -151,12 +151,14 @@ body {
   height: 100%;
 }
 
-* {
-  border-color: var(--line);
+@layer base {
+  * {
+    border-color: var(--line);
+  }
 }
 
 ::selection {
-  background: var(--accent-muted);
+  background: color-mix(in srgb, var(--accent) 38%, transparent);
   color: var(--fg);
 }
 
@@ -191,4 +193,17 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-in.slide-in-from-left {
+  animation: slideInLeft 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }

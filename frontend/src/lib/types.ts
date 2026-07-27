@@ -78,6 +78,13 @@ export interface ModelSettingWriteBody {
 
 export type ChatRole = "system" | "user" | "assistant";
 
+export interface ResponseStats {
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  durationMs?: number;
+}
+
 export interface AttachmentOut {
   id: string;
   conversationId: string;
@@ -90,12 +97,17 @@ export interface AttachmentOut {
 
 export interface ChatMessage {
   id: string;
+  parentId?: string | null;
   role: ChatRole;
   content: string;
   /** Set while a streaming assistant response is still arriving. */
   streaming?: boolean;
   error?: string | null;
   attachments?: AttachmentOut[];
+  createdAt?: number;
+  thinkingContent?: string;
+  thinkingDone?: boolean;
+  stats?: ResponseStats;
 }
 
 /** A conversation list item (no messages). */
@@ -116,6 +128,7 @@ export interface ConversationDetail extends ConversationSummary {
 export interface MessageOut {
   id: string;
   conversationId: string;
+  parentId: string | null;
   role: ChatRole;
   content: string;
   error: string | null;

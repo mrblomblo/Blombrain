@@ -13,6 +13,8 @@ interface ChatCompletionBody {
   temperature?: number;
   /** Optional: resume an existing conversation. When omitted a new one is created. */
   conversationId?: string;
+  userMessageId?: string;
+  userParentId?: string;
   attachments?: string[];
   [key: string]: unknown;
 }
@@ -59,10 +61,18 @@ export async function chatRoutes(app: FastifyInstance) {
 
     // Find the last user message in the payload
     const lastUserMsg = [...outgoingMessages].reverse().find((m) => m.role === "user");
-    const userMessageId = crypto.randomUUID();
+    // Capture original plain text before we mutate to multimodal array
+    const originalUserContent: string =
+      typeof lastUserMsg?.content === "string"
+        ? lastUserMsg.content
+        : Array.isArray(lastUserMsg?.content)
+          ? (lastUserMsg.content.find((p: any) => p.type === "text")?.text ?? "")
+          : "";
+    const userMessageId = body.userMessageId ? String(body.userMessageId) : crypto.randomUUID();
+    const userParentId = body.userParentId ? String(body.userParentId) : null;
     const assistantMessageId = crypto.randomUUID();
 
-    const { model: _incomingModel, conversationId: _incomingConvId, attachments: attachmentIds, messages: _msgs, ...rest } = body;
+    const { model: _incomingModel, conversationId: _incomingConvId, userMessageId: _umId, userParentId: _upId, attachments: attachmentIds, messages: _msgs, ...rest } = body;
 
     // Temperature precedence: preset/setting override > body request > default undefined
     const finalTemperature = settingRow?.temperature ?? body.temperature;
@@ -140,6 +150,7 @@ export async function chatRoutes(app: FastifyInstance) {
       messages: outgoingMessages,
       ...(finalTemperature !== undefined ? { temperature: finalTemperature } : {}),
       stream: true,
+      stream_options: { include_usage: true },
     };
 
     let upstream: Response;
@@ -176,6 +187,8 @@ export async function chatRoutes(app: FastifyInstance) {
 
     let assistantContent = "";
     let streamError: string | undefined;
+    let usageStats: { promptTokens?: number; completionTokens?: number; totalTokens?: number; durationMs?: number } | undefined;
+    const startTime = Date.now();
 
     const nodeStream = Readable.fromWeb(upstream.body as import("stream/web").ReadableStream);
     const decoder = new TextDecoder();
@@ -207,6 +220,16 @@ export async function chatRoutes(app: FastifyInstance) {
               if (delta) assistantContent += delta;
               const errMsg: string | undefined = parsed?.error?.message;
               if (errMsg) streamError = errMsg;
+
+              const usage = parsed?.usage || parsed?.x_groq?.usage;
+              if (usage) {
+                usageStats = {
+                  promptTokens: usage.prompt_tokens ?? usageStats?.promptTokens,
+                  completionTokens: usage.completion_tokens ?? usageStats?.completionTokens,
+                  totalTokens: usage.total_tokens ?? usageStats?.totalTokens,
+                  durationMs: Date.now() - startTime,
+                };
+              }
             } catch {
               // Partial chunk
             }
@@ -216,11 +239,16 @@ export async function chatRoutes(app: FastifyInstance) {
 
       nodeStream.on("end", () => {
         try {
+          if (!usageStats && Date.now() - startTime > 0) {
+            usageStats = { durationMs: Date.now() - startTime };
+          }
+
           const savedTurn = persistChatTurn({
             conversationId: body.conversationId ?? null,
             model: body.model,
             userMessageId,
-            userContent: typeof lastUserMsg?.content === "string" ? lastUserMsg.content : JSON.stringify(lastUserMsg?.content ?? ""),
+            userParentId,
+            userContent: originalUserContent,
             assistantMessageId,
             assistantContent,
             assistantError: streamError,
@@ -241,6 +269,7 @@ export async function chatRoutes(app: FastifyInstance) {
               isNew: savedTurn.isNew,
               userMessageId,
               assistantMessageId,
+              stats: usageStats,
             })}\n\n`;
           reply.raw.write(metaEvent);
         } catch (err) {

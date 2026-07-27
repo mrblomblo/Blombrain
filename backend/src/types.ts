@@ -81,6 +81,7 @@ export interface ConversationRow {
 export interface MessageRow {
   id: string;
   conversation_id: string;
+  parent_id: string | null;
   role: "system" | "user" | "assistant";
   content: string;
   error: string | null;
@@ -105,6 +106,7 @@ export interface ConversationDetail extends ConversationSummary {
 export interface MessageOut {
   id: string;
   conversationId: string;
+  parentId: string | null;
   role: "system" | "user" | "assistant";
   content: string;
   error: string | null;

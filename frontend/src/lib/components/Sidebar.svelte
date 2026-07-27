@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
-  import { Plus, Trash2, Settings, Layers } from "@lucide/svelte";
+  import { Plus, Trash2, Settings, Layers, X, ChevronDown, ChevronRight } from "@lucide/svelte";
   import { fetchBackends, fetchConversations, deleteConversation } from "../api";
   import { chatStore } from "../stores/chat.svelte";
   import type { ConversationSummary } from "../types";
@@ -9,8 +9,9 @@
   interface Props {
     onOpenSettings: () => void;
     onOpenModelEditor: () => void;
+    onCloseMobile?: () => void;
   }
-  const { onOpenSettings, onOpenModelEditor }: Props = $props();
+  const { onOpenSettings, onOpenModelEditor, onCloseMobile }: Props = $props();
 
   const queryClient = useQueryClient();
 
@@ -27,6 +28,17 @@
   }));
 
   let deletingId = $state<string | null>(null);
+  let showBackends = $state(false);
+
+  function handleSelectConv(conv: ConversationSummary) {
+    chatStore.loadConversation(conv);
+    onCloseMobile?.();
+  }
+
+  function handleNewChat() {
+    chatStore.newConversation();
+    onCloseMobile?.();
+  }
 
   async function handleDelete(e: MouseEvent, conv: ConversationSummary) {
     e.stopPropagation();
@@ -56,26 +68,38 @@
   }
 </script>
 
-<aside class="flex w-64 shrink-0 flex-col border-r border-line bg-bg-inset">
-  <!-- Logo + new chat -->
+<aside class="flex h-full w-64 shrink-0 flex-col border-r border-line bg-bg-inset">
+  <!-- Logo + new chat + mobile close -->
   <div class="flex items-center justify-between px-4 py-4">
     <div class="flex items-center gap-2">
       <div class="h-3.5 w-3.5 rotate-45 bg-accent"></div>
-      <span class="text-sm font-semibold tracking-wide">Blombrain</span>
+      <span class="text-sm font-semibold tracking-wide text-fg">Blombrain</span>
     </div>
-    <button
-      onclick={() => chatStore.newConversation()}
-      disabled={chatStore.isStreaming}
-      aria-label="New conversation"
-      class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg disabled:pointer-events-none disabled:opacity-40"
-    >
-      <Plus size={15} />
-    </button>
+    <div class="flex items-center gap-1">
+      <button
+        onclick={handleNewChat}
+        disabled={chatStore.isStreaming}
+        aria-label="New conversation"
+        class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+      >
+        <Plus size={15} />
+      </button>
+
+      {#if onCloseMobile}
+        <button
+          onclick={onCloseMobile}
+          aria-label="Close sidebar"
+          class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted md:hidden hover:bg-bg-elevated hover:text-fg"
+        >
+          <X size={15} />
+        </button>
+      {/if}
+    </div>
   </div>
 
   <div class="flex-1 overflow-y-auto px-2 py-1">
     <!-- Conversations -->
-    <p class="mb-1 px-2 text-[11px] font-medium tracking-wide text-fg-subtle uppercase">
+    <p class="mb-1.5 px-2 text-[11px] font-semibold tracking-wider text-fg-subtle uppercase">
       Conversations
     </p>
 
@@ -84,7 +108,7 @@
     {:else if convsQuery.isError}
       <p class="px-2 text-xs text-danger">Couldn't load conversations.</p>
     {:else if (convsQuery.data ?? []).length === 0}
-      <p class="rounded-md border border-dashed border-line px-3 py-3 text-xs text-fg-muted">
+      <p class="rounded-lg border border-dashed border-line px-3 py-3 text-xs text-fg-muted">
         No conversations yet. Send a message to start one.
       </p>
     {:else}
@@ -93,18 +117,19 @@
           {@const isActive = chatStore.activeConversationId === conv.id}
           <li class="list-none">
             <div
-              class="group relative flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs transition-colors"
+              class="group relative flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition-colors"
               class:bg-bg-elevated={isActive}
               class:text-fg={isActive}
+              class:font-medium={isActive}
               class:text-fg-muted={!isActive}
               class:hover:bg-bg-elevated={!isActive}
-              onclick={() => chatStore.loadConversation(conv)}
+              onclick={() => handleSelectConv(conv)}
               tabindex="0"
               role="button"
-              onkeydown={(e) => e.key === "Enter" && chatStore.loadConversation(conv)}
+              onkeydown={(e) => e.key === "Enter" && handleSelectConv(conv)}
             >
               <span class="min-w-0 flex-1 truncate">{conv.title}</span>
-              <span class="shrink-0 text-[10px] text-fg-subtle opacity-0 transition-opacity group-hover:opacity-100">
+              <span class="shrink-0 text-[10px] font-mono text-fg-subtle opacity-0 transition-opacity group-hover:opacity-100">
                 {formatAge(conv.updatedAt)}
               </span>
               <button
@@ -120,35 +145,46 @@
         {/each}
       </ul>
     {/if}
+  </div>
 
-    <!-- Backends section -->
-    <p class="mt-5 mb-1 px-2 text-[11px] font-medium tracking-wide text-fg-subtle uppercase">
-      Backends
-    </p>
-    {#if backendsQuery.isLoading}
-      <p class="px-2 text-xs text-fg-muted">Loading…</p>
-    {:else if backendsQuery.isError}
-      <p class="px-2 text-xs text-danger">Can't reach the backend API.</p>
-    {:else if (backendsQuery.data ?? []).length === 0}
-      <p class="rounded-md border border-dashed border-line px-3 py-2 text-xs text-fg-muted">
-        No backends configured.
-      </p>
-    {:else}
-      <ul class="flex flex-col gap-1">
-        {#each backendsQuery.data ?? [] as backend (backend.id)}
-          <li class="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs">
-            <span
-              class="h-1.5 w-1.5 shrink-0 rounded-full"
-              class:bg-success={backend.status === "online"}
-              class:bg-danger={backend.status === "offline"}
-              class:bg-fg-subtle={backend.status === "unknown"}
-              aria-hidden="true"
-            ></span>
-            <span class="flex-1 truncate text-fg">{backend.name}</span>
-            <span class="shrink-0 font-mono text-[10px] text-fg-subtle">{backend.prefix}</span>
-          </li>
-        {/each}
-      </ul>
+  <!-- Collapsible Backends section -->
+  <div class="border-t border-line/60 px-3 py-2">
+    <button
+      type="button"
+      onclick={() => (showBackends = !showBackends)}
+      class="flex w-full items-center justify-between py-1 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle hover:text-fg"
+    >
+      <span>Backends ({backendsQuery.data?.length ?? 0})</span>
+      {#if showBackends}
+        <ChevronDown size={12} />
+      {:else}
+        <ChevronRight size={12} />
+      {/if}
+    </button>
+
+    {#if showBackends}
+      <div class="mt-1 flex flex-col gap-1 max-h-36 overflow-y-auto">
+        {#if backendsQuery.isLoading}
+          <p class="text-xs text-fg-muted">Loading…</p>
+        {:else if backendsQuery.isError}
+          <p class="text-xs text-danger">Can't reach backend API.</p>
+        {:else if (backendsQuery.data ?? []).length === 0}
+          <p class="text-xs text-fg-muted">No backends configured.</p>
+        {:else}
+          {#each backendsQuery.data ?? [] as backend (backend.id)}
+            <div class="flex items-center gap-2 rounded-md px-2 py-1 text-xs">
+              <span
+                class="h-1.5 w-1.5 shrink-0 rounded-full"
+                class:bg-success={backend.status === "online"}
+                class:bg-danger={backend.status === "offline"}
+                class:bg-fg-subtle={backend.status === "unknown"}
+              ></span>
+              <span class="flex-1 truncate text-fg-muted">{backend.name}</span>
+              <span class="shrink-0 font-mono text-[10px] text-fg-subtle">{backend.prefix}</span>
+            </div>
+          {/each}
+        {/if}
+      </div>
     {/if}
   </div>
 
@@ -159,17 +195,17 @@
         onclick={onOpenModelEditor}
         aria-label="Models & Presets"
         title="Models & Presets"
-        class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+        class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
       >
-        <Layers size={13} />
+        <Layers size={14} />
       </button>
       <button
         onclick={onOpenSettings}
         aria-label="Settings"
         title="Backends Settings"
-        class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+        class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
       >
-        <Settings size={13} />
+        <Settings size={14} />
       </button>
       <ThemeSwitcher />
     </div>

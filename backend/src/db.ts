@@ -44,6 +44,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS messages (
     id              TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    parent_id       TEXT REFERENCES messages(id) ON DELETE SET NULL,
     role            TEXT NOT NULL CHECK(role IN ('system','user','assistant')),
     content         TEXT NOT NULL DEFAULT '',
     error           TEXT,
@@ -100,16 +101,36 @@ const columnsToAdd = [
   { name: "repeat_penalty", type: "REAL" },
   { name: "ctx_length", type: "INTEGER" },
 ];
-
-const existingCols = (db.pragma("table_info(model_settings)") as { name: string }[]).map(c => c.name);
+const modelSettingCols = (db.pragma("table_info(model_settings)") as { name: string }[]).map(c => c.name);
 for (const col of columnsToAdd) {
-  if (!existingCols.includes(col.name)) {
+  if (!modelSettingCols.includes(col.name)) {
     try {
       db.exec(`ALTER TABLE model_settings ADD COLUMN ${col.name} ${col.type}`);
-    } catch (e) {
-      // Ignore if already added
-    }
+    } catch (e) {}
   }
 }
+
+// Migration helper for messages.parent_id
+const msgCols = (db.pragma("table_info(messages)") as { name: string }[]).map(c => c.name);
+if (!msgCols.includes("parent_id")) {
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN parent_id TEXT REFERENCES messages(id) ON DELETE SET NULL`);
+  } catch (e) {}
+}
+
+try {
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);`);
+} catch (e) {}
+
+// Backfill parent_id for existing linear conversations if null
+try {
+  const convs = db.prepare("SELECT id FROM conversations").all() as { id: string }[];
+  for (const c of convs) {
+    const msgs = db.prepare("SELECT id FROM messages WHERE conversation_id = ? ORDER BY created_at ASC").all(c.id) as { id: string }[];
+    for (let i = 1; i < msgs.length; i++) {
+      db.prepare("UPDATE messages SET parent_id = ? WHERE id = ? AND parent_id IS NULL").run(msgs[i - 1].id, msgs[i].id);
+    }
+  }
+} catch (e) {}
 
 export default db;

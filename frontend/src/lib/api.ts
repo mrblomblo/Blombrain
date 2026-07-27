@@ -159,6 +159,34 @@ export async function deleteConversation(id: string): Promise<void> {
   }
 }
 
+export async function patchMessage(convId: string, msgId: string, content: string): Promise<MessageOut> {
+  const res = await fetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  return jsonOrThrow<MessageOut>(res);
+}
+
+export async function deleteMessage(convId: string, msgId: string): Promise<void> {
+  const res = await fetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok && res.status !== 204) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
+  }
+}
+
+export async function branchMessage(convId: string, msgId: string, content: string): Promise<MessageOut> {
+  const res = await fetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}/branch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  return jsonOrThrow<MessageOut>(res);
+}
+
 // ---------------------------------------------------------------------------
 // Chat streaming
 // ---------------------------------------------------------------------------
@@ -168,6 +196,8 @@ export interface StreamChatOptions {
   messages: Pick<ChatMessage, "role" | "content">[];
   temperature?: number;
   conversationId?: string | null;
+  userMessageId?: string;
+  userParentId?: string | null;
   attachmentIds?: string[];
   signal?: AbortSignal;
   onToken: (delta: string) => void;
@@ -177,6 +207,7 @@ export interface StreamChatOptions {
     isNew: boolean;
     userMessageId: string;
     assistantMessageId: string;
+    stats?: import("./types").ResponseStats;
   }) => void;
   onDone: () => void;
   onError: (message: string) => void;
@@ -194,6 +225,8 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
     messages,
     temperature,
     conversationId,
+    userMessageId,
+    userParentId,
     attachmentIds,
     signal,
     onToken,
@@ -207,7 +240,16 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
     res = await fetch("/api/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages, temperature, conversationId, attachments: attachmentIds, stream: true }),
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature,
+        conversationId,
+        userMessageId,
+        userParentId,
+        attachments: attachmentIds,
+        stream: true,
+      }),
       signal,
     });
   } catch (err) {

@@ -1,9 +1,11 @@
 <script lang="ts">
-  import { Send, Square, Paperclip, X } from "@lucide/svelte";
+  import { Send, Square, Paperclip, X, ChevronDown } from "@lucide/svelte";
   import { chatStore } from "../stores/chat.svelte";
   import Button from "./ui/Button.svelte";
   import { serveUploadUrl, fetchModels } from "../api";
   import { createQuery } from "@tanstack/svelte-query";
+
+  let { onOpenModelPicker }: { onOpenModelPicker?: () => void } = $props();
 
   let draft = $state("");
   let textarea: HTMLTextAreaElement | undefined = $state();
@@ -35,7 +37,7 @@
   function autosize() {
     if (!textarea) return;
     textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 240)}px`;
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
   }
 
   async function handleSend() {
@@ -56,7 +58,7 @@
   async function handleFileSelect(e: Event) {
     const input = e.target as HTMLInputElement;
     if (!input.files || input.files.length === 0) return;
-    
+
     isUploading = true;
     for (const file of Array.from(input.files)) {
       try {
@@ -70,18 +72,19 @@
   }
 </script>
 
-<div class="border-t border-line bg-bg px-6 py-4">
+<div class="border-t border-line bg-bg px-4 sm:px-6 py-3">
   <div class="mx-auto flex max-w-3xl flex-col gap-2">
+    <!-- Attachment Thumbnails -->
     {#if chatStore.pendingAttachments.length > 0}
-      <div class="flex flex-wrap gap-2 px-2">
+      <div class="flex flex-wrap gap-2 px-1">
         {#each chatStore.pendingAttachments as att (att.id)}
-          <div class="group relative flex h-16 w-16 items-center justify-center rounded-md border border-line bg-bg-elevated overflow-hidden">
+          <div class="group relative flex h-14 w-14 items-center justify-center rounded-lg border border-line bg-bg-elevated overflow-hidden shadow-xs">
             {#if att.mimeType.startsWith("image/") || att.mimeType.startsWith("video/")}
               <img src={serveUploadUrl(att.id)} alt={att.originalName} class="h-full w-full object-cover" />
             {:else if att.mimeType.startsWith("audio/")}
-              <div class="text-[10px] text-fg-subtle">Audio</div>
+              <div class="text-[9px] text-fg-subtle font-mono">Audio</div>
             {:else}
-              <div class="text-[10px] text-fg-subtle truncate max-w-full px-1">{att.originalName}</div>
+              <div class="text-[9px] text-fg-subtle truncate max-w-full px-1 font-mono">{att.originalName}</div>
             {/if}
             <button
               onclick={() => chatStore.removeAttachment(att.id)}
@@ -93,32 +96,33 @@
           </div>
         {/each}
         {#if isUploading}
-          <div class="flex h-16 w-16 items-center justify-center rounded-md border border-line bg-bg-elevated">
-            <span class="animate-spin text-fg-subtle">⟳</span>
+          <div class="flex h-14 w-14 items-center justify-center rounded-lg border border-line bg-bg-elevated">
+            <span class="animate-spin text-fg-subtle text-xs">⟳</span>
           </div>
         {/if}
       </div>
     {/if}
 
-    <div class="flex items-end gap-2">
+    <!-- Main Input Box -->
+    <div class="input-container relative flex items-end gap-2 rounded-xl border bg-bg-elevated p-2 shadow-sm">
       {#if allowedAccepts}
-        <input 
-          type="file" 
-          bind:this={fileInput} 
-          onchange={handleFileSelect} 
-          accept={allowedAccepts} 
-          multiple 
-          class="hidden" 
+        <input
+          type="file"
+          bind:this={fileInput}
+          onchange={handleFileSelect}
+          accept={allowedAccepts}
+          multiple
+          class="hidden"
         />
-        <Button 
-          variant="ghost" 
-          onclick={() => fileInput?.click()} 
-          disabled={chatStore.isStreaming || isUploading} 
+        <button
+          type="button"
+          onclick={() => fileInput?.click()}
+          disabled={chatStore.isStreaming || isUploading}
           aria-label="Add attachment"
-          class="!px-3 !py-2.5 h-auto text-fg-muted hover:text-fg"
+          class="flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-40"
         >
           <Paperclip size={16} />
-        </Button>
+        </button>
       {/if}
 
       <textarea
@@ -128,25 +132,51 @@
         onkeydown={handleKeydown}
         rows="1"
         placeholder="Message Blombrain…"
-        class="max-h-60 flex-1 resize-none rounded-md border border-line bg-bg-elevated px-3 py-2.5 text-sm text-fg outline-none placeholder:text-fg-subtle focus-visible:outline-2 focus-visible:outline-accent"
+        class="max-h-52 flex-1 resize-none self-center bg-transparent px-2 py-1.5 text-sm text-fg placeholder:text-fg-subtle"
       ></textarea>
 
       {#if chatStore.isStreaming}
-        <Button variant="danger" onclick={() => chatStore.stop()} aria-label="Stop generating">
-          <Square size={14} />
+        <Button variant="danger" onclick={() => chatStore.stop()} aria-label="Stop generating" class="!px-3 !py-1.5 h-8 text-xs font-semibold">
+          <Square size={13} />
           Stop
         </Button>
       {:else}
-        <Button 
-          variant="primary" 
-          onclick={handleSend} 
-          disabled={(!draft.trim() && chatStore.pendingAttachments.length === 0) || isUploading} 
+        <Button
+          variant="primary"
+          onclick={handleSend}
+          disabled={(!draft.trim() && chatStore.pendingAttachments.length === 0) || isUploading}
           aria-label="Send message"
+          class="!px-3 !py-1.5 h-8 text-xs font-semibold"
         >
-          <Send size={14} />
+          <Send size={13} />
           Send
         </Button>
       {/if}
     </div>
   </div>
 </div>
+
+<style>
+  .input-container {
+    border-color: var(--line);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .input-container:hover {
+    border-color: var(--line-strong);
+    box-shadow: 0 4px 12px var(--shadow);
+  }
+
+  .input-container:focus-within,
+  .input-container:focus-within:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+
+  textarea,
+  textarea:focus,
+  textarea:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+</style>
