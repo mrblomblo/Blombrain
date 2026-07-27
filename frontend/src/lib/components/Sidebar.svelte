@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
-  import { PanelLeftClose, PanelLeftOpen, SquarePen, Trash2, Settings, Layers, X, ChevronDown, ChevronRight } from "@lucide/svelte";
+  import { PanelLeftClose, PanelLeftOpen, SquarePen, Trash2, Settings, X, ChevronDown, ChevronRight } from "@lucide/svelte";
   import { fetchBackends, fetchConversations, deleteConversation } from "../api";
   import { chatStore } from "../stores/chat.svelte";
   import type { ConversationSummary } from "../types";
@@ -8,12 +8,11 @@
 
   interface Props {
     onOpenSettings: () => void;
-    onOpenModelEditor: () => void;
     onCloseMobile?: () => void;
     onToggleSidebar?: () => void;
     collapsed?: boolean;
   }
-  const { onOpenSettings, onOpenModelEditor, onCloseMobile, onToggleSidebar, collapsed = false }: Props = $props();
+  const { onOpenSettings, onCloseMobile, onToggleSidebar, collapsed = false }: Props = $props();
 
   const queryClient = useQueryClient();
 
@@ -248,24 +247,15 @@
 
   <!-- Footer -->
   <div class="flex items-center justify-between border-t border-line px-3 py-2.5">
-    <div class="flex items-center gap-1">
-      <button
-        onclick={onOpenModelEditor}
-        aria-label="Models & Presets"
-        title="Models & Presets"
-        class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
-      >
-        <Layers size={14} />
-      </button>
-      <button
-        onclick={onOpenSettings}
-        aria-label="Settings"
-        title="Backends Settings"
-        class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
-      >
-        <Settings size={14} />
-      </button>
-    </div>
+    <button
+      onclick={onOpenSettings}
+      aria-label="Settings"
+      title="Settings"
+      class="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+    >
+      <Settings size={15} />
+      <span class="font-medium">Settings</span>
+    </button>
 
     <ThemeSwitcher />
   </div>

@@ -5,7 +5,6 @@
   import { serveUploadUrl, fetchModels } from "../api";
   import { createQuery } from "@tanstack/svelte-query";
 
-  let { onOpenModelPicker }: { onOpenModelPicker?: () => void } = $props();
 
   let draft = $state("");
   let textarea: HTMLTextAreaElement | undefined = $state();

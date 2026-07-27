@@ -6,7 +6,6 @@
   import ModelPicker from "./lib/components/ModelPicker.svelte";
   import Sidebar from "./lib/components/Sidebar.svelte";
   import SettingsModal from "./lib/components/SettingsModal.svelte";
-  import ModelEditorModal from "./lib/components/ModelEditorModal.svelte";
   import {
     chatStore,
     registerConversationsInvalidator,
@@ -26,7 +25,6 @@
   });
 
   let settingsOpen = $state(false);
-  let modelEditorOpen = $state(false);
   let mobileSidebarOpen = $state(false);
   let desktopSidebarOpen = $state(true);
 </script>
@@ -37,7 +35,6 @@
     <div class="hidden md:flex h-full">
       <Sidebar
         onOpenSettings={() => (settingsOpen = true)}
-        onOpenModelEditor={() => (modelEditorOpen = true)}
         onToggleSidebar={() => (desktopSidebarOpen = !desktopSidebarOpen)}
         collapsed={!desktopSidebarOpen}
       />
@@ -57,10 +54,6 @@
         <Sidebar
           onOpenSettings={() => {
             settingsOpen = true;
-            mobileSidebarOpen = false;
-          }}
-          onOpenModelEditor={() => {
-            modelEditorOpen = true;
             mobileSidebarOpen = false;
           }}
           onCloseMobile={() => (mobileSidebarOpen = false)}
@@ -92,13 +85,9 @@
       </header>
 
       <ChatMessageList />
-      <ChatInput onOpenModelPicker={() => (modelEditorOpen = true)} />
+      <ChatInput />
     </main>
   </div>
 
   <SettingsModal open={settingsOpen} onClose={() => (settingsOpen = false)} />
-  <ModelEditorModal
-    open={modelEditorOpen}
-    onClose={() => (modelEditorOpen = false)}
-  />
 </QueryClientProvider>
