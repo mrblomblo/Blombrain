@@ -116,6 +116,7 @@ export interface ChatMessage {
   thinkingDone?: boolean;
   thinkingTimeMs?: number;
   stats?: ResponseStats;
+  model?: string;
 }
 
 /** A conversation list item (no messages). */
@@ -141,6 +142,7 @@ export interface MessageOut {
   content: string;
   error: string | null;
   stats?: ResponseStats;
+  model?: string;
   createdAt: number;
   attachments?: AttachmentOut[];
 }

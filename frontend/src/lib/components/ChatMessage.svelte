@@ -21,15 +21,19 @@
   }));
 
   let currentModelInfo = $derived(
-    modelsQuery.data && chatStore.selectedModel
-      ? modelsQuery.data.find((m) => m.id === chatStore.selectedModel)
-      : undefined
+    modelsQuery.data
+      ? modelsQuery.data.find(
+          (m) => m.id === (message.model || chatStore.selectedModel),
+        )
+      : undefined,
   );
 
   // Compute siblings for branch navigation
   let siblings = $derived.by(() => {
     const parentId = message.parentId ?? null;
-    const matches = chatStore.messages.filter((m) => (m.parentId ?? null) === parentId);
+    const matches = chatStore.messages.filter(
+      (m) => (m.parentId ?? null) === parentId,
+    );
     return matches.map((m) => m.id);
   });
 
@@ -83,83 +87,149 @@
   }
 </script>
 
-<div class="group relative flex gap-3 py-2 px-1 transition-colors rounded-xl hover:bg-bg-elevated/40 {message.role === 'user' ? 'flex-row-reverse' : ''}">
+<div
+  class="group relative flex gap-3 py-2 px-1 transition-colors rounded-xl hover:bg-bg-elevated/40 {message.role ===
+  'user'
+    ? 'flex-row-reverse'
+    : ''}"
+>
   <!-- Avatar / Icon -->
-  <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden border border-line bg-bg-elevated shadow-xs select-none">
+  <div
+    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden border border-line bg-bg-elevated shadow-xs select-none"
+  >
     {#if message.role === "user"}
-      <div class="flex h-full w-full items-center justify-center bg-accent text-accent-fg font-semibold text-xs uppercase">
+      <div
+        class="flex h-full w-full items-center justify-center bg-accent text-accent-fg font-semibold text-xs uppercase"
+      >
         you
       </div>
     {:else if currentModelInfo?.icon}
-      <img src={currentModelInfo.icon} alt={currentModelInfo.name || "AI"} class="h-full w-full object-cover" />
+      <img
+        src={currentModelInfo.icon}
+        alt={currentModelInfo.name || "AI"}
+        class="h-full w-full object-cover"
+      />
     {:else}
-      <div class="flex h-full w-full items-center justify-center bg-bg-inset text-fg-muted font-semibold text-xs">
+      <div
+        class="flex h-full w-full items-center justify-center bg-bg-inset text-fg-muted font-semibold text-xs"
+      >
         AI
       </div>
     {/if}
   </div>
 
-  <div class="flex min-w-0 flex-1 flex-col gap-1.5 {message.role === 'user' ? 'items-end' : 'items-start'}">
-    <!-- Header: Branch Navigator (left), Sender Name, Timestamp -->
+  <div
+    class="flex min-w-0 flex-1 flex-col gap-1.5 {message.role === 'user'
+      ? 'items-end'
+      : 'items-start'}"
+  >
+    <!-- Header: Sender Name, Timestamp, Info, Branch Navigator -->
     <div class="flex flex-wrap items-center gap-2 text-xs">
-      <!-- Branch Navigator (always left-most) -->
-      <BranchNavigator parentId={message.parentId ?? null} {siblings} currentId={message.id} />
+      {#if message.role === "user"}
+        <!-- Branch Navigator (far left for user messages) -->
+        <BranchNavigator
+          parentId={message.parentId ?? null}
+          {siblings}
+          currentId={message.id}
+        />
 
-      <span class="font-medium text-fg">
-        {message.role === "user" ? "You" : (currentModelInfo?.name || "Assistant")}
-      </span>
+        <!-- Timestamp (left of "You") -->
+        <MessageTimestamp timestamp={message.createdAt} />
+      {:else}
+        <span class="font-medium text-fg">
+          {currentModelInfo?.name || "Assistant"}
+        </span>
 
-      <!-- Timestamp -->
-      <MessageTimestamp timestamp={message.createdAt} />
+        <!-- Timestamp -->
+        <MessageTimestamp timestamp={message.createdAt} />
 
-      <!-- Inline stats ⓘ for assistant messages -->
-      {#if message.role === "assistant" && message.stats}
-        {@const s = message.stats}
-        <div class="relative group/stats ml-auto">
-          <button
-            type="button"
-            aria-label="Response stats"
-            class="flex items-center justify-center text-fg-subtle hover:text-fg-muted transition-colors"
-          >
-            <Info size={12} />
-          </button>
-          <!-- Stats tooltip -->
-          <div class="absolute bottom-full right-0 mb-1.5 z-20 hidden group-hover/stats:flex flex-col gap-1 whitespace-nowrap rounded-lg border border-line bg-bg-elevated px-3 py-2 shadow-lg text-[11px] font-mono text-fg-muted">
-            {#if s.promptTokens !== undefined}
-              <span>Prompt: {s.promptTokens.toLocaleString()} tok</span>
-            {/if}
-            {#if s.completionTokens !== undefined}
-              <span>Output: {s.completionTokens.toLocaleString()} tok</span>
-            {/if}
-            {#if s.totalTokens !== undefined}
-              <span>Total: {s.totalTokens.toLocaleString()} tok</span>
-            {/if}
-            {#if s.durationMs !== undefined}
-              <span>Time: {(s.durationMs / 1000).toFixed(1)}s</span>
-            {/if}
-            {#if s.completionTokens !== undefined && s.durationMs !== undefined && s.durationMs > 0}
-              <span>Speed: {(s.completionTokens / (s.durationMs / 1000)).toFixed(1)} tok/s</span>
-            {/if}
+        <!-- Inline stats ⓘ for assistant messages -->
+        {#if message.stats}
+          {@const s = message.stats}
+          <div class="relative group/stats">
+            <button
+              type="button"
+              aria-label="Response stats"
+              class="flex items-center justify-center text-fg-subtle hover:text-fg-muted transition-colors"
+            >
+              <Info size={12} />
+            </button>
+            <!-- Stats tooltip -->
+            <div
+              class="absolute bottom-full right-0 mb-1.5 z-20 hidden group-hover/stats:flex flex-col gap-1 whitespace-nowrap rounded-lg border border-line bg-bg-elevated px-3 py-2 shadow-lg text-[11px] font-mono text-fg-muted"
+            >
+              {#if s.promptTokens !== undefined}
+                <span>Prompt: {s.promptTokens.toLocaleString()} tok</span>
+              {/if}
+              {#if s.completionTokens !== undefined}
+                <span>Output: {s.completionTokens.toLocaleString()} tok</span>
+              {/if}
+              {#if s.totalTokens !== undefined}
+                <span>Total: {s.totalTokens.toLocaleString()} tok</span>
+              {/if}
+              {#if s.durationMs !== undefined}
+                <span>Time: {(s.durationMs / 1000).toFixed(1)}s</span>
+              {/if}
+              {#if s.completionTokens !== undefined && s.durationMs !== undefined && s.durationMs > 0}
+                <span
+                  >Speed: {(s.completionTokens / (s.durationMs / 1000)).toFixed(
+                    1,
+                  )} tok/s</span
+                >
+              {/if}
+            </div>
           </div>
-        </div>
+        {/if}
+
+        <!-- Branch Navigator (right of Info icon) -->
+        <BranchNavigator
+          parentId={message.parentId ?? null}
+          {siblings}
+          currentId={message.id}
+        />
       {/if}
     </div>
 
     <!-- Attachments -->
     {#if message.attachments && message.attachments.length > 0}
-      <div class="flex flex-wrap gap-2 {message.role === 'user' ? 'justify-end' : 'justify-start'}">
+      <div
+        class="flex flex-wrap gap-2 {message.role === 'user'
+          ? 'justify-end'
+          : 'justify-start'}"
+      >
         {#each message.attachments as att (att.id)}
           {#if att.mimeType.startsWith("image/")}
-            <a href={serveUploadUrl(att.id)} target="_blank" rel="noopener noreferrer">
-              <img src={serveUploadUrl(att.id)} alt={att.originalName} class="max-h-64 rounded-lg object-contain border border-line bg-bg-elevated" />
+            <a
+              href={serveUploadUrl(att.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <img
+                src={serveUploadUrl(att.id)}
+                alt={att.originalName}
+                class="max-h-64 rounded-lg object-contain border border-line bg-bg-elevated"
+              />
             </a>
           {:else if att.mimeType.startsWith("video/")}
             <!-- svelte-ignore a11y_media_has_caption -->
-            <video controls src={serveUploadUrl(att.id)} class="max-h-64 rounded-lg border border-line bg-bg-elevated"></video>
+            <video
+              controls
+              src={serveUploadUrl(att.id)}
+              class="max-h-64 rounded-lg border border-line bg-bg-elevated"
+            ></video>
           {:else if att.mimeType.startsWith("audio/")}
-            <audio controls src={serveUploadUrl(att.id)} class="rounded-lg border border-line bg-bg-elevated h-10"></audio>
+            <audio
+              controls
+              src={serveUploadUrl(att.id)}
+              class="rounded-lg border border-line bg-bg-elevated h-10"
+            ></audio>
           {:else}
-            <a href={serveUploadUrl(att.id)} target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 rounded-lg border border-line bg-bg-elevated px-3 py-2 text-xs hover:bg-bg-inset transition-colors">
+            <a
+              href={serveUploadUrl(att.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="flex items-center gap-2 rounded-lg border border-line bg-bg-elevated px-3 py-2 text-xs hover:bg-bg-inset transition-colors"
+            >
               <Paperclip size={14} class="text-fg-muted" />
               <span>{att.originalName}</span>
             </a>
@@ -170,7 +240,9 @@
 
     <!-- Message Content or Edit Input -->
     {#if isEditing}
-      <div class="edit-container w-full max-w-2xl flex flex-col gap-2 rounded-lg border bg-bg p-3 shadow-md">
+      <div
+        class="edit-container w-full max-w-2xl flex flex-col gap-2 rounded-lg border bg-bg p-3 shadow-md"
+      >
         <textarea
           bind:value={editDraft}
           onkeydown={handleKeydown}
@@ -178,7 +250,12 @@
           class="edit-textarea w-full resize-y rounded-md bg-bg-elevated px-3 py-2 text-sm text-fg"
         ></textarea>
         <div class="flex items-center justify-between text-xs text-fg-subtle">
-          <span>Press <kbd class="px-1 py-0.5 rounded bg-bg-elevated border border-line font-mono text-[10px]">Ctrl+Enter</kbd> to confirm</span>
+          <span
+            >Press <kbd
+              class="px-1 py-0.5 rounded bg-bg-elevated border border-line font-mono text-[10px]"
+              >Ctrl+Enter</kbd
+            > to confirm</span
+          >
           <div class="flex items-center gap-2">
             <button
               type="button"
@@ -216,9 +293,9 @@
     {:else if message.content || message.error || message.streaming}
       <div
         class="relative rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-full break-words
-          {message.role === 'user' 
-            ? 'bg-accent-muted/90 text-fg rounded-tr-xs' 
-            : 'bg-bg-elevated border border-line/60 text-fg rounded-tl-xs shadow-xs'}"
+          {message.role === 'user'
+          ? 'bg-accent-muted/90 text-fg rounded-tr-xs'
+          : 'bg-bg-elevated border border-line/60 text-fg rounded-tl-xs shadow-xs'}"
       >
         {#if message.role === "assistant"}
           <ThinkingBlock
@@ -231,14 +308,20 @@
         {#if message.error}
           <p class="font-medium text-danger">{message.error}</p>
         {:else if message.content}
-          <span class="whitespace-pre-wrap">{message.content}</span>{#if message.streaming}<span
+          <span class="whitespace-pre-wrap">{message.content}</span
+          >{#if message.streaming}<span
               class="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-accent"
             ></span>{/if}
         {:else if message.streaming && (message.thinkingContent === undefined || message.thinkingDone)}
           <span class="inline-flex gap-1 py-1">
-            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-fg-subtle [animation-delay:-0.3s]"></span>
-            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-fg-subtle [animation-delay:-0.15s]"></span>
-            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-fg-subtle"></span>
+            <span
+              class="h-1.5 w-1.5 animate-bounce rounded-full bg-fg-subtle [animation-delay:-0.3s]"
+            ></span>
+            <span
+              class="h-1.5 w-1.5 animate-bounce rounded-full bg-fg-subtle [animation-delay:-0.15s]"
+            ></span>
+            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-fg-subtle"
+            ></span>
           </span>
         {/if}
       </div>
@@ -246,7 +329,9 @@
 
     <!-- Hover Actions Toolbar -->
     {#if !isEditing}
-      <div class="mt-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      <div
+        class="mt-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+      >
         <MessageActions {message} {isLast} onStartEdit={startEdit} />
       </div>
     {/if}
@@ -259,7 +344,9 @@
 <style>
   .edit-container {
     border-color: var(--line);
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
   }
 
   .edit-container:hover {

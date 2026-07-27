@@ -49,6 +49,7 @@ db.exec(`
     content         TEXT NOT NULL DEFAULT '',
     error           TEXT,
     stats           TEXT,
+    model           TEXT,
     created_at      INTEGER NOT NULL
   );
 
@@ -117,13 +118,27 @@ for (const col of columnsToAdd) {
   }
 }
 
-// Migration helper for messages.parent_id
+// Migration helper for messages.parent_id and messages.model
 const msgCols = (db.pragma("table_info(messages)") as { name: string }[]).map(c => c.name);
 if (!msgCols.includes("parent_id")) {
   try {
     db.exec(`ALTER TABLE messages ADD COLUMN parent_id TEXT REFERENCES messages(id) ON DELETE SET NULL`);
   } catch (e) {}
 }
+if (!msgCols.includes("model")) {
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN model TEXT`);
+  } catch (e) {}
+}
+
+// Backfill legacy assistant messages with conversation model if model is NULL
+try {
+  db.exec(`
+    UPDATE messages
+    SET model = (SELECT model FROM conversations WHERE id = messages.conversation_id)
+    WHERE role = 'assistant' AND model IS NULL;
+  `);
+} catch (e) {}
 
 try {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);`);
@@ -137,9 +152,10 @@ export const insertMessage = db.prepare<{
   content: string;
   error: string | null;
   stats: string | null;
+  model: string | null;
   createdAt: number;
 }>(
-  "INSERT INTO messages (id, conversation_id, parent_id, role, content, error, stats, created_at) VALUES (@id, @conversationId, @parentId, @role, @content, @error, @stats, @createdAt)"
+  "INSERT INTO messages (id, conversation_id, parent_id, role, content, error, stats, model, created_at) VALUES (@id, @conversationId, @parentId, @role, @content, @error, @stats, @model, @createdAt)"
 );
 
 // Backfill parent_id for existing linear conversations if null

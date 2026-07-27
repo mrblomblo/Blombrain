@@ -34,6 +34,7 @@ function rowToMessage(row: MessageRow): MessageOut {
     content: row.content,
     error: row.error,
     stats: row.stats ? JSON.parse(row.stats) : undefined,
+    model: row.model ?? undefined,
     createdAt: row.created_at,
   };
 }
@@ -237,6 +238,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
       content: content ?? "",
       error: null,
       stats: null,
+      model: null,
       createdAt: now,
     });
 
@@ -298,6 +300,8 @@ export async function conversationsRoutes(app: FastifyInstance) {
       role: body.role,
       content: body.content,
       error: body.error ?? null,
+      stats: null,
+      model: (body as any).model ?? null,
       createdAt: now,
     });
     updateConversationMeta.run({ id, title: null, model: null, updatedAt: now });
@@ -390,6 +394,7 @@ export function persistChatTurn(opts: {
         content: userContent,
         error: null,
         stats: null,
+        model: null,
         createdAt: now,
       });
     }
@@ -402,6 +407,7 @@ export function persistChatTurn(opts: {
       content: assistantContent,
       error: assistantError ?? null,
       stats: assistantStats ? JSON.stringify(assistantStats) : null,
+      model,
       createdAt: now + 1,
     });
 

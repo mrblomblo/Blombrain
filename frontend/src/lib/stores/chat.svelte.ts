@@ -164,6 +164,7 @@ class ChatStore {
             thinkingDone: parsed.thinkingDone,
             thinkingTimeMs: m.stats?.thinkingTimeMs,
             stats: m.stats,
+            model: m.model,
             error: m.error,
             createdAt: m.createdAt,
             attachments: m.attachments,
@@ -175,6 +176,7 @@ class ChatStore {
           role: m.role,
           content: m.content,
           error: m.error,
+          model: m.model,
           createdAt: m.createdAt,
           attachments: m.attachments,
         };
@@ -268,11 +270,8 @@ class ChatStore {
     const userParentMsg = this.messages.find((m) => m.id === asstMsg.parentId);
     if (!userParentMsg) return;
 
-    // Delete existing assistant message
-    await this.deleteMessage(assistantMsgId);
-
-    // Branch off the user message (or re-send from it)
-    await this.sendEditedBranch(userParentMsg.id, userParentMsg.content);
+    const attachmentIds = userParentMsg.attachments?.map((a) => a.id);
+    await this.triggerAssistantResponse(userParentMsg, attachmentIds);
   }
 
   /** Continue response */
@@ -355,6 +354,7 @@ class ChatStore {
       thinkingDone: false,
       thinkingTimeMs: undefined,
       stats: undefined,
+      model: this.selectedModel,
     };
     this.messages.push(assistantMessage);
     this.setBranchSelection(currentUserId, currentAsstId);

@@ -89,6 +89,7 @@ export interface MessageRow {
   content: string;
   error: string | null;
   stats: string | null;
+  model: string | null;
   created_at: number;
 }
 
@@ -115,6 +116,7 @@ export interface MessageOut {
   content: string;
   error: string | null;
   stats?: any;
+  model?: string;
   createdAt: number;
   attachments?: AttachmentOut[];
 }
