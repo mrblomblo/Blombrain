@@ -9,6 +9,7 @@
   import MessageTimestamp from "./MessageTimestamp.svelte";
   import BranchNavigator from "./BranchNavigator.svelte";
   import MessageActions from "./MessageActions.svelte";
+  import Markdown from "./Markdown.svelte";
   import { fly, fade } from "svelte/transition";
 
   interface Props {
@@ -342,8 +343,7 @@
         {#if message.error}
           <p class="font-medium text-danger">{message.error}</p>
         {:else if message.content}
-          <span class="whitespace-pre-wrap">{message.content}</span
-          >{#if message.streaming}<span
+          <Markdown content={message.content} />{#if message.streaming}<span
               class="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-accent"
             ></span>{/if}
         {:else if message.streaming && (message.thinkingContent === undefined || message.thinkingDone)}

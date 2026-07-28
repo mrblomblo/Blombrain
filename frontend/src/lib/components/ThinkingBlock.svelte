@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ChevronDown, ChevronRight, Brain } from "@lucide/svelte";
   import { slide } from "svelte/transition";
+  import Markdown from "./Markdown.svelte";
 
   interface Props {
     thinkingContent?: string;
@@ -56,8 +57,8 @@
     </button>
 
     {#if isOpen}
-      <div transition:slide={{ duration: 200 }} class="mt-1.5 pl-6 font-mono text-[11px] leading-relaxed text-fg-muted whitespace-pre-wrap opacity-90 border-l-2 border-line/50 ml-1.5 py-1">
-        {thinkingContent}
+      <div transition:slide={{ duration: 200 }} class="mt-1.5 pl-4 text-[11px] leading-relaxed text-fg-muted opacity-90 border-l-2 border-line/50 ml-1.5 py-1">
+        <Markdown content={thinkingContent} class="text-[11px]" />
       </div>
     {/if}
   </div>

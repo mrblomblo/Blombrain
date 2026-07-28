@@ -210,8 +210,12 @@ class ChatStore {
     if (!msg) return;
 
     msg.content = newContent;
+    const contentToSave = msg.thinkingContent
+      ? `<think>\n${msg.thinkingContent}\n</think>\n${newContent}`
+      : newContent;
+
     try {
-      await patchMessage(this.activeConversationId, msgId, newContent);
+      await patchMessage(this.activeConversationId, msgId, contentToSave);
     } catch (err) {
       console.error("[chatStore] failed to edit message:", err);
     }
