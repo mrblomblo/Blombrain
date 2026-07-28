@@ -187,7 +187,7 @@
 
       <!-- Body Content -->
       <div class="modal-body flex-1 overflow-auto bg-bg">
-        <div class="p-6 w-full">
+        <div class="w-full">
           {#if !isMediaAttachment(attachment)}
             {#if isLoadingText}
               <div
@@ -198,13 +198,12 @@
               </div>
             {:else if highlightedHtml}
               <pre
-                class="w-full rounded-xl border border-line bg-bg-elevated p-4 overflow-x-auto text-xs font-mono leading-relaxed shadow-sm"><code
-                  class="hljs bg-transparent p-0 rounded-sm"
-                  >{@html highlightedHtml}</code
+                class="w-full overflow-x-auto text-xs font-mono leading-relaxed"><code
+                  class="hljs bg-transparent">{@html highlightedHtml}</code
                 ></pre>
             {:else if textContent !== null}
               <pre
-                class="w-full rounded-xl border border-line bg-bg-elevated p-4 overflow-x-auto text-xs font-mono leading-relaxed text-fg whitespace-pre-wrap shadow-sm">{textContent}</pre>
+                class="w-full rounded-xl border border-line overflow-x-auto text-xs font-mono leading-relaxed text-fg whitespace-pre-wrap shadow-sm">{textContent}</pre>
             {/if}
           {:else if attachment.mimeType.startsWith("image/")}
             <div
@@ -213,7 +212,7 @@
               <img
                 src={serveUploadUrl(attachment.id)}
                 alt={attachment.originalName}
-                class="max-h-[75vh] max-w-full rounded-xl object-contain shadow-md border border-line"
+                class="max-h-[75vh] max-w-full m-6 rounded-xl object-contain shadow-md border border-line"
               />
             </div>
           {:else if attachment.mimeType.startsWith("video/")}
@@ -224,7 +223,7 @@
               <video
                 controls
                 src={serveUploadUrl(attachment.id)}
-                class="max-h-[75vh] max-w-full rounded-xl border border-line shadow-md"
+                class="max-h-[75vh] max-w-full m-6 rounded-xl border border-line shadow-md"
               ></video>
             </div>
           {:else if attachment.mimeType.startsWith("audio/")}
