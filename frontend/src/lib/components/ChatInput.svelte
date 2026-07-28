@@ -11,6 +11,16 @@
   let draft = $state("");
   let fileInput: HTMLInputElement | undefined = $state();
   let isUploading = $state(false);
+  let markdownInputRef: { focus: () => void } | undefined = $state();
+
+  function handleContainerClick(e: MouseEvent) {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest("button, input, select, textarea, a, label, [role='button'], .markdown-input-editor")) {
+      return;
+    }
+    markdownInputRef?.focus();
+  }
 
   interface Props {
     floating?: boolean;
@@ -219,12 +229,14 @@
 
     <!-- Main Input Box -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
       ondragenter={handleDragEnter}
       ondragover={handleDragOver}
       ondragleave={handleDragLeave}
       ondrop={handleDrop}
-      class="input-container relative flex flex-col rounded-xl border bg-bg-elevated p-2.5 transition-colors {isDragging ? '!border-accent !ring-2 !ring-accent/25' : ''} {floating
+      onclick={handleContainerClick}
+      class="input-container relative flex flex-col rounded-xl border bg-bg-elevated p-2.5 transition-colors cursor-text {isDragging ? '!border-accent !ring-2 !ring-accent/25' : ''} {floating
         ? 'shadow-lg border-line-strong'
         : 'shadow-sm'}"
     >
@@ -250,6 +262,7 @@
 
       <!-- Textarea Row replaced with MarkdownInput -->
       <MarkdownInput
+        bind:this={markdownInputRef}
         bind:value={draft}
         onSubmit={handleSend}
         disabled={chatStore.isStreaming || isUploading}

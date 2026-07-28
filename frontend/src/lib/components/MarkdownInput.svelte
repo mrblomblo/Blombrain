@@ -31,6 +31,16 @@
   let element: HTMLDivElement | undefined = $state();
   let editor: Editor | null = $state(null);
 
+  export function focus(position?: "start" | "end" | "all" | number | boolean) {
+    if (editor) {
+      if (position !== undefined) {
+        editor.commands.focus(position);
+      } else {
+        editor.commands.focus();
+      }
+    }
+  }
+
   const lowlight = createLowlight(common);
 
   // Keep a fresh reference to onSubmit for the extension keyboard handler
