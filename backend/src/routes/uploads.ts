@@ -158,9 +158,9 @@ export async function uploadsRoutes(app: FastifyInstance) {
     return reply.status(200).send({ success: true });
   });
 
-  // Cleanup job (runs once on route registration)
-  // Delete all attachment rows where message_id IS NULL AND created_at < now - 1 hour
-  setTimeout(() => {
+  // Cleanup job (runs periodically)
+  // Delete all attachment rows where message_id IS NULL AND created_at < now - 1 hour, excluding model icons and user avatar
+  const runCleanup = () => {
     try {
       const oneHourAgo = Date.now() - 3600 * 1000;
       const orphans = db.prepare(`
@@ -171,6 +171,11 @@ export async function uploadsRoutes(app: FastifyInstance) {
             SELECT REPLACE(icon, '/api/uploads/', '') 
             FROM model_settings 
             WHERE icon IS NOT NULL
+          )
+          AND id NOT IN (
+            SELECT REPLACE(user_avatar, '/api/uploads/', '') 
+            FROM global_settings 
+            WHERE user_avatar IS NOT NULL
           )
       `).all(oneHourAgo) as AttachmentRow[];
       
@@ -192,5 +197,8 @@ export async function uploadsRoutes(app: FastifyInstance) {
     } catch(err) {
       app.log.error(err, "Failed to run attachment cleanup job");
     }
-  }, 1000); // slight delay to not block startup
+  };
+
+  setTimeout(runCleanup, 1000);
+  setInterval(runCleanup, 3600 * 1000); // slight delay to not block startup
 }
