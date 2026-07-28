@@ -28,8 +28,21 @@
     }
   }
 
+  import { confirmStore } from "../../stores/confirmStore.svelte";
+
   async function handleRemoveAvatar() {
-    await settingsStore.update({ userAvatar: null });
+    const confirmed = await confirmStore.confirm({
+      title: "Remove Avatar",
+      message: "Are you sure you want to remove your profile avatar?",
+      confirmText: "Remove",
+      confirmStyle: "danger",
+      cancelText: "Cancel",
+      cancelStyle: "ghost",
+      cancelOutline: true,
+    });
+    if (confirmed) {
+      await settingsStore.update({ userAvatar: null });
+    }
   }
 
   async function handleNameChange(e: Event) {

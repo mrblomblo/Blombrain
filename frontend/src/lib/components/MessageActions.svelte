@@ -3,6 +3,8 @@
   import type { ChatMessage } from "../types";
   import { chatStore } from "../stores/chat.svelte";
 
+  import { confirmStore } from "../stores/confirmStore.svelte";
+
   interface Props {
     message: ChatMessage;
     isLast: boolean;
@@ -31,8 +33,18 @@
     }
   }
 
-  function handleDelete() {
-    if (confirm("Delete this message?")) {
+  async function handleDelete() {
+    if (
+      await confirmStore.confirm({
+        title: "Delete Message",
+        message: "Are you sure you want to delete this message?",
+        confirmText: "Delete",
+        confirmStyle: "danger",
+        cancelText: "Cancel",
+        cancelStyle: "ghost",
+        cancelOutline: true,
+      })
+    ) {
       chatStore.deleteMessage(message.id);
     }
   }

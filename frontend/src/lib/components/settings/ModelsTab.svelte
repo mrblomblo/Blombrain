@@ -246,6 +246,21 @@
     }
   }
 
+  async function handleRemoveIcon() {
+    const confirmed = await confirmStore.confirm({
+      title: "Remove Icon",
+      message: "Are you sure you want to remove this model icon?",
+      confirmText: "Remove",
+      confirmStyle: "danger",
+      cancelText: "Cancel",
+      cancelStyle: "ghost",
+      cancelOutline: true,
+    });
+    if (confirmed) {
+      formIcon = undefined;
+    }
+  }
+
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
     formError = null;
@@ -322,11 +337,25 @@
     }
   }
 
+  import { confirmStore } from "../../stores/confirmStore.svelte";
+
   async function handleDelete(model: ModelInfo) {
-    const actionText = model.isPreset
-      ? `Delete preset "${model.name || model.id}"?`
-      : `Reset settings for "${model.id}" to defaults?`;
-    if (!confirm(actionText)) return;
+    const isPreset = model.isPreset;
+    const actionTitle = isPreset ? "Delete Preset" : "Reset Model Settings";
+    const actionText = isPreset
+      ? `Are you sure you want to delete preset "${model.name || model.id}"?`
+      : `Are you sure you want to reset settings for "${model.id}" to defaults?`;
+
+    const confirmed = await confirmStore.confirm({
+      title: actionTitle,
+      message: actionText,
+      confirmText: isPreset ? "Delete" : "Reset",
+      confirmStyle: "danger",
+      cancelText: "Cancel",
+      cancelStyle: "ghost",
+      cancelOutline: true,
+    });
+    if (!confirmed) return;
 
     formBusy = true;
     try {
@@ -370,11 +399,7 @@
               <ArrowUpDown size={13} />
               <span>Sort Order</span>
             </Button>
-            <Button
-              variant="accent"
-              size="sm"
-              onclick={startAddPreset}
-            >
+            <Button variant="accent" size="sm" onclick={startAddPreset}>
               <Plus size={13} />
               <span>Create Preset</span>
             </Button>
@@ -669,7 +694,7 @@
                     size="sm"
                     outline
                     type="button"
-                    onclick={() => (formIcon = undefined)}
+                    onclick={handleRemoveIcon}
                   >
                     Remove
                   </Button>

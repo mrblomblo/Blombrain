@@ -98,8 +98,19 @@
     }
   }
 
+  import { confirmStore } from "../../stores/confirmStore.svelte";
+
   async function handleDelete(b: BackendInfo) {
-    if (!confirm(`Delete backend "${b.name}"? This cannot be undone.`)) return;
+    const confirmed = await confirmStore.confirm({
+      title: "Delete Backend",
+      message: `Are you sure you want to delete backend "${b.name}"? This action cannot be undone.`,
+      confirmText: "Delete",
+      confirmStyle: "danger",
+      cancelText: "Cancel",
+      cancelStyle: "ghost",
+      cancelOutline: true,
+    });
+    if (!confirmed) return;
     deletingId = b.id;
     try {
       await deleteBackend(b.id);
@@ -291,12 +302,7 @@
           >
             Cancel
           </Button>
-          <Button
-            variant="accent"
-            size="sm"
-            type="submit"
-            disabled={formBusy}
-          >
+          <Button variant="accent" size="sm" type="submit" disabled={formBusy}>
             {#if formBusy}
               <span class="animate-spin">⟳</span> Saving…
             {:else}

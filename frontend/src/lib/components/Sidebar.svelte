@@ -16,6 +16,7 @@
     deleteConversation,
   } from "../api";
   import { chatStore } from "../stores/chat.svelte";
+  import { confirmStore } from "../stores/confirmStore.svelte";
   import type { ConversationSummary } from "../types";
   import { slide } from "svelte/transition";
 
@@ -62,7 +63,16 @@
   async function handleDelete(e: MouseEvent, conv: ConversationSummary) {
     e.stopPropagation();
     if (deletingId) return;
-    if (!confirm(`Delete "${conv.title}"?`)) return;
+    const confirmed = await confirmStore.confirm({
+      title: "Delete Conversation",
+      message: `Are you sure you want to delete "${conv.title}"?`,
+      confirmText: "Delete",
+      confirmStyle: "danger",
+      cancelText: "Cancel",
+      cancelStyle: "ghost",
+      cancelOutline: true,
+    });
+    if (!confirmed) return;
     deletingId = conv.id;
     try {
       await deleteConversation(conv.id);

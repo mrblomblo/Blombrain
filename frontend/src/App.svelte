@@ -10,6 +10,7 @@
   import Sidebar from "./lib/components/Sidebar.svelte";
   import SettingsModal from "./lib/components/SettingsModal.svelte";
   import AttachmentModal from "./lib/components/AttachmentModal.svelte";
+  import ConfirmModal from "./lib/components/ConfirmModal.svelte";
   import {
     chatStore,
     registerConversationsInvalidator,
@@ -148,4 +149,5 @@
 
   <SettingsModal open={settingsOpen} onClose={() => (settingsOpen = false)} />
   <AttachmentModal />
+  <ConfirmModal />
 </QueryClientProvider>
