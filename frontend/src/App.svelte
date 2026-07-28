@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { Menu } from "@lucide/svelte";
   import { fly } from "svelte/transition";
@@ -35,6 +36,44 @@
   let desktopSidebarOpen = $state(true);
 
   let isNewChat = $derived(chatStore.activePath.length === 0);
+
+  let hasInitialized = $state(false);
+
+  onMount(() => {
+    const match = window.location.pathname.match(/^\/chat\/([a-zA-Z0-9-]+)$/);
+    if (match) {
+      const uuid = match[1];
+      chatStore.loadConversation({ id: uuid } as any).finally(() => {
+        hasInitialized = true;
+      });
+    } else {
+      hasInitialized = true;
+    }
+
+    window.addEventListener("popstate", () => {
+      const match = window.location.pathname.match(/^\/chat\/([a-zA-Z0-9-]+)$/);
+      if (match) {
+        chatStore.loadConversation({ id: match[1] } as any);
+      } else {
+        chatStore.newConversation();
+      }
+    });
+  });
+
+  $effect(() => {
+    if (!hasInitialized) return;
+
+    if (chatStore.activeConversationId) {
+      const targetUrl = `/chat/${chatStore.activeConversationId}`;
+      if (window.location.pathname !== targetUrl) {
+        window.history.pushState({}, "", targetUrl);
+      }
+    } else {
+      if (window.location.pathname !== "/") {
+        window.history.pushState({}, "", "/");
+      }
+    }
+  });
 </script>
 
 <QueryClientProvider client={queryClient}>
