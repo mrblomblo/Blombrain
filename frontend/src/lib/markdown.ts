@@ -2,6 +2,15 @@ import { Marked } from "marked";
 import { markedHighlight } from "marked-highlight";
 import hljs from "highlight.js";
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 const marked = new Marked(
   markedHighlight({
     emptyLangClass: "hljs",
@@ -102,7 +111,8 @@ marked.use({
         const config = ALERT_CONFIGS[type] || ALERT_CONFIGS.NOTE;
 
         let content = innerHtml.replace(alertRegex, "");
-        if (!content.trim().startsWith("<p>")) {
+        const trimmed = content.trim();
+        if (trimmed && !trimmed.startsWith("<")) {
           content = `<p>${content}`;
         }
 
@@ -120,7 +130,7 @@ marked.use({
       return `<blockquote class="my-3 border-l-4 border-accent/60 bg-accent/5 px-3.5 py-2 rounded-r-md text-fg-muted italic [&>:first-child]:!mt-0 [&>:last-child]:!mb-0 [&>blockquote]:my-2 [&>blockquote]:border-accent/40">${innerHtml}</blockquote>`;
     },
     codespan({ text }: { text: string }) {
-      return `<code class="inline-code cursor-pointer rounded-sm border border-line bg-bg-elevated px-1.5 py-0.5 text-[0.85em] font-mono text-fg transition-colors hover:border-accent/40 hover:bg-bg-hover">${text}</code>`;
+      return `<code class="inline-code cursor-pointer rounded-sm border border-line bg-bg-elevated px-1.5 py-0.5 text-[0.85em] font-mono text-fg transition-colors hover:border-accent/40 hover:bg-bg-hover">${escapeHtml(text)}</code>`;
     },
   },
 });
