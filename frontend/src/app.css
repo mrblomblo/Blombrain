@@ -542,17 +542,6 @@ body {
   margin-bottom: 0.25rem;
 }
 
-.prose blockquote {
-  border-left: 3px solid var(--bg-inset);
-  background-color: color-mix(in srgb, var(--bg-inset) 33%, transparent);
-  padding: 0.5rem 1rem;
-  border-radius: 0 0.5rem 0.5rem 0;
-  margin-top: 0.75rem;
-  margin-bottom: 0.75rem;
-  color: var(--fg-muted);
-  font-style: italic;
-}
-
 .prose table {
   width: 100%;
   border-collapse: separate;

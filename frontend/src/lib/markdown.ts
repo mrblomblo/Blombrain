@@ -116,7 +116,7 @@ marked.use({
           content = `<p>${content}`;
         }
 
-        return `<div class="my-3 rounded-r-md border-l-3 p-4 shadow-xs" style="${config.borderStyle}; ${config.bgStyle}">
+        return `<div class="my-3 rounded-l-xs rounded-r-md border-l-3 p-4 shadow-xs" style="${config.borderStyle}; ${config.bgStyle}">
   <div class="flex items-center gap-2 font-semibold text-xs mb-1.5 uppercase tracking-wide select-none" style="${config.textStyle}">
     ${config.iconSvg}
     <span>${config.title}</span>
@@ -127,7 +127,7 @@ marked.use({
 </div>`;
       }
 
-      return `<blockquote class="my-3 border-l-3 border-line-strong/50 bg-bg/75 px-3.5 py-2 rounded-r-md text-fg-muted italic [&>:first-child]:!mt-0 [&>:last-child]:!mb-0 [&>blockquote]:my-2 [&>blockquote]:border-line-strong/30">${innerHtml}</blockquote>`;
+      return `<blockquote class="my-3 border-l-3 border-bg-inset bg-bg-inset/45 px-3.5 py-2 rounded-l-xs rounded-r-md text-fg-muted italic [&>:first-child]:!mt-0 [&>:last-child]:!mb-0 [&>blockquote]:my-2 [&>blockquote]:border-bg-inset [&>blockquote]:bg-bg-inset/25">${innerHtml}</blockquote>`;
     },
     codespan({ text }: { text: string }) {
       return `<code class="inline-code cursor-pointer rounded-sm border border-line bg-bg-elevated px-1.5 py-0.5 text-[0.85em] font-mono text-fg transition-colors hover:border-accent/40 hover:bg-bg-hover">${escapeHtml(text)}</code>`;
