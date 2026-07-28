@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Send, Square, Paperclip, X, ChevronDown } from "@lucide/svelte";
+  import { fade } from "svelte/transition";
   import { chatStore } from "../stores/chat.svelte";
   import Button from "./ui/Button.svelte";
   import { serveUploadUrl, fetchModels } from "../api";
@@ -69,6 +70,75 @@
     const toSend = draft;
     draft = "";
     await chatStore.send(toSend);
+  }
+
+  let isDragging = $state(false);
+  let dragCounter = 0;
+
+  function isFileAllowed(file: File): boolean {
+    if (!allowedAccepts) return false;
+    const rules = allowedAccepts.split(",").map((r) => r.trim().toLowerCase());
+    const fileName = file.name.toLowerCase();
+    const mimeType = file.type.toLowerCase();
+
+    return rules.some((rule) => {
+      if (rule.endsWith("/*")) {
+        const prefix = rule.slice(0, -1);
+        return mimeType.startsWith(prefix);
+      } else if (rule.startsWith(".")) {
+        return fileName.endsWith(rule);
+      } else {
+        return mimeType === rule;
+      }
+    });
+  }
+
+  function handleDragEnter(e: DragEvent) {
+    e.preventDefault();
+    if (chatStore.isStreaming || isUploading) return;
+    dragCounter++;
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = "copy";
+    }
+    isDragging = true;
+  }
+
+  function handleDragOver(e: DragEvent) {
+    e.preventDefault();
+    if (chatStore.isStreaming || isUploading) return;
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = "copy";
+    }
+  }
+
+  function handleDragLeave(e: DragEvent) {
+    e.preventDefault();
+    dragCounter--;
+    if (dragCounter <= 0) {
+      dragCounter = 0;
+      isDragging = false;
+    }
+  }
+
+  async function handleDrop(e: DragEvent) {
+    e.preventDefault();
+    dragCounter = 0;
+    isDragging = false;
+    if (chatStore.isStreaming || isUploading) return;
+    if (!e.dataTransfer?.files || e.dataTransfer.files.length === 0) return;
+
+    const files = Array.from(e.dataTransfer.files).filter(isFileAllowed);
+    if (files.length === 0) return;
+
+    isUploading = true;
+    for (const file of files) {
+      try {
+        await chatStore.addAttachment(file);
+      } catch (err) {
+        alert("Failed to upload " + file.name);
+      }
+    }
+    isUploading = false;
   }
 
   async function handleFileSelect(e: Event) {
@@ -146,11 +216,25 @@
     {/if}
 
     <!-- Main Input Box -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="input-container relative flex flex-col rounded-xl border bg-bg-elevated p-2.5 {floating
+      ondragenter={handleDragEnter}
+      ondragover={handleDragOver}
+      ondragleave={handleDragLeave}
+      ondrop={handleDrop}
+      class="input-container relative flex flex-col rounded-xl border bg-bg-elevated p-2.5 transition-colors {isDragging ? '!border-accent !ring-2 !ring-accent/25' : ''} {floating
         ? 'shadow-lg border-line-strong'
         : 'shadow-sm'}"
     >
+      {#if isDragging}
+        <div
+          transition:fade={{ duration: 150 }}
+          class="absolute inset-0 z-30 flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-accent bg-bg-elevated text-accent shadow-md"
+        >
+          <Paperclip size={22} class="animate-bounce" />
+          <span class="text-xs font-semibold text-fg">Drop file to add as an attachment</span>
+        </div>
+      {/if}
       {#if allowedAccepts}
         <input
           type="file"

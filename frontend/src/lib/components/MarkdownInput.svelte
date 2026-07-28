@@ -151,6 +151,12 @@
         Markdown,
         CustomShortcuts,
       ],
+      editorProps: {
+        handleDrop: () => true,
+        handleDOMEvents: {
+          dragover: () => true,
+        },
+      },
       content: value,
       onUpdate: ({ editor }) => {
         checkAlerts(editor);
@@ -318,5 +324,12 @@
   :global(.markdown-input-editor .ProseMirror blockquote[data-alert-type="CAUTION"]) {
     border-left-color: var(--danger);
     background-color: color-mix(in srgb, var(--danger) 10%, transparent);
+  }
+
+  :global(.ProseMirror-dropcursor),
+  :global(.ProseMirror-gapcursor) {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
   }
 </style>

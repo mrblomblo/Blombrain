@@ -78,7 +78,7 @@
         transition:slide={{ duration: 200 }}
         class="mt-1.5 pl-4 text-[11px] leading-relaxed text-fg-muted opacity-90 border-l-2 border-line/50 ml-1.5 py-1"
       >
-        <Markdown content={thinkingContent} class="text-[11px]" />
+        <Markdown content={thinkingContent} streaming={streaming && !thinkingDone} class="text-[11px]" />
       </div>
     {/if}
   </div>

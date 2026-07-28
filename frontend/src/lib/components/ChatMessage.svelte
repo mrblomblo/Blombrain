@@ -441,9 +441,7 @@
         {#if message.error}
           <p class="font-medium text-danger">{message.error}</p>
         {:else if message.content}
-          <Markdown content={message.content} />{#if message.streaming}<span
-              class="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-accent"
-            ></span>{/if}
+          <Markdown content={message.content} streaming={message.streaming} />
         {:else if message.streaming && (message.thinkingContent === undefined || message.thinkingDone)}
           <span class="inline-flex gap-1 py-1">
             <span

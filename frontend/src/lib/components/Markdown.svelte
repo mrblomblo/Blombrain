@@ -2,13 +2,15 @@
   import { renderMarkdown } from "../markdown";
   import { fly } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
+  import morphdom from "morphdom";
 
   interface Props {
     content: string;
     class?: string;
+    streaming?: boolean;
   }
 
-  const { content, class: className = "" }: Props = $props();
+  const { content, class: className = "", streaming = false }: Props = $props();
 
   let html = $derived(renderMarkdown(content));
 
@@ -41,6 +43,64 @@
     }
     return null;
   }
+
+  /** Update container DOM incrementally using morphdom */
+  $effect(() => {
+    const currentHtml = html;
+    if (!containerEl) return;
+
+    const tempDiv = document.createElement("div");
+    tempDiv.className = containerEl.className;
+    tempDiv.innerHTML = currentHtml;
+
+    morphdom(containerEl, tempDiv, {
+      onNodeAdded: (node) => {
+        if (streaming && node.nodeType === Node.ELEMENT_NODE) {
+          const el = node as HTMLElement;
+          el.classList.add("fade-in-node");
+        }
+        return node;
+      },
+      onBeforeElUpdated: (fromEl, toEl) => {
+        if (!streaming) return true;
+
+        // Filter out our temporary inline-fade wrapper spans when comparing structure
+        const fromRealChildren = Array.from(fromEl.children).filter(
+          (c) => !c.classList.contains("inline-fade"),
+        );
+        const toRealChildren = Array.from(toEl.children);
+
+        // If toEl has new real child elements (like new code syntax spans, strong/em tags, li items, etc.),
+        // let morphdom diff them so onNodeAdded can animate the new elements.
+        if (toRealChildren.length > fromRealChildren.length) {
+          return true;
+        }
+
+        // If child element structure is unchanged, check if text content grew
+        if (toRealChildren.length === fromRealChildren.length) {
+          const oldText = fromEl.textContent || "";
+          const newText = toEl.textContent || "";
+
+          if (newText.startsWith(oldText) && newText.length > oldText.length) {
+            const addedText = newText.slice(oldText.length);
+            const span = document.createElement("span");
+            span.className = "inline-fade";
+            span.textContent = addedText;
+            fromEl.appendChild(span);
+
+            for (const attr of Array.from(toEl.attributes)) {
+              if (attr.name !== "class") {
+                fromEl.setAttribute(attr.name, attr.value);
+              }
+            }
+            return false;
+          }
+        }
+
+        return true;
+      },
+    });
+  });
 
   /**
    * After the HTML content renders, set up IntersectionObservers for each
@@ -199,6 +259,37 @@
   onclick={handleContainerClick}
   onmouseover={handleContainerMouseOver}
   onmouseout={handleContainerMouseOut}
->
-  {@html html}
-</div>
+></div>
+
+<style>
+  :global(.fade-in-node) {
+    animation: fadeInNode 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  :global(.inline-fade) {
+    display: inline;
+    animation: fadeInInline 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  @keyframes fadeInNode {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fadeInInline {
+    from {
+      opacity: 0;
+      filter: blur(1.5px);
+    }
+    to {
+      opacity: 1;
+      filter: blur(0);
+    }
+  }
+</style>
