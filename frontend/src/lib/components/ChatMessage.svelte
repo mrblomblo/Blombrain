@@ -46,7 +46,7 @@
     !!(
       message.content &&
       (message.content.includes("```") || message.content.includes("<pre>"))
-    )
+    ),
   );
 
   // Edit Mode state
@@ -365,7 +365,8 @@
 
         <MarkdownInput
           bind:value={editDraft}
-          onSubmit={() => (message.role === "user" ? handleSendBranch() : handleSaveOnly())}
+          onSubmit={() =>
+            message.role === "user" ? handleSendBranch() : handleSaveOnly()}
           disabled={isSaving || isUploadingEdit}
           placeholder="Edit message…"
           class="rounded-md bg-bg-elevated"
@@ -423,7 +424,7 @@
       </div>
     {:else if message.content || message.thinkingContent || message.error || message.streaming}
       <div
-        class="relative rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-full break-words
+        class="relative rounded-2xl p-3 text-sm leading-relaxed max-w-full break-words
           {message.role === 'user'
           ? 'bg-accent-muted/90 text-fg rounded-tr-xs'
           : 'bg-bg-elevated border border-line/60 text-fg rounded-tl-xs shadow-xs'}
