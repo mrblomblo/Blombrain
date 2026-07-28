@@ -326,7 +326,8 @@ body {
 
 .prose table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   margin-top: 1rem;
   margin-bottom: 1rem;
   font-size: 0.85rem;
@@ -336,25 +337,43 @@ body {
 }
 
 .prose th {
-  background-color: var(--bg-elevated);
+  background-color: var(--bg);
   color: var(--fg);
   font-weight: 600;
   text-align: left;
-  padding: 0.5rem 0.75rem;
+  padding: 0.6rem 0.85rem;
   border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+
+.prose th:last-child {
+  border-right: none;
 }
 
 .prose td {
-  padding: 0.5rem 0.75rem;
+  padding: 0.55rem 0.85rem;
   border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
 }
 
-.prose tr:last-child td {
+.prose td:last-child {
+  border-right: none;
+}
+
+.prose tbody tr:last-child td {
   border-bottom: none;
 }
 
-.prose tr:nth-child(even) td {
-  background-color: color-mix(in srgb, var(--bg-elevated) 40%, transparent);
+.prose tbody tr:nth-child(odd) td {
+  background-color: color-mix(in oklab, var(--color-bg)
+      /* var(--bg) */
+      50%, transparent);
+}
+
+.prose tbody tr:nth-child(even) td {
+  background-color: color-mix(in oklab, var(--color-bg)
+      /* var(--bg) */
+      75%, transparent);
 }
 
 .prose hr {
