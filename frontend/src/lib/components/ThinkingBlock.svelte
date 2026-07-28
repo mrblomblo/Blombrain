@@ -9,7 +9,8 @@
     streaming?: boolean;
     thinkingTimeMs?: number;
   }
-  const { thinkingContent, thinkingDone, streaming, thinkingTimeMs }: Props = $props();
+  const { thinkingContent, thinkingDone, streaming, thinkingTimeMs }: Props =
+    $props();
 
   let isOpen = $state(false);
   let startTime = $state(0);
@@ -43,7 +44,12 @@
         <ChevronRight size={14} class="shrink-0" />
       {/if}
       <div class="flex items-center gap-1.5">
-        <Brain size={13} class={streaming && !thinkingDone ? "animate-pulse text-accent" : "text-fg-subtle"} />
+        <Brain
+          size={13}
+          class={streaming && !thinkingDone
+            ? "animate-pulse text-accent"
+            : "text-fg-subtle"}
+        />
         <span>
           {#if streaming && !thinkingDone}
             Thinking ({elapsedSeconds.toFixed(1)}s)
@@ -57,7 +63,10 @@
     </button>
 
     {#if isOpen}
-      <div transition:slide={{ duration: 200 }} class="mt-1.5 pl-4 text-[11px] leading-relaxed text-fg-muted opacity-90 border-l-2 border-line/50 ml-1.5 py-1">
+      <div
+        transition:slide={{ duration: 200 }}
+        class="mt-1.5 pl-4 text-[11px] leading-relaxed text-fg-muted opacity-90 border-l-2 border-line/50 ml-1.5 py-1"
+      >
         <Markdown content={thinkingContent} class="text-[11px]" />
       </div>
     {/if}

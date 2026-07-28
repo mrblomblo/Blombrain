@@ -122,7 +122,9 @@
   {:else}
     {@const backends = backendsQuery.data ?? []}
     {#if backends.length === 0 && formMode === "idle"}
-      <p class="mb-4 rounded-lg border border-dashed border-line px-4 py-4 text-sm text-fg-muted">
+      <p
+        class="mb-4 rounded-lg border border-dashed border-line px-4 py-4 text-sm text-fg-muted"
+      >
         No backends configured yet. Add one to get started.
       </p>
     {:else}
@@ -146,9 +148,13 @@
             <!-- Info -->
             <div class="min-w-0 flex-1">
               <p class="truncate font-medium text-fg">{b.name}</p>
-              <p class="truncate font-mono text-[11px] text-fg-subtle">{b.baseUrl}</p>
+              <p class="truncate font-mono text-[11px] text-fg-subtle">
+                {b.baseUrl}
+              </p>
             </div>
-            <span class="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle ring-1 ring-line">
+            <span
+              class="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle ring-1 ring-line"
+            >
               {b.prefix}:
             </span>
             <!-- Actions -->
@@ -178,14 +184,21 @@
 
   <!-- Add / Edit form -->
   {#if formMode !== "idle"}
-    <div transition:slide={{ duration: 300 }} class="rounded-lg border border-accent/40 bg-bg-elevated p-4">
-      <h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+    <div
+      transition:slide={{ duration: 300 }}
+      class="rounded-lg border border-accent/40 bg-bg-elevated p-4"
+    >
+      <h3
+        class="mb-3 text-xs font-semibold uppercase tracking-wide text-fg-subtle"
+      >
         {formMode === "add" ? "Add Backend" : "Edit Backend"}
       </h3>
       <form onsubmit={handleSubmit} class="flex flex-col gap-3">
         {#if formMode === "add"}
           <div class="flex flex-col gap-1">
-            <label for="be-id" class="text-xs text-fg-muted">ID (unique slug)</label>
+            <label for="be-id" class="text-xs text-fg-muted"
+              >ID (unique slug)</label
+            >
             <input
               id="be-id"
               bind:value={formId}
@@ -198,7 +211,9 @@
 
         <div class="flex gap-3">
           <div class="flex flex-1 flex-col gap-1">
-            <label for="be-name" class="text-xs text-fg-muted">Display name</label>
+            <label for="be-name" class="text-xs text-fg-muted"
+              >Display name</label
+            >
             <input
               id="be-name"
               bind:value={formName}
@@ -240,13 +255,18 @@
             id="be-key"
             bind:value={formApiKey}
             type="password"
-            placeholder={formMode === "edit" ? "Leave blank to keep existing key" : "sk-…"}
+            placeholder={formMode === "edit"
+              ? "Leave blank to keep existing key"
+              : "sk-…"}
             class="h-8 rounded-md border border-line bg-bg px-3 font-mono text-sm text-fg outline-none focus-visible:outline-2 focus-visible:outline-accent"
           />
           {#if formMode === "edit"}
             <div class="flex items-center gap-2 pt-1">
               <ToggleSwitch id="be-clearkey" bind:checked={formClearKey} />
-              <label for="be-clearkey" class="cursor-pointer text-xs text-fg-muted">
+              <label
+                for="be-clearkey"
+                class="cursor-pointer text-xs text-fg-muted"
+              >
                 Clear existing API key
               </label>
             </div>

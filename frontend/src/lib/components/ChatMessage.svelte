@@ -199,9 +199,10 @@
                 {/if}
                 {#if s.completionTokens !== undefined && s.durationMs !== undefined && s.durationMs > 0}
                   <span
-                    >Speed: {(s.completionTokens / (s.durationMs / 1000)).toFixed(
-                      1,
-                    )} tok/s</span
+                    >Speed: {(
+                      s.completionTokens /
+                      (s.durationMs / 1000)
+                    ).toFixed(1)} tok/s</span
                   >
                 {/if}
               </div>

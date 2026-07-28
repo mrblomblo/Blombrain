@@ -16,7 +16,7 @@
     if (message.role === "user") return true;
     // For assistant messages, only allow deletion if there are alternative branches
     const siblings = chatStore.messages.filter(
-      (m) => m.parentId === message.parentId && m.role === "assistant"
+      (m) => m.parentId === message.parentId && m.role === "assistant",
     );
     return siblings.length >= 2;
   });
@@ -46,7 +46,9 @@
   }
 </script>
 
-<div class="flex items-center gap-0.5 rounded-lg border border-line bg-bg-elevated/90 px-1 py-0.5 shadow-sm backdrop-blur-sm">
+<div
+  class="flex items-center gap-0.5 rounded-lg border border-line bg-bg-elevated/90 px-1 py-0.5 shadow-sm backdrop-blur-sm"
+>
   <!-- Copy -->
   <button
     type="button"
@@ -116,5 +118,4 @@
       <Trash2 size={13} />
     </button>
   {/if}
-
 </div>

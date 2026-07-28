@@ -19,7 +19,8 @@
       const avatarUrl = serveUploadUrl(upload.id);
       await settingsStore.update({ userAvatar: avatarUrl });
     } catch (err) {
-      formError = err instanceof Error ? err.message : "Failed to upload avatar.";
+      formError =
+        err instanceof Error ? err.message : "Failed to upload avatar.";
     } finally {
       imageUploading = false;
       input.value = "";
@@ -34,19 +35,21 @@
     const input = e.target as HTMLInputElement;
     await settingsStore.update({ userName: input.value });
   }
-
-
 </script>
 
 <div class="flex flex-col gap-6">
   {#if formError}
-    <div class="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+    <div
+      class="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
+    >
       {formError}
     </div>
   {/if}
 
   <!-- User Profile Section -->
-  <div class="rounded-lg border border-line bg-bg-elevated p-4 flex flex-col gap-4">
+  <div
+    class="rounded-lg border border-line bg-bg-elevated p-4 flex flex-col gap-4"
+  >
     <h3 class="text-sm font-semibold text-fg">User Profile</h3>
 
     <!-- Avatar Upload -->
@@ -112,7 +115,9 @@
   </div>
 
   <!-- Appearance Section -->
-  <div class="rounded-lg border border-line bg-bg-elevated p-4 flex flex-col gap-4">
+  <div
+    class="rounded-lg border border-line bg-bg-elevated p-4 flex flex-col gap-4"
+  >
     <h3 class="text-sm font-semibold text-fg">Appearance</h3>
 
     <div class="flex flex-col gap-1">

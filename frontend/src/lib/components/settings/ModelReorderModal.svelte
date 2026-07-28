@@ -1,12 +1,20 @@
 <script lang="ts">
-  import { X, GripVertical, ArrowUp, ArrowDown, Check, Star, EyeOff } from "@lucide/svelte";
+  import {
+    X,
+    GripVertical,
+    ArrowUp,
+    ArrowDown,
+    Check,
+    Star,
+    EyeOff,
+  } from "@lucide/svelte";
   import { fade, fly } from "svelte/transition";
   import { flip } from "svelte/animate";
   import { quintOut } from "svelte/easing";
   import { updateModelOrder } from "../../api";
   import type { ModelInfo } from "../../types";
   import { useQueryClient } from "@tanstack/svelte-query";
-  
+
   interface Props {
     open: boolean;
     models: ModelInfo[];
@@ -23,7 +31,9 @@
   // Sync internal state when opened or models change
   $effect(() => {
     if (open) {
-      items = [...models].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      items = [...models].sort(
+        (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
+      );
     }
   });
 
@@ -77,7 +87,8 @@
       await queryClient.invalidateQueries({ queryKey: ["models"] });
       onClose();
     } catch (err) {
-      errorMsg = err instanceof Error ? err.message : "Failed to save model order.";
+      errorMsg =
+        err instanceof Error ? err.message : "Failed to save model order.";
     } finally {
       isSaving = false;
     }
@@ -118,10 +129,16 @@
       onclick={(e) => e.stopPropagation()}
     >
       <!-- Header -->
-      <div class="flex items-center justify-between border-b border-line px-5 py-3.5 bg-bg">
+      <div
+        class="flex items-center justify-between border-b border-line px-5 py-3.5 bg-bg"
+      >
         <div>
-          <h2 class="text-sm font-semibold text-fg">Reorder Models & Presets</h2>
-          <p class="text-xs text-fg-subtle">Drag items or use arrows to change model order</p>
+          <h2 class="text-sm font-semibold text-fg">
+            Reorder Models & Presets
+          </h2>
+          <p class="text-xs text-fg-subtle">
+            Drag items or use arrows to change model order
+          </p>
         </div>
         <button
           type="button"
@@ -143,19 +160,30 @@
             ondragstart={(e) => handleDragStart(index, e)}
             ondragover={(e) => handleDragOver(index, e)}
             ondragend={handleDragEnd}
-            class="flex items-center justify-between gap-3 rounded-lg border border-line bg-bg-elevated px-3 py-2 text-sm transition-colors hover:border-line-strong select-none {draggedIndex === index ? 'opacity-40 border-dashed border-accent' : ''} {model.isHidden ? 'opacity-50 bg-bg/50' : ''}"
+            class="flex items-center justify-between gap-3 rounded-lg border border-line bg-bg-elevated px-3 py-2 text-sm transition-colors hover:border-line-strong select-none {draggedIndex ===
+            index
+              ? 'opacity-40 border-dashed border-accent'
+              : ''} {model.isHidden ? 'opacity-50 bg-bg/50' : ''}"
           >
             <div class="flex items-center gap-3 min-w-0 flex-1">
               <!-- Drag Handle Icon -->
-              <div class="cursor-grab text-fg-subtle hover:text-fg active:cursor-grabbing">
+              <div
+                class="cursor-grab text-fg-subtle hover:text-fg active:cursor-grabbing"
+              >
                 <GripVertical size={16} />
               </div>
 
               <!-- Model Icon -->
               {#if model.icon}
-                <img src={model.icon} alt="Icon" class="h-6 w-6 rounded-md object-cover border border-line" />
+                <img
+                  src={model.icon}
+                  alt="Icon"
+                  class="h-6 w-6 rounded-md object-cover border border-line"
+                />
               {:else}
-                <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-bg-inset font-semibold text-[10px] text-fg-muted">
+                <div
+                  class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-bg-inset font-semibold text-[10px] text-fg-muted"
+                >
                   AI
                 </div>
               {/if}
@@ -163,9 +191,14 @@
               <!-- Details -->
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
-                  <span class="font-medium text-fg text-xs truncate">{model.name || model.id}</span>
+                  <span class="font-medium text-fg text-xs truncate"
+                    >{model.name || model.id}</span
+                  >
                   {#if model.isPreset}
-                    <span class="rounded bg-accent/20 px-1.5 py-0.5 text-[9px] font-mono text-accent">Preset</span>
+                    <span
+                      class="rounded bg-accent/20 px-1.5 py-0.5 text-[9px] font-mono text-accent"
+                      >Preset</span
+                    >
                   {/if}
                   {#if model.isDefault}
                     <Star size={11} class="text-amber-400 fill-amber-400" />

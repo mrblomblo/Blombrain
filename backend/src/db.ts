@@ -125,7 +125,7 @@ for (const col of columnsToAdd) {
   if (!modelSettingCols.includes(col.name)) {
     try {
       db.exec(`ALTER TABLE model_settings ADD COLUMN ${col.name} ${col.type}`);
-    } catch (e) {}
+    } catch (e) { }
   }
 }
 
@@ -134,12 +134,12 @@ const msgCols = (db.pragma("table_info(messages)") as { name: string }[]).map(c 
 if (!msgCols.includes("parent_id")) {
   try {
     db.exec(`ALTER TABLE messages ADD COLUMN parent_id TEXT REFERENCES messages(id) ON DELETE SET NULL`);
-  } catch (e) {}
+  } catch (e) { }
 }
 if (!msgCols.includes("model")) {
   try {
     db.exec(`ALTER TABLE messages ADD COLUMN model TEXT`);
-  } catch (e) {}
+  } catch (e) { }
 }
 
 // Backfill legacy assistant messages with conversation model if model is NULL
@@ -149,11 +149,11 @@ try {
     SET model = (SELECT model FROM conversations WHERE id = messages.conversation_id)
     WHERE role = 'assistant' AND model IS NULL;
   `);
-} catch (e) {}
+} catch (e) { }
 
 try {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);`);
-} catch (e) {}
+} catch (e) { }
 
 export const insertMessage = db.prepare<{
   id: string;
@@ -178,6 +178,6 @@ try {
       db.prepare("UPDATE messages SET parent_id = ? WHERE id = ? AND parent_id IS NULL").run(msgs[i - 1].id, msgs[i].id);
     }
   }
-} catch (e) {}
+} catch (e) { }
 
 export default db;

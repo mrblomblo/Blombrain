@@ -32,10 +32,14 @@
   aria-label={label}
   {disabled}
   onclick={toggle}
-  class="relative inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50 disabled:cursor-not-allowed {checked ? 'bg-accent' : 'bg-line-strong'} {className}"
+  class="relative inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50 disabled:cursor-not-allowed {checked
+    ? 'bg-accent'
+    : 'bg-line-strong'} {className}"
 >
   <span
     aria-hidden="true"
-    class="pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-xs transition-transform duration-200 ease-in-out {checked ? 'translate-x-3.5' : 'translate-x-0.5'}"
+    class="pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-xs transition-transform duration-200 ease-in-out {checked
+      ? 'translate-x-3.5'
+      : 'translate-x-0.5'}"
   ></span>
 </button>

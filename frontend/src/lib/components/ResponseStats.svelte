@@ -31,7 +31,9 @@
     </button>
 
     {#if showPopover}
-      <div class="absolute bottom-full left-1/2 mb-1.5 -translate-x-1/2 z-30 min-w-44 rounded-lg border border-line bg-bg-elevated p-2.5 shadow-xl text-[11px] font-mono text-fg font-normal whitespace-nowrap pointer-events-none">
+      <div
+        class="absolute bottom-full left-1/2 mb-1.5 -translate-x-1/2 z-30 min-w-44 rounded-lg border border-line bg-bg-elevated p-2.5 shadow-xl text-[11px] font-mono text-fg font-normal whitespace-nowrap pointer-events-none"
+      >
         <div class="flex items-center justify-between gap-4 py-0.5">
           <span class="text-fg-muted">Prompt tokens:</span>
           <span>{stats.promptTokens ?? "-"}</span>
@@ -42,10 +44,14 @@
         </div>
         <div class="flex items-center justify-between gap-4 py-0.5">
           <span class="text-fg-muted">Total tokens:</span>
-          <span class="font-semibold text-accent">{stats.totalTokens ?? "-"}</span>
+          <span class="font-semibold text-accent"
+            >{stats.totalTokens ?? "-"}</span
+          >
         </div>
         {#if tokensPerSec}
-          <div class="flex items-center justify-between gap-4 py-0.5 border-t border-line/60 mt-1 pt-1">
+          <div
+            class="flex items-center justify-between gap-4 py-0.5 border-t border-line/60 mt-1 pt-1"
+          >
             <span class="text-fg-muted">Generation speed:</span>
             <span class="font-semibold text-success">{tokensPerSec} t/s</span>
           </div>

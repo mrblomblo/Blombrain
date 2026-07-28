@@ -10,7 +10,13 @@
     children: Snippet;
   }
 
-  let { variant = "outline", size = "md", class: className = "", children, ...rest }: Props = $props();
+  let {
+    variant = "outline",
+    size = "md",
+    class: className = "",
+    children,
+    ...rest
+  }: Props = $props();
 
   const base =
     "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed";
@@ -21,7 +27,8 @@
   };
 
   const variants: Record<Variant, string> = {
-    primary: "bg-accent text-accent-fg hover:brightness-110 active:brightness-95",
+    primary:
+      "bg-accent text-accent-fg hover:brightness-110 active:brightness-95",
     outline: "border border-line text-fg bg-transparent hover:bg-bg-hover",
     ghost: "text-fg-muted hover:text-fg hover:bg-bg-hover",
     danger: "bg-danger text-danger-fg hover:brightness-110",

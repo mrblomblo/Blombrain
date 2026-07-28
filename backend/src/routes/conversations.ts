@@ -106,9 +106,9 @@ export async function conversationsRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const row = getConversation.get(id);
     if (!row) return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
-    
+
     const messages = getMessages.all(id).map(rowToMessage);
-    
+
     // Attachments fetching
     const attachRows = db.prepare(`SELECT * FROM attachments WHERE conversation_id = ?`).all(id) as import("../types.js").AttachmentRow[];
     for (const msg of messages) {
@@ -157,8 +157,8 @@ export async function conversationsRoutes(app: FastifyInstance) {
       if (fs.existsSync(convDir)) {
         fs.rmSync(convDir, { recursive: true, force: true });
       }
-    } catch(e) {}
-    
+    } catch (e) { }
+
     return reply.code(204).send();
   });
 

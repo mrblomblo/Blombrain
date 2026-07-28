@@ -30,7 +30,7 @@
         (m.name && m.name.toLowerCase().includes(q)) ||
         m.id.toLowerCase().includes(q) ||
         m.rawId.toLowerCase().includes(q) ||
-        m.backendName.toLowerCase().includes(q)
+        m.backendName.toLowerCase().includes(q),
     );
   });
 
@@ -86,11 +86,17 @@
       class="flex h-8 items-center gap-2 rounded-lg border border-line bg-bg-elevated px-2.5 text-xs text-fg transition-colors hover:bg-bg-hover hover:border-line-strong focus:outline-none"
     >
       {#if selectedModel?.icon}
-        <img src={selectedModel.icon} alt="Icon" class="h-4 w-4 rounded-xs object-cover" />
+        <img
+          src={selectedModel.icon}
+          alt="Icon"
+          class="h-4 w-4 rounded-xs object-cover"
+        />
       {:else if selectedModel?.isPreset}
         <Sparkles size={13} class="text-accent" />
       {:else}
-        <div class="flex h-4 w-4 items-center justify-center rounded-xs bg-bg-inset font-semibold text-[9px] text-fg-muted">
+        <div
+          class="flex h-4 w-4 items-center justify-center rounded-xs bg-bg-inset font-semibold text-[9px] text-fg-muted"
+        >
           AI
         </div>
       {/if}
@@ -114,7 +120,9 @@
       >
         <!-- Search Bar (shown when visible models count > 10) -->
         {#if visibleModels.length > 10}
-          <div class="flex items-center gap-2 border-b border-line bg-bg-inset px-3 py-2">
+          <div
+            class="flex items-center gap-2 border-b border-line bg-bg-inset px-3 py-2"
+          >
             <Search size={13} class="text-fg-subtle shrink-0" />
             <input
               type="text"
@@ -129,19 +137,30 @@
         <!-- Model List -->
         <div class="max-h-64 overflow-y-auto p-1.5 space-y-1">
           {#if filteredModels.length === 0}
-            <div class="px-3 py-4 text-center text-xs text-fg-subtle">No matching models found</div>
+            <div class="px-3 py-4 text-center text-xs text-fg-subtle">
+              No matching models found
+            </div>
           {:else}
             {#each filteredModels as model (model.id)}
               <button
                 type="button"
                 onclick={() => selectModel(model.id)}
-                class="w-full flex items-center justify-between gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs transition-colors {model.id === chatStore.selectedModel ? 'bg-accent/15 text-accent font-medium' : 'hover:bg-bg-elevated text-fg'}"
+                class="w-full flex items-center justify-between gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs transition-colors {model.id ===
+                chatStore.selectedModel
+                  ? 'bg-accent/15 text-accent font-medium'
+                  : 'hover:bg-bg-elevated text-fg'}"
               >
                 <div class="flex items-center gap-2.5 min-w-0 flex-1">
                   {#if model.icon}
-                    <img src={model.icon} alt="Icon" class="h-5 w-5 rounded-md object-cover border border-line shrink-0" />
+                    <img
+                      src={model.icon}
+                      alt="Icon"
+                      class="h-5 w-5 rounded-md object-cover border border-line shrink-0"
+                    />
                   {:else}
-                    <div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-bg-inset text-fg-subtle font-semibold text-[9px]">
+                    <div
+                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-bg-inset text-fg-subtle font-semibold text-[9px]"
+                    >
                       AI
                     </div>
                   {/if}
@@ -150,13 +169,21 @@
                     <div class="flex items-center gap-1.5">
                       <span class="truncate">{model.name || model.id}</span>
                       {#if model.isPreset}
-                        <span class="rounded bg-accent/20 px-1 py-0.2 text-[9px] font-mono text-accent shrink-0">Preset</span>
+                        <span
+                          class="rounded bg-accent/20 px-1 py-0.2 text-[9px] font-mono text-accent shrink-0"
+                          >Preset</span
+                        >
                       {/if}
                       {#if model.isDefault}
-                        <Star size={11} class="text-amber-400 fill-amber-400 shrink-0" />
+                        <Star
+                          size={11}
+                          class="text-amber-400 fill-amber-400 shrink-0"
+                        />
                       {/if}
                     </div>
-                    <span class="text-[10px] text-fg-subtle truncate block">{model.backendName}</span>
+                    <span class="text-[10px] text-fg-subtle truncate block"
+                      >{model.backendName}</span
+                    >
                   </div>
                 </div>
 

@@ -27,7 +27,9 @@
 </script>
 
 {#if siblings.length > 1}
-  <div class="inline-flex items-center gap-0.5 rounded-md border border-line bg-bg-inset px-1 py-0.5 text-[11px] font-mono text-fg-subtle select-none">
+  <div
+    class="inline-flex items-center gap-0.5 rounded-md border border-line bg-bg-inset px-1 py-0.5 text-[11px] font-mono text-fg-subtle select-none"
+  >
     <button
       type="button"
       onclick={handlePrev}

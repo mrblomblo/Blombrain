@@ -59,10 +59,13 @@
     const root = findScrollContainer(containerEl);
 
     const setup = () => {
-      const sentinels = containerEl!.querySelectorAll<HTMLElement>(".code-sticky-sentinel");
+      const sentinels = containerEl!.querySelectorAll<HTMLElement>(
+        ".code-sticky-sentinel",
+      );
       sentinels.forEach((sentinel) => {
         const wrapper = sentinel.closest<HTMLElement>(".code-block-wrapper");
-        const header = wrapper?.querySelector<HTMLElement>(".code-block-header");
+        const header =
+          wrapper?.querySelector<HTMLElement>(".code-block-header");
         if (!header) return;
 
         const observer = new IntersectionObserver(

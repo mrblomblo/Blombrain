@@ -5,7 +5,6 @@
   import { serveUploadUrl, fetchModels } from "../api";
   import { createQuery } from "@tanstack/svelte-query";
 
-
   let draft = $state("");
   let textarea: HTMLTextAreaElement | undefined = $state();
   let fileInput: HTMLInputElement | undefined = $state();
@@ -25,13 +24,33 @@
   let selectedModelInfo = $derived(
     chatStore.selectedModel && modelsQuery.data
       ? modelsQuery.data.find((m) => m.id === chatStore.selectedModel)
-      : undefined
+      : undefined,
   );
 
   let allowedAccepts = $derived.by(() => {
     const types: string[] = [
-      ".txt", ".md", ".pdf", ".py", ".ts", ".js", ".svelte", ".html", ".css", ".json",
-      ".csv", ".c", ".cpp", ".rs", ".go", ".java", ".sh", ".yaml", ".yml", ".xml", ".doc", ".docx"
+      ".txt",
+      ".md",
+      ".pdf",
+      ".py",
+      ".ts",
+      ".js",
+      ".svelte",
+      ".html",
+      ".css",
+      ".json",
+      ".csv",
+      ".c",
+      ".cpp",
+      ".rs",
+      ".go",
+      ".java",
+      ".sh",
+      ".yaml",
+      ".yml",
+      ".xml",
+      ".doc",
+      ".docx",
     ];
     if (selectedModelInfo?.canImage) types.push("image/*");
     if (selectedModelInfo?.canAudio) types.push("audio/*");
@@ -46,7 +65,12 @@
   }
 
   async function handleSend() {
-    if ((!draft.trim() && chatStore.pendingAttachments.length === 0) || chatStore.isStreaming || isUploading) return;
+    if (
+      (!draft.trim() && chatStore.pendingAttachments.length === 0) ||
+      chatStore.isStreaming ||
+      isUploading
+    )
+      return;
     const toSend = draft;
     draft = "";
     autosize();
@@ -77,13 +101,19 @@
   }
 </script>
 
-<div class={floating ? "w-full px-4 sm:px-6" : "border-t border-line bg-bg px-4 sm:px-6 py-3"}>
+<div
+  class={floating
+    ? "w-full px-4 sm:px-6"
+    : "border-t border-line bg-bg px-4 sm:px-6 py-3"}
+>
   <div class="mx-auto flex max-w-3xl flex-col gap-2">
     <!-- Attachment Thumbnails -->
     {#if chatStore.pendingAttachments.length > 0}
       <div class="flex flex-wrap gap-2 px-1">
         {#each chatStore.pendingAttachments as att (att.id)}
-          <div class="group relative flex h-14 w-14 items-center justify-center rounded-lg border border-line bg-bg-elevated overflow-hidden shadow-xs">
+          <div
+            class="group relative flex h-14 w-14 items-center justify-center rounded-lg border border-line bg-bg-elevated overflow-hidden shadow-xs"
+          >
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
@@ -91,11 +121,19 @@
               class="h-full w-full flex items-center justify-center cursor-pointer hover:opacity-90 transition-opacity"
             >
               {#if att.mimeType.startsWith("image/") || att.mimeType.startsWith("video/")}
-                <img src={serveUploadUrl(att.id)} alt={att.originalName} class="h-full w-full object-cover" />
+                <img
+                  src={serveUploadUrl(att.id)}
+                  alt={att.originalName}
+                  class="h-full w-full object-cover"
+                />
               {:else if att.mimeType.startsWith("audio/")}
                 <div class="text-[9px] text-fg-subtle font-mono">Audio</div>
               {:else}
-                <div class="text-[9px] text-fg-subtle truncate max-w-full px-1 font-mono">{att.originalName}</div>
+                <div
+                  class="text-[9px] text-fg-subtle truncate max-w-full px-1 font-mono"
+                >
+                  {att.originalName}
+                </div>
               {/if}
             </div>
             <button
@@ -111,7 +149,9 @@
           </div>
         {/each}
         {#if isUploading}
-          <div class="flex h-14 w-14 items-center justify-center rounded-lg border border-line bg-bg-elevated">
+          <div
+            class="flex h-14 w-14 items-center justify-center rounded-lg border border-line bg-bg-elevated"
+          >
             <span class="animate-spin text-fg-subtle text-xs">⟳</span>
           </div>
         {/if}
@@ -119,7 +159,11 @@
     {/if}
 
     <!-- Main Input Box -->
-    <div class="input-container relative flex flex-col rounded-xl border bg-bg-elevated p-2.5 {floating ? 'shadow-lg border-line-strong' : 'shadow-sm'}">
+    <div
+      class="input-container relative flex flex-col rounded-xl border bg-bg-elevated p-2.5 {floating
+        ? 'shadow-lg border-line-strong'
+        : 'shadow-sm'}"
+    >
       {#if allowedAccepts}
         <input
           type="file"
@@ -163,7 +207,12 @@
         <!-- Right Side Actions (Send / Stop) -->
         <div class="flex items-center gap-2">
           {#if chatStore.isStreaming}
-            <Button variant="danger" onclick={() => chatStore.stop()} aria-label="Stop generating" class="!px-3 !py-1.5 h-8 text-xs font-semibold">
+            <Button
+              variant="danger"
+              onclick={() => chatStore.stop()}
+              aria-label="Stop generating"
+              class="!px-3 !py-1.5 h-8 text-xs font-semibold"
+            >
               <Square size={13} />
               Stop
             </Button>
@@ -171,7 +220,9 @@
             <Button
               variant="primary"
               onclick={handleSend}
-              disabled={(!draft.trim() && chatStore.pendingAttachments.length === 0) || isUploading}
+              disabled={(!draft.trim() &&
+                chatStore.pendingAttachments.length === 0) ||
+                isUploading}
               aria-label="Send message"
               class="!px-3 !py-1.5 h-8 text-xs font-semibold"
             >
@@ -188,7 +239,9 @@
 <style>
   .input-container {
     border-color: var(--line);
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
   }
 
   .input-container:hover {

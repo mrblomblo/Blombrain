@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { THEMES, THEME_LABELS, themeStore, type ThemeName } from "../theme.svelte";
+  import {
+    THEMES,
+    THEME_LABELS,
+    themeStore,
+    type ThemeName,
+  } from "../theme.svelte";
   import Dropdown from "./ui/Dropdown.svelte";
 
   interface Props {
@@ -24,9 +29,4 @@
   }
 </script>
 
-<Dropdown
-  {id}
-  value={currentValue}
-  {options}
-  onchange={handleChange}
-/>
+<Dropdown {id} value={currentValue} {options} onchange={handleChange} />

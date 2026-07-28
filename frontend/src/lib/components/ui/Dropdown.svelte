@@ -61,10 +61,16 @@
     type="button"
     {disabled}
     onclick={() => (isOpen = !isOpen)}
-    class="flex w-full items-center justify-between gap-2 rounded-md border border-line text-xs text-fg transition-colors hover:border-line-strong hover:bg-bg-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50 disabled:cursor-not-allowed {buttonClass || 'h-8 bg-bg px-3'} {className}"
+    class="flex w-full items-center justify-between gap-2 rounded-md border border-line text-xs text-fg transition-colors hover:border-line-strong hover:bg-bg-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50 disabled:cursor-not-allowed {buttonClass ||
+      'h-8 bg-bg px-3'} {className}"
   >
     <span class="truncate">{selectedOption?.label || placeholder}</span>
-    <ChevronDown size={13} class="text-fg-subtle shrink-0 transition-transform duration-200 {isOpen ? 'rotate-180' : ''}" />
+    <ChevronDown
+      size={13}
+      class="text-fg-subtle shrink-0 transition-transform duration-200 {isOpen
+        ? 'rotate-180'
+        : ''}"
+    />
   </button>
 
   {#if isOpen}
@@ -77,7 +83,10 @@
           <button
             type="button"
             onclick={() => handleSelect(option.value)}
-            class="w-full flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors {value === option.value ? 'bg-accent/15 text-accent font-medium' : 'hover:bg-bg-elevated text-fg'}"
+            class="w-full flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors {value ===
+            option.value
+              ? 'bg-accent/15 text-accent font-medium'
+              : 'hover:bg-bg-elevated text-fg'}"
           >
             <span class="truncate">{option.label}</span>
             {#if value === option.value}

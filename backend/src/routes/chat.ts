@@ -77,7 +77,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
     // Temperature precedence: preset/setting override > body request > default undefined
     const finalTemperature = settingRow?.temperature ?? body.temperature;
-    
+
     // Build attachments content array if present
     const contentParts: any[] = [];
     if (lastUserMsg && typeof lastUserMsg.content === "string") {
@@ -94,7 +94,7 @@ export async function chatRoutes(app: FastifyInstance) {
           dbAttachments.push(row);
           const fileData = fs.readFileSync(row.disk_path);
           const base64 = fileData.toString("base64");
-          
+
           if (row.mime_type.startsWith("image/")) {
             contentParts.push({ type: "image_url", image_url: { url: `data:${row.mime_type};base64,${base64}` } });
           } else if (row.mime_type.startsWith("video/")) {
@@ -168,8 +168,7 @@ export async function chatRoutes(app: FastifyInstance) {
       return sendJsonError(
         reply,
         502,
-        `Couldn't reach backend "${backend.name}" at ${backend.baseUrl}: ${
-          err instanceof Error ? err.message : err
+        `Couldn't reach backend "${backend.name}" at ${backend.baseUrl}: ${err instanceof Error ? err.message : err
         }`,
       );
     }
@@ -221,7 +220,7 @@ export async function chatRoutes(app: FastifyInstance) {
               const parsed = JSON.parse(payload);
               const delta: string | undefined = parsed?.choices?.[0]?.delta?.content;
               const reasoning: string | undefined = parsed?.choices?.[0]?.delta?.reasoning_content;
-              
+
               if (reasoning) {
                 if (!reasoningMode) {
                   reasoningMode = "oob";
@@ -230,7 +229,7 @@ export async function chatRoutes(app: FastifyInstance) {
                 }
                 assistantContent += reasoning;
               }
-              
+
               if (delta) {
                 if (reasoningMode === "oob") {
                   reasoningMode = null;

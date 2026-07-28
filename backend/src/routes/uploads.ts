@@ -57,7 +57,7 @@ export async function uploadsRoutes(app: FastifyInstance) {
     // SQLite allows NULL in foreign keys unless NOT NULL is specified.
     // The plan schema doesn't have NOT NULL for conversation_id in attachments.
     const conversationId = req.query.conversationId || null;
-    
+
     // We can group uploads by conversation ID or just put them in the root of uploads if no conv.
     const convDir = conversationId ? conversationId : "staging";
     const targetDir = path.join(UPLOADS_DIR, convDir);
@@ -86,7 +86,7 @@ export async function uploadsRoutes(app: FastifyInstance) {
       data.filename,
       resolveMimeType(data.filename, data.mimetype),
       diskPath, // Store absolute path or relative? Storing absolute for simplicity, or relative to DATA_DIR.
-                // It's safer to store relative to DATA_DIR so it's portable.
+      // It's safer to store relative to DATA_DIR so it's portable.
       stat.size,
       now
     );
@@ -178,7 +178,7 @@ export async function uploadsRoutes(app: FastifyInstance) {
             WHERE user_avatar IS NOT NULL
           )
       `).all(oneHourAgo) as AttachmentRow[];
-      
+
       for (const row of orphans) {
         if (fs.existsSync(row.disk_path)) {
           fs.unlinkSync(row.disk_path);
@@ -189,12 +189,12 @@ export async function uploadsRoutes(app: FastifyInstance) {
           if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0 && dir !== UPLOADS_DIR) {
             fs.rmdirSync(dir);
           }
-        } catch(e) {}
+        } catch (e) { }
       }
       if (orphans.length > 0) {
         app.log.info(`Cleaned up ${orphans.length} orphaned attachments`);
       }
-    } catch(err) {
+    } catch (err) {
       app.log.error(err, "Failed to run attachment cleanup job");
     }
   };

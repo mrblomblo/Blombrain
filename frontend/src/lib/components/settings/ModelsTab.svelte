@@ -1,7 +1,27 @@
 <script lang="ts">
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
-  import { Plus, Pencil, Trash2, Check, Upload, ChevronDown, ChevronRight, Eye, EyeOff, Star, Copy, ArrowUpDown } from "@lucide/svelte";
-  import { fetchModels, createPreset, updateModelSettings, deleteModelSettings, uploadFile, serveUploadUrl } from "../../api";
+  import {
+    Plus,
+    Pencil,
+    Trash2,
+    Check,
+    Upload,
+    ChevronDown,
+    ChevronRight,
+    Eye,
+    EyeOff,
+    Star,
+    Copy,
+    ArrowUpDown,
+  } from "@lucide/svelte";
+  import {
+    fetchModels,
+    createPreset,
+    updateModelSettings,
+    deleteModelSettings,
+    uploadFile,
+    serveUploadUrl,
+  } from "../../api";
   import type { ModelInfo, ModelSettingWriteBody } from "../../types";
   import ModelReorderModal from "./ModelReorderModal.svelte";
   import { flip } from "svelte/animate";
@@ -125,7 +145,9 @@
       });
       await queryClient.invalidateQueries({ queryKey: ["models"] });
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to toggle hide state.");
+      alert(
+        err instanceof Error ? err.message : "Failed to toggle hide state.",
+      );
     }
   }
 
@@ -142,7 +164,9 @@
       });
       await queryClient.invalidateQueries({ queryKey: ["models"] });
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to set default model.");
+      alert(
+        err instanceof Error ? err.message : "Failed to set default model.",
+      );
     }
   }
 
@@ -202,7 +226,10 @@
     const payload: ModelSettingWriteBody = {
       name: formName.trim() || undefined,
       systemPrompt: formSystemPrompt.trim() || undefined,
-      temperature: formTemperature !== undefined && !isNaN(formTemperature) ? formTemperature : undefined,
+      temperature:
+        formTemperature !== undefined && !isNaN(formTemperature)
+          ? formTemperature
+          : undefined,
       canImage: formCanImage,
       canAudio: formCanAudio,
       canVideo: formCanVideo,
@@ -210,20 +237,37 @@
       seed: formSeed !== undefined && !isNaN(formSeed) ? formSeed : undefined,
       reasoningEffort: formReasoningEffort || undefined,
       thinking: formThinking,
-      maxTokens: formMaxTokens !== undefined && !isNaN(formMaxTokens) ? formMaxTokens : undefined,
+      maxTokens:
+        formMaxTokens !== undefined && !isNaN(formMaxTokens)
+          ? formMaxTokens
+          : undefined,
       topK: formTopK !== undefined && !isNaN(formTopK) ? formTopK : undefined,
       topP: formTopP !== undefined && !isNaN(formTopP) ? formTopP : undefined,
       minP: formMinP !== undefined && !isNaN(formMinP) ? formMinP : undefined,
-      presencePenalty: formPresencePenalty !== undefined && !isNaN(formPresencePenalty) ? formPresencePenalty : undefined,
-      frequencyPenalty: formFrequencyPenalty !== undefined && !isNaN(formFrequencyPenalty) ? formFrequencyPenalty : undefined,
-      repeatPenalty: formRepeatPenalty !== undefined && !isNaN(formRepeatPenalty) ? formRepeatPenalty : undefined,
-      ctxLength: formCtxLength !== undefined && !isNaN(formCtxLength) ? formCtxLength : undefined,
+      presencePenalty:
+        formPresencePenalty !== undefined && !isNaN(formPresencePenalty)
+          ? formPresencePenalty
+          : undefined,
+      frequencyPenalty:
+        formFrequencyPenalty !== undefined && !isNaN(formFrequencyPenalty)
+          ? formFrequencyPenalty
+          : undefined,
+      repeatPenalty:
+        formRepeatPenalty !== undefined && !isNaN(formRepeatPenalty)
+          ? formRepeatPenalty
+          : undefined,
+      ctxLength:
+        formCtxLength !== undefined && !isNaN(formCtxLength)
+          ? formCtxLength
+          : undefined,
     };
 
     try {
       if (formMode === "add_preset") {
         if (!formName.trim() || !formBaseModelId) {
-          throw new Error("Name and Base Model are required for creating a preset.");
+          throw new Error(
+            "Name and Base Model are required for creating a preset.",
+          );
         }
         await createPreset({
           ...payload,
@@ -231,7 +275,9 @@
           baseModelId: formBaseModelId,
         });
       } else if (formMode === "edit" && selectedModelId) {
-        const isPreset = modelsQuery.data?.find((m) => m.id === selectedModelId)?.isPreset;
+        const isPreset = modelsQuery.data?.find(
+          (m) => m.id === selectedModelId,
+        )?.isPreset;
         await updateModelSettings(selectedModelId, {
           ...payload,
           isPreset,
@@ -249,7 +295,9 @@
   }
 
   async function handleDelete(model: ModelInfo) {
-    const actionText = model.isPreset ? `Delete preset "${model.name || model.id}"?` : `Reset settings for "${model.id}" to defaults?`;
+    const actionText = model.isPreset
+      ? `Delete preset "${model.name || model.id}"?`
+      : `Reset settings for "${model.id}" to defaults?`;
     if (!confirm(actionText)) return;
 
     formBusy = true;
@@ -279,7 +327,9 @@
     {#if formMode === "idle"}
       <div>
         <div class="mb-4 flex items-center justify-between">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+          <h3
+            class="text-xs font-semibold uppercase tracking-wider text-fg-subtle"
+          >
             Models ({allModels.length})
           </h3>
           <div class="flex items-center gap-2">
@@ -305,31 +355,52 @@
         <!-- Presets Section -->
         {#if presets.length > 0}
           <div class="mb-5">
-            <span class="mb-2 block text-xs font-medium text-fg-muted">Presets</span>
+            <span class="mb-2 block text-xs font-medium text-fg-muted"
+              >Presets</span
+            >
             <ul class="flex flex-col gap-2">
               {#each presets as model (model.id)}
                 <li
                   animate:flip={{ duration: 300, easing: quintOut }}
                   out:slide={{ duration: 250, easing: quintOut }}
-                  class="flex items-center justify-between rounded-lg border border-accent/40 bg-bg-elevated px-4 py-3 text-sm transition-colors {model.isHidden ? 'opacity-50' : ''}"
+                  class="flex items-center justify-between rounded-lg border border-accent/40 bg-bg-elevated px-4 py-3 text-sm transition-colors {model.isHidden
+                    ? 'opacity-50'
+                    : ''}"
                 >
                   <div class="flex items-center gap-3 min-w-0 flex-1">
                     {#if model.icon}
-                      <img src={model.icon} alt="Icon" class="h-7 w-7 rounded-md object-cover border border-line" />
+                      <img
+                        src={model.icon}
+                        alt="Icon"
+                        class="h-7 w-7 rounded-md object-cover border border-line"
+                      />
                     {:else}
-                      <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent/20 text-accent font-semibold text-xs">
+                      <div
+                        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent/20 text-accent font-semibold text-xs"
+                      >
                         AI
                       </div>
                     {/if}
                     <div class="min-w-0 flex-1">
                       <div class="flex items-center gap-2 flex-wrap">
-                        <span class="font-medium text-fg">{model.name || model.id}</span>
-                        <span class="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] font-mono text-accent">Preset</span>
+                        <span class="font-medium text-fg"
+                          >{model.name || model.id}</span
+                        >
+                        <span
+                          class="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] font-mono text-accent"
+                          >Preset</span
+                        >
                         {#if model.isDefault}
-                          <span transition:slide={{ axis: 'x', duration: 250 }} class="rounded bg-amber-500/20 text-amber-500 px-1.5 py-0.5 text-[10px] font-semibold inline-block whitespace-nowrap">Default</span>
+                          <span
+                            transition:slide={{ axis: "x", duration: 250 }}
+                            class="rounded bg-amber-500/20 text-amber-500 px-1.5 py-0.5 text-[10px] font-semibold inline-block whitespace-nowrap"
+                            >Default</span
+                          >
                         {/if}
                       </div>
-                      <p class="truncate text-xs text-fg-subtle mt-0.5">Base: {model.baseModelId}</p>
+                      <p class="truncate text-xs text-fg-subtle mt-0.5">
+                        Base: {model.baseModelId}
+                      </p>
                     </div>
                   </div>
 
@@ -337,10 +408,19 @@
                     <!-- Star / Set Default -->
                     <button
                       onclick={() => handleToggleDefault(model)}
-                      class="flex h-7 w-7 items-center justify-center rounded transition-colors duration-200 {model.isDefault ? 'text-amber-400' : 'text-fg-muted hover:bg-bg hover:text-amber-400'}"
-                      title={model.isDefault ? "Current Default Model" : "Set as Default Model"}
+                      class="flex h-7 w-7 items-center justify-center rounded transition-colors duration-200 {model.isDefault
+                        ? 'text-amber-400'
+                        : 'text-fg-muted hover:bg-bg hover:text-amber-400'}"
+                      title={model.isDefault
+                        ? "Current Default Model"
+                        : "Set as Default Model"}
                     >
-                      <Star size={13} class="transition-colors duration-300 {model.isDefault ? 'fill-amber-400 text-amber-400' : ''}" />
+                      <Star
+                        size={13}
+                        class="transition-colors duration-300 {model.isDefault
+                          ? 'fill-amber-400 text-amber-400'
+                          : ''}"
+                      />
                     </button>
                     <!-- Copy / Duplicate Preset -->
                     <button
@@ -375,37 +455,61 @@
 
         <!-- Base Models Section -->
         <div>
-          <span class="mb-2 block text-xs font-medium text-fg-muted">Base Models</span>
+          <span class="mb-2 block text-xs font-medium text-fg-muted"
+            >Base Models</span
+          >
           <ul class="flex flex-col gap-2">
             {#each baseModels as model (model.id)}
               <li
                 animate:flip={{ duration: 300, easing: quintOut }}
                 out:slide={{ duration: 250, easing: quintOut }}
-                class="flex items-center justify-between rounded-lg border border-line bg-bg-elevated px-4 py-3 text-sm transition-colors {model.isHidden ? 'opacity-50 bg-bg-elevated/50' : ''}"
+                class="flex items-center justify-between rounded-lg border border-line bg-bg-elevated px-4 py-3 text-sm transition-colors {model.isHidden
+                  ? 'opacity-50 bg-bg-elevated/50'
+                  : ''}"
               >
                 <div class="flex items-center gap-3 min-w-0 flex-1">
                   {#if model.icon}
-                    <img src={model.icon} alt="Icon" class="h-7 w-7 rounded-md object-cover border border-line" />
+                    <img
+                      src={model.icon}
+                      alt="Icon"
+                      class="h-7 w-7 rounded-md object-cover border border-line"
+                    />
                   {:else}
-                    <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-bg-inset text-fg-muted font-semibold text-xs">
+                    <div
+                      class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-bg-inset text-fg-muted font-semibold text-xs"
+                    >
                       AI
                     </div>
                   {/if}
                   <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2 flex-wrap">
-                      <span class="font-medium text-fg">{model.name || model.id}</span>
-                      <span class="rounded bg-bg px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle ring-1 ring-line">
+                      <span class="font-medium text-fg"
+                        >{model.name || model.id}</span
+                      >
+                      <span
+                        class="rounded bg-bg px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle ring-1 ring-line"
+                      >
                         {model.backendName}
                       </span>
                       {#if model.isDefault}
-                        <span transition:slide={{ axis: 'x', duration: 250 }} class="rounded bg-amber-500/20 text-amber-500 px-1.5 py-0.5 text-[10px] font-semibold inline-block whitespace-nowrap">Default</span>
+                        <span
+                          transition:slide={{ axis: "x", duration: 250 }}
+                          class="rounded bg-amber-500/20 text-amber-500 px-1.5 py-0.5 text-[10px] font-semibold inline-block whitespace-nowrap"
+                          >Default</span
+                        >
                       {/if}
                       {#if model.isHidden}
-                        <span transition:slide={{ axis: 'x', duration: 250 }} class="rounded bg-bg-inset text-fg-subtle px-1.5 py-0.5 text-[10px] inline-block whitespace-nowrap">Hidden</span>
+                        <span
+                          transition:slide={{ axis: "x", duration: 250 }}
+                          class="rounded bg-bg-inset text-fg-subtle px-1.5 py-0.5 text-[10px] inline-block whitespace-nowrap"
+                          >Hidden</span
+                        >
                       {/if}
                     </div>
                     {#if model.systemPrompt}
-                      <p class="truncate text-xs text-fg-subtle mt-0.5">Prompt: "{model.systemPrompt}"</p>
+                      <p class="truncate text-xs text-fg-subtle mt-0.5">
+                        Prompt: "{model.systemPrompt}"
+                      </p>
                     {/if}
                   </div>
                 </div>
@@ -415,16 +519,31 @@
                   <button
                     onclick={() => handleToggleDefault(model)}
                     disabled={model.isHidden && !model.isDefault}
-                    class="flex h-7 w-7 items-center justify-center rounded transition-colors duration-200 {model.isDefault ? 'text-amber-400' : 'text-fg-muted hover:bg-bg hover:text-amber-400'} disabled:opacity-30 disabled:hover:text-fg-muted cursor-pointer disabled:cursor-not-allowed"
-                    title={model.isHidden && !model.isDefault ? "Hidden models cannot be set as default" : (model.isDefault ? "Current Default Model" : "Set as Default Model")}
+                    class="flex h-7 w-7 items-center justify-center rounded transition-colors duration-200 {model.isDefault
+                      ? 'text-amber-400'
+                      : 'text-fg-muted hover:bg-bg hover:text-amber-400'} disabled:opacity-30 disabled:hover:text-fg-muted cursor-pointer disabled:cursor-not-allowed"
+                    title={model.isHidden && !model.isDefault
+                      ? "Hidden models cannot be set as default"
+                      : model.isDefault
+                        ? "Current Default Model"
+                        : "Set as Default Model"}
                   >
-                    <Star size={13} class="transition-colors duration-300 {model.isDefault ? 'fill-amber-400 text-amber-400' : ''}" />
+                    <Star
+                      size={13}
+                      class="transition-colors duration-300 {model.isDefault
+                        ? 'fill-amber-400 text-amber-400'
+                        : ''}"
+                    />
                   </button>
                   <!-- Hide / Show Eye Icon -->
                   <button
                     onclick={() => handleToggleHide(model)}
-                    class="flex h-7 w-7 items-center justify-center rounded transition-colors {model.isHidden ? 'text-accent' : 'text-fg-muted hover:bg-bg hover:text-fg'}"
-                    title={model.isHidden ? "Unhide model" : "Hide model from picker"}
+                    class="flex h-7 w-7 items-center justify-center rounded transition-colors {model.isHidden
+                      ? 'text-accent'
+                      : 'text-fg-muted hover:bg-bg hover:text-fg'}"
+                    title={model.isHidden
+                      ? "Unhide model"
+                      : "Hide model from picker"}
                   >
                     {#if model.isHidden}
                       <EyeOff size={13} />
@@ -448,29 +567,51 @@
       </div>
     {:else}
       <!-- Form View (Add Preset or Edit Model/Preset) -->
-      <div transition:slide={{ duration: 300 }} class="rounded-lg border border-line bg-bg-elevated p-4">
+      <div
+        transition:slide={{ duration: 300 }}
+        class="rounded-lg border border-line bg-bg-elevated p-4"
+      >
         <h3 class="mb-4 text-sm font-semibold">
-          {formMode === "add_preset" ? "Create Model Preset" : `Edit ${selectedModelId}`}
+          {formMode === "add_preset"
+            ? "Create Model Preset"
+            : `Edit ${selectedModelId}`}
         </h3>
 
         <form onsubmit={handleSubmit} class="flex flex-col gap-4">
           <!-- Avatar / Icon Upload -->
           <div class="flex flex-col gap-1.5">
-            <span class="text-xs font-medium text-fg-muted">Model Icon / Avatar</span>
+            <span class="text-xs font-medium text-fg-muted"
+              >Model Icon / Avatar</span
+            >
             <div class="flex items-center gap-3">
               {#if formIcon}
-                <img src={formIcon} alt="Avatar Preview" class="h-10 w-10 rounded-lg object-cover border border-line bg-bg" />
+                <img
+                  src={formIcon}
+                  alt="Avatar Preview"
+                  class="h-10 w-10 rounded-lg object-cover border border-line bg-bg"
+                />
               {:else}
-                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-line bg-bg font-semibold text-xs text-fg-muted">
+                <div
+                  class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-line bg-bg font-semibold text-xs text-fg-muted"
+                >
                   AI
                 </div>
               {/if}
 
               <div class="flex items-center gap-2">
-                <label class="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-line bg-bg px-3 text-xs text-fg transition-colors hover:bg-bg-elevated">
+                <label
+                  class="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-line bg-bg px-3 text-xs text-fg transition-colors hover:bg-bg-elevated"
+                >
                   <Upload size={13} />
-                  <span>{imageUploading ? "Uploading..." : "Upload Image"}</span>
-                  <input type="file" accept="image/*" class="hidden" onchange={handleImageUpload} disabled={imageUploading} />
+                  <span>{imageUploading ? "Uploading..." : "Upload Image"}</span
+                  >
+                  <input
+                    type="file"
+                    accept="image/*"
+                    class="hidden"
+                    onchange={handleImageUpload}
+                    disabled={imageUploading}
+                  />
                 </label>
                 {#if formIcon}
                   <button
@@ -488,27 +629,36 @@
           <!-- Name -->
           <div class="flex flex-col gap-1">
             <label for="me-name" class="text-xs font-medium text-fg-muted">
-              {formMode === "add_preset" ? "Preset Name" : "Custom Name (Optional)"}
+              {formMode === "add_preset"
+                ? "Preset Name"
+                : "Custom Name (Optional)"}
             </label>
             <input
               id="me-name"
               bind:value={formName}
-              placeholder={formMode === "add_preset" ? "My Custom Assistant" : "Custom display name"}
+              placeholder={formMode === "add_preset"
+                ? "My Custom Assistant"
+                : "Custom display name"}
               required={formMode === "add_preset"}
               class="h-8 rounded-md border border-line bg-bg px-3 text-sm text-fg outline-none focus-visible:outline-2 focus-visible:outline-accent"
             />
           </div>
 
           <!-- Base Model Selection (for Preset creation/edit) -->
-          {#if formMode === "add_preset" || (modelsQuery.data?.find(m => m.id === selectedModelId)?.isPreset)}
+          {#if formMode === "add_preset" || modelsQuery.data?.find((m) => m.id === selectedModelId)?.isPreset}
             <div class="flex flex-col gap-1">
-              <label for="me-base" class="text-xs font-medium text-fg-muted">Parent Base Model</label>
+              <label for="me-base" class="text-xs font-medium text-fg-muted"
+                >Parent Base Model</label
+              >
               <Dropdown
                 id="me-base"
                 bind:value={formBaseModelId}
                 options={baseModels
                   .filter((bm) => !bm.isHidden || bm.id === formBaseModelId)
-                  .map((bm) => ({ label: `${bm.name || bm.id} (${bm.backendName})`, value: bm.id }))}
+                  .map((bm) => ({
+                    label: `${bm.name || bm.id} (${bm.backendName})`,
+                    value: bm.id,
+                  }))}
                 placeholder="Select parent base model"
               />
             </div>
@@ -516,7 +666,9 @@
 
           <!-- System Prompt -->
           <div class="flex flex-col gap-1">
-            <label for="me-prompt" class="text-xs font-medium text-fg-muted">System Prompt</label>
+            <label for="me-prompt" class="text-xs font-medium text-fg-muted"
+              >System Prompt</label
+            >
             <textarea
               id="me-prompt"
               bind:value={formSystemPrompt}
@@ -528,19 +680,27 @@
 
           <!-- Capabilities -->
           <div class="flex flex-col gap-2 pt-2 border-t border-line">
-            <span class="text-xs font-medium text-fg-muted">Multimodal Capabilities</span>
+            <span class="text-xs font-medium text-fg-muted"
+              >Multimodal Capabilities</span
+            >
             <div class="flex flex-wrap gap-5">
               <div class="flex items-center gap-2">
                 <ToggleSwitch id="cap-img" bind:checked={formCanImage} />
-                <label for="cap-img" class="cursor-pointer text-xs text-fg">Image Support</label>
+                <label for="cap-img" class="cursor-pointer text-xs text-fg"
+                  >Image Support</label
+                >
               </div>
               <div class="flex items-center gap-2">
                 <ToggleSwitch id="cap-aud" bind:checked={formCanAudio} />
-                <label for="cap-aud" class="cursor-pointer text-xs text-fg">Audio Support</label>
+                <label for="cap-aud" class="cursor-pointer text-xs text-fg"
+                  >Audio Support</label
+                >
               </div>
               <div class="flex items-center gap-2">
                 <ToggleSwitch id="cap-vid" bind:checked={formCanVideo} />
-                <label for="cap-vid" class="cursor-pointer text-xs text-fg">Video Support</label>
+                <label for="cap-vid" class="cursor-pointer text-xs text-fg"
+                  >Video Support</label
+                >
               </div>
             </div>
           </div>
@@ -561,10 +721,17 @@
             </button>
 
             {#if showAdvanced}
-              <div transition:slide={{ duration: 250 }} class="mt-3 grid grid-cols-2 gap-3 rounded-lg bg-bg p-3 border border-line">
+              <div
+                transition:slide={{ duration: 250 }}
+                class="mt-3 grid grid-cols-2 gap-3 rounded-lg bg-bg p-3 border border-line"
+              >
                 <!-- Temperature -->
                 <div class="flex flex-col gap-1">
-                  <label for="me-temp" class="text-[11px] font-medium text-fg-muted">Temperature</label>
+                  <label
+                    for="me-temp"
+                    class="text-[11px] font-medium text-fg-muted"
+                    >Temperature</label
+                  >
                   <input
                     id="me-temp"
                     type="number"
@@ -578,7 +745,10 @@
                 </div>
                 <!-- Seed -->
                 <div class="flex flex-col gap-1">
-                  <label for="me-seed" class="text-[11px] font-medium text-fg-muted">Seed</label>
+                  <label
+                    for="me-seed"
+                    class="text-[11px] font-medium text-fg-muted">Seed</label
+                  >
                   <input
                     id="me-seed"
                     type="number"
@@ -590,7 +760,11 @@
 
                 <!-- Max Tokens -->
                 <div class="flex flex-col gap-1">
-                  <label for="me-maxt" class="text-[11px] font-medium text-fg-muted">Max Response Tokens</label>
+                  <label
+                    for="me-maxt"
+                    class="text-[11px] font-medium text-fg-muted"
+                    >Max Response Tokens</label
+                  >
                   <input
                     id="me-maxt"
                     type="number"
@@ -602,7 +776,11 @@
 
                 <!-- Context Length -->
                 <div class="flex flex-col gap-1">
-                  <label for="me-ctx" class="text-[11px] font-medium text-fg-muted">Context Window (Tokens)</label>
+                  <label
+                    for="me-ctx"
+                    class="text-[11px] font-medium text-fg-muted"
+                    >Context Window (Tokens)</label
+                  >
                   <input
                     id="me-ctx"
                     type="number"
@@ -614,7 +792,10 @@
 
                 <!-- Top P -->
                 <div class="flex flex-col gap-1">
-                  <label for="me-topp" class="text-[11px] font-medium text-fg-muted">Top P</label>
+                  <label
+                    for="me-topp"
+                    class="text-[11px] font-medium text-fg-muted">Top P</label
+                  >
                   <input
                     id="me-topp"
                     type="number"
@@ -629,7 +810,10 @@
 
                 <!-- Top K -->
                 <div class="flex flex-col gap-1">
-                  <label for="me-topk" class="text-[11px] font-medium text-fg-muted">Top K</label>
+                  <label
+                    for="me-topk"
+                    class="text-[11px] font-medium text-fg-muted">Top K</label
+                  >
                   <input
                     id="me-topk"
                     type="number"
@@ -641,7 +825,10 @@
 
                 <!-- Min P -->
                 <div class="flex flex-col gap-1">
-                  <label for="me-minp" class="text-[11px] font-medium text-fg-muted">Min P</label>
+                  <label
+                    for="me-minp"
+                    class="text-[11px] font-medium text-fg-muted">Min P</label
+                  >
                   <input
                     id="me-minp"
                     type="number"
@@ -656,7 +843,11 @@
 
                 <!-- Presence Penalty -->
                 <div class="flex flex-col gap-1">
-                  <label for="me-presp" class="text-[11px] font-medium text-fg-muted">Presence Penalty</label>
+                  <label
+                    for="me-presp"
+                    class="text-[11px] font-medium text-fg-muted"
+                    >Presence Penalty</label
+                  >
                   <input
                     id="me-presp"
                     type="number"
@@ -669,7 +860,11 @@
 
                 <!-- Frequency Penalty -->
                 <div class="flex flex-col gap-1">
-                  <label for="me-freqp" class="text-[11px] font-medium text-fg-muted">Frequency Penalty</label>
+                  <label
+                    for="me-freqp"
+                    class="text-[11px] font-medium text-fg-muted"
+                    >Frequency Penalty</label
+                  >
                   <input
                     id="me-freqp"
                     type="number"
@@ -682,7 +877,11 @@
 
                 <!-- Repeat Penalty -->
                 <div class="flex flex-col gap-1">
-                  <label for="me-repp" class="text-[11px] font-medium text-fg-muted">Repeat Penalty</label>
+                  <label
+                    for="me-repp"
+                    class="text-[11px] font-medium text-fg-muted"
+                    >Repeat Penalty</label
+                  >
                   <input
                     id="me-repp"
                     type="number"
@@ -695,7 +894,11 @@
 
                 <!-- Reasoning Effort -->
                 <div class="flex flex-col gap-1">
-                  <label for="me-reaseff" class="text-[11px] font-medium text-fg-muted">Reasoning Effort</label>
+                  <label
+                    for="me-reaseff"
+                    class="text-[11px] font-medium text-fg-muted"
+                    >Reasoning Effort</label
+                  >
                   <Dropdown
                     id="me-reaseff"
                     bind:value={formReasoningEffort}
@@ -714,7 +917,10 @@
                 <div class="flex flex-col justify-end gap-1 pb-1">
                   <div class="flex items-center gap-2">
                     <ToggleSwitch id="me-think" bind:checked={formThinking} />
-                    <label for="me-think" class="text-xs text-fg font-medium cursor-pointer">
+                    <label
+                      for="me-think"
+                      class="text-xs text-fg font-medium cursor-pointer"
+                    >
                       Extended Reasoning / Thinking Mode
                     </label>
                   </div>

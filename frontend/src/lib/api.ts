@@ -281,7 +281,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
   let reasoningMode: "oob" | "inband" | null = null;
 
   try {
-    for (;;) {
+    for (; ;) {
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
@@ -307,7 +307,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
             }
             const delta: string | undefined = parsed?.choices?.[0]?.delta?.content;
             const reasoning: string | undefined = parsed?.choices?.[0]?.delta?.reasoning_content || parsed?.choices?.[0]?.delta?.reasoning;
-            
+
             if (reasoning) {
               if (!reasoningMode) {
                 reasoningMode = "oob";

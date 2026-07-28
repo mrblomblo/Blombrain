@@ -32,7 +32,7 @@ export async function modelsRoutes(app: FastifyInstance) {
   // GET /api/models - Unified list of Base Models (with settings) & Presets
   app.get("/api/models", async () => {
     const baseModels = (await Promise.all(backendRegistry.getAll().map(fetchModelsForBackend))).flat();
-    
+
     // Fetch all model_settings from SQLite
     const settingsRows = db.prepare("SELECT * FROM model_settings").all() as ModelSettingRow[];
     const settingsMap = new Map<string, ModelSettingRow>();

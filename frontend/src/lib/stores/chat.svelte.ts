@@ -70,7 +70,7 @@ class ChatStore {
         this.branchSelections = JSON.parse(stored);
         return;
       }
-    } catch (e) {}
+    } catch (e) { }
     this.branchSelections = {};
   }
 
@@ -81,7 +81,7 @@ class ChatStore {
         `blombrain_branches_${this.activeConversationId}`,
         JSON.stringify(this.branchSelections)
       );
-    } catch (e) {}
+    } catch (e) { }
   }
 
   setBranchSelection(parentId: string | null, childId: string) {
@@ -436,7 +436,7 @@ class ChatStore {
             const endIdx = rawBuffer.indexOf("</think>");
             const thinkStr = rawBuffer.slice(rawBuffer.indexOf("<think>") + 7, endIdx);
             const mainStr = rawBuffer.slice(endIdx + 8).trimStart();
-            
+
             if (thinkingStartMs > 0 && !msg.thinkingTimeMs) {
               msg.thinkingTimeMs = Date.now() - thinkingStartMs;
             }

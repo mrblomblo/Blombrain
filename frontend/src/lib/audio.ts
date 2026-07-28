@@ -8,13 +8,13 @@ export async function encodeToWav(file: File): Promise<File> {
   }
 
   const arrayBuffer = await file.arrayBuffer();
-  
+
   // Use OfflineAudioContext to decode the audio data
   const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
   const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
 
   const wavBuffer = audioBufferToWav(audioBuffer);
-  
+
   // Replace the extension with .wav
   let newName = file.name;
   const extIdx = newName.lastIndexOf(".");
@@ -32,9 +32,9 @@ function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
   const sampleRate = buffer.sampleRate;
   const format = 1; // PCM
   const bitDepth = 16;
-  
+
   const result = new Float32Array(buffer.length * numChannels);
-  
+
   // Interleave channels
   if (numChannels === 2) {
     const left = buffer.getChannelData(0);
@@ -46,20 +46,20 @@ function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
   } else {
     result.set(buffer.getChannelData(0));
   }
-  
+
   const byteRate = (sampleRate * numChannels * bitDepth) / 8;
   const blockAlign = (numChannels * bitDepth) / 8;
   const dataSize = (result.length * bitDepth) / 8;
   const bufferSize = 44 + dataSize;
   const arrayBuffer = new ArrayBuffer(bufferSize);
   const view = new DataView(arrayBuffer);
-  
+
   function writeString(view: DataView, offset: number, string: string) {
     for (let i = 0; i < string.length; i++) {
       view.setUint8(offset + i, string.charCodeAt(i));
     }
   }
-  
+
   // RIFF identifier
   writeString(view, 0, 'RIFF');
   // file length
@@ -86,13 +86,13 @@ function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
   writeString(view, 36, 'data');
   // data chunk length
   view.setUint32(40, dataSize, true);
-  
+
   // Write the PCM samples
   let offset = 44;
   for (let i = 0; i < result.length; i++, offset += 2) {
     let s = Math.max(-1, Math.min(1, result[i]));
     view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
   }
-  
+
   return arrayBuffer;
 }

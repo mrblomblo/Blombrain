@@ -28,10 +28,10 @@
     const previousIndex = TABS.indexOf(previousTab);
     const isMovingRight = currentIndex > previousIndex;
     const distance = 40;
-    
+
     let x = isMovingRight ? distance : -distance;
     if (!isIncoming) x = -x;
-    
+
     return { x, duration: 300, opacity: 0 };
   }
 
@@ -116,15 +116,27 @@
       <!-- Body Content Area -->
       <div class="flex-1 grid overflow-x-hidden relative">
         {#if activeTab === "general"}
-          <div class="col-start-1 row-start-1 overflow-y-auto p-5" in:fly={getFlyParams(true)} out:fly={getFlyParams(false)}>
+          <div
+            class="col-start-1 row-start-1 overflow-y-auto p-5"
+            in:fly={getFlyParams(true)}
+            out:fly={getFlyParams(false)}
+          >
             <GeneralTab />
           </div>
         {:else if activeTab === "models"}
-          <div class="col-start-1 row-start-1 overflow-y-auto p-5" in:fly={getFlyParams(true)} out:fly={getFlyParams(false)}>
+          <div
+            class="col-start-1 row-start-1 overflow-y-auto p-5"
+            in:fly={getFlyParams(true)}
+            out:fly={getFlyParams(false)}
+          >
             <ModelsTab />
           </div>
         {:else if activeTab === "backends"}
-          <div class="col-start-1 row-start-1 overflow-y-auto p-5" in:fly={getFlyParams(true)} out:fly={getFlyParams(false)}>
+          <div
+            class="col-start-1 row-start-1 overflow-y-auto p-5"
+            in:fly={getFlyParams(true)}
+            out:fly={getFlyParams(false)}
+          >
             <BackendsTab />
           </div>
         {/if}
