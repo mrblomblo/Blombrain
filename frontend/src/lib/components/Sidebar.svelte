@@ -8,7 +8,7 @@
     Settings,
     X,
     ChevronDown,
-    ChevronRight,
+    ChevronUp,
   } from "@lucide/svelte";
   import {
     fetchBackends,
@@ -100,7 +100,7 @@
           onclick={onToggleSidebar}
           aria-label="Expand sidebar"
           title="Expand sidebar"
-          class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+          class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted transition-colors cursor-pointer hover:bg-bg-elevated hover:text-fg"
         >
           <PanelLeftOpen size={18} />
         </button>
@@ -114,7 +114,7 @@
         disabled={chatStore.isStreaming}
         aria-label="New Chat"
         title="New Chat"
-        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-bg-elevated text-accent transition-colors hover:bg-bg-hover disabled:pointer-events-none disabled:opacity-40"
+        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-bg-elevated text-accent transition-colors cursor-pointer hover:bg-bg-hover disabled:pointer-events-none disabled:opacity-40"
       >
         <SquarePen size={16} />
       </button>
@@ -126,7 +126,7 @@
         onclick={onOpenSettings}
         aria-label="Settings"
         title="Backends Settings"
-        class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+        class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted transition-colors cursor-pointer hover:bg-bg-elevated hover:text-fg"
       >
         <Settings size={16} />
       </button>
@@ -146,7 +146,7 @@
             onclick={onToggleSidebar}
             aria-label="Collapse sidebar"
             title="Collapse sidebar"
-            class="hidden md:flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+            class="hidden md:flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg-elevated hover:text-fg"
           >
             <PanelLeftClose size={16} />
           </button>
@@ -156,7 +156,7 @@
           <button
             onclick={onCloseMobile}
             aria-label="Close sidebar"
-            class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted md:hidden hover:bg-bg-elevated hover:text-fg"
+            class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted md:hidden cursor-pointer hover:bg-bg-elevated hover:text-fg"
           >
             <X size={15} />
           </button>
@@ -170,7 +170,7 @@
         <button
           onclick={handleNewChat}
           disabled={chatStore.isStreaming}
-          class="flex w-full items-center gap-2 rounded-lg border border-line bg-bg-elevated px-3 py-2 text-xs font-medium text-fg shadow-xs transition-colors hover:bg-bg-hover hover:border-line-strong disabled:pointer-events-none disabled:opacity-40"
+          class="flex w-full items-center gap-2 rounded-lg border border-line bg-bg-elevated px-3 py-2 text-xs font-medium text-fg shadow-xs transition-colors cursor-pointer hover:bg-bg-hover hover:border-line-strong disabled:pointer-events-none disabled:opacity-40"
         >
           <SquarePen size={15} class="text-accent" />
           <span>New Chat</span>
@@ -221,7 +221,7 @@
                   onclick={(e) => handleDelete(e, conv)}
                   disabled={deletingId === conv.id}
                   aria-label="Delete conversation"
-                  class="shrink-0 rounded p-0.5 text-fg-subtle opacity-0 transition-all hover:text-danger group-hover:opacity-100 disabled:pointer-events-none"
+                  class="shrink-0 rounded p-0.5 text-fg-subtle opacity-0 transition-all cursor-pointer hover:text-danger group-hover:opacity-100 disabled:pointer-events-none"
                 >
                   <Trash2 size={12} />
                 </button>
@@ -237,13 +237,13 @@
       <button
         type="button"
         onclick={() => (showBackends = !showBackends)}
-        class="flex w-full items-center justify-between py-1 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle hover:text-fg"
+        class="flex w-full items-center justify-between py-1 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle cursor-pointer hover:text-fg transition-colors duration-200"
       >
         <span>Backends ({backendsQuery.data?.length ?? 0})</span>
         {#if showBackends}
           <ChevronDown size={12} />
         {:else}
-          <ChevronRight size={12} />
+          <ChevronUp size={12} />
         {/if}
       </button>
 
@@ -287,7 +287,7 @@
         onclick={onOpenSettings}
         aria-label="Settings"
         title="Settings"
-        class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+        class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-fg-muted transition-colors cursor-pointer hover:bg-bg-elevated hover:text-fg"
       >
         <Settings size={15} />
         <span class="font-medium">Settings</span>

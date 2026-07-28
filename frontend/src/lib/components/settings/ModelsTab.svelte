@@ -29,6 +29,7 @@
   import { quintOut } from "svelte/easing";
   import Dropdown from "../ui/Dropdown.svelte";
   import ToggleSwitch from "../ui/ToggleSwitch.svelte";
+  import Button from "../ui/Button.svelte";
 
   const queryClient = useQueryClient();
 
@@ -360,22 +361,23 @@
             Models ({allModels.length})
           </h3>
           <div class="flex items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="default"
+              size="sm"
               onclick={() => (reorderModalOpen = true)}
-              class="flex items-center gap-1.5 rounded-md border border-line bg-bg-elevated px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-bg-hover"
               title="Reorder models & presets"
             >
               <ArrowUpDown size={13} />
               <span>Sort Order</span>
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="accent"
+              size="sm"
               onclick={startAddPreset}
-              class="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90"
             >
               <Plus size={13} />
-              Create Preset
-            </button>
+              <span>Create Preset</span>
+            </Button>
           </div>
         </div>
 
@@ -448,8 +450,9 @@
                   <div class="flex shrink-0 gap-1">
                     <!-- Star / Set Default -->
                     <button
+                      type="button"
                       onclick={() => handleToggleDefault(model)}
-                      class="flex h-7 w-7 items-center justify-center rounded transition-colors duration-200 {model.isDefault
+                      class="flex h-7 w-7 items-center justify-center rounded-md transition-colors duration-200 cursor-pointer {model.isDefault
                         ? 'text-amber-400'
                         : 'text-fg-muted hover:bg-bg hover:text-amber-400'}"
                       title={model.isDefault
@@ -465,24 +468,27 @@
                     </button>
                     <!-- Copy / Duplicate Preset -->
                     <button
+                      type="button"
                       onclick={() => handleDuplicatePreset(model)}
-                      class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-fg"
+                      class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg hover:text-fg"
                       title="Duplicate Preset"
                     >
                       <Copy size={13} />
                     </button>
                     <!-- Edit -->
                     <button
+                      type="button"
                       onclick={() => startEdit(model)}
-                      class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-fg"
+                      class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg hover:text-fg"
                       title="Edit preset"
                     >
                       <Pencil size={13} />
                     </button>
                     <!-- Delete -->
                     <button
+                      type="button"
                       onclick={() => handleDelete(model)}
-                      class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-danger"
+                      class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg hover:text-danger"
                       title="Delete preset"
                     >
                       <Trash2 size={13} />
@@ -558,11 +564,12 @@
                 <div class="flex shrink-0 gap-1">
                   <!-- Star / Set Default -->
                   <button
+                    type="button"
                     onclick={() => handleToggleDefault(model)}
                     disabled={model.isHidden && !model.isDefault}
-                    class="flex h-7 w-7 items-center justify-center rounded transition-colors duration-200 {model.isDefault
+                    class="flex h-7 w-7 items-center justify-center rounded-md transition-colors duration-200 cursor-pointer {model.isDefault
                       ? 'text-amber-400'
-                      : 'text-fg-muted hover:bg-bg hover:text-amber-400'} disabled:opacity-30 disabled:hover:text-fg-muted cursor-pointer disabled:cursor-not-allowed"
+                      : 'text-fg-muted hover:bg-bg hover:text-amber-400'} disabled:opacity-30 disabled:pointer-events-none"
                     title={model.isHidden && !model.isDefault
                       ? "Hidden models cannot be set as default"
                       : model.isDefault
@@ -578,8 +585,9 @@
                   </button>
                   <!-- Hide / Show Eye Icon -->
                   <button
+                    type="button"
                     onclick={() => handleToggleHide(model)}
-                    class="flex h-7 w-7 items-center justify-center rounded transition-colors {model.isHidden
+                    class="flex h-7 w-7 items-center justify-center rounded-md transition-colors cursor-pointer {model.isHidden
                       ? 'text-accent'
                       : 'text-fg-muted hover:bg-bg hover:text-fg'}"
                     title={model.isHidden
@@ -594,8 +602,9 @@
                   </button>
                   <!-- Edit -->
                   <button
+                    type="button"
                     onclick={() => startEdit(model)}
-                    class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-fg"
+                    class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg hover:text-fg"
                     title="Edit model configuration"
                   >
                     <Pencil size={13} />
@@ -655,13 +664,15 @@
                   />
                 </label>
                 {#if formIcon}
-                  <button
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    outline
                     type="button"
                     onclick={() => (formIcon = undefined)}
-                    class="h-8 rounded-md border border-line px-2.5 text-xs text-danger transition-colors hover:bg-bg"
                   >
                     Remove
-                  </button>
+                  </Button>
                 {/if}
               </div>
             </div>
@@ -757,7 +768,7 @@
             <button
               type="button"
               onclick={() => (showAdvanced = !showAdvanced)}
-              class="flex items-center gap-1.5 text-xs font-medium text-accent hover:underline"
+              class="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-accent hover:underline"
             >
               {#if showAdvanced}
                 <ChevronDown size={14} />
@@ -981,22 +992,24 @@
           {/if}
 
           <div class="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
+            <Button
+              variant="default"
+              outline
+              size="sm"
               onclick={cancelForm}
               disabled={formBusy}
-              class="h-8 rounded-md border border-line px-3 text-xs text-fg-muted transition-colors hover:bg-bg-elevated"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="accent"
+              size="sm"
               type="submit"
               disabled={formBusy}
-              class="flex h-8 items-center gap-1.5 rounded-md bg-accent px-4 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               <Check size={13} />
-              Save
-            </button>
+              <span>Save</span>
+            </Button>
           </div>
         </form>
       </div>

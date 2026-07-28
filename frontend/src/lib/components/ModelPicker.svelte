@@ -1,6 +1,13 @@
 <script lang="ts">
   import { createQuery } from "@tanstack/svelte-query";
-  import { ChevronDown, Search, Star, Sparkles, Check } from "@lucide/svelte";
+  import {
+    ChevronDown,
+    ChevronUp,
+    Search,
+    Star,
+    Sparkles,
+    Check,
+  } from "@lucide/svelte";
   import { fly, fade } from "svelte/transition";
   import { fetchModels } from "../api";
   import { chatStore } from "../stores/chat.svelte";
@@ -83,7 +90,7 @@
     <button
       type="button"
       onclick={() => (isOpen = !isOpen)}
-      class="flex h-8 items-center gap-2 rounded-lg border border-line bg-bg-elevated px-2.5 text-xs text-fg transition-colors hover:bg-bg-hover hover:border-line-strong focus:outline-none"
+      class="flex h-8 items-center gap-2 rounded-lg border border-line bg-bg-elevated px-2.5 text-xs text-fg transition-colors cursor-pointer hover:bg-bg-hover hover:border-line-strong focus:outline-none"
     >
       {#if selectedModel?.icon}
         <img
@@ -109,7 +116,11 @@
         <Star size={11} class="text-amber-400 fill-amber-400 shrink-0" />
       {/if}
 
-      <ChevronDown size={13} class="text-fg-subtle shrink-0 ml-0.5" />
+      {#if isOpen}
+        <ChevronUp size={13} class="text-fg-subtle shrink-0 ml-0.5" />
+      {:else}
+        <ChevronDown size={13} class="text-fg-subtle shrink-0 ml-0.5" />
+      {/if}
     </button>
 
     <!-- Popover Dropdown -->
@@ -145,10 +156,10 @@
               <button
                 type="button"
                 onclick={() => selectModel(model.id)}
-                class="w-full flex items-center justify-between gap-2.5 rounded-md px-2.5 py-2 text-left text-xs transition-colors {model.id ===
+                class="w-full flex items-center justify-between gap-2.5 rounded-md px-2.5 py-2 text-left text-xs transition-colors cursor-pointer {model.id ===
                 chatStore.selectedModel
-                  ? 'bg-accent/15 text-accent font-medium'
-                  : 'hover:bg-bg-elevated text-fg'}"
+                  ? 'bg-accent/15 text-accent font-medium hover:bg-accent/20'
+                  : 'hover:bg-bg-hover text-fg'}"
               >
                 <div class="flex items-center gap-2.5 min-w-0 flex-1">
                   {#if model.icon}

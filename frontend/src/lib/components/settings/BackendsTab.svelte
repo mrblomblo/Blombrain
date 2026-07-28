@@ -12,6 +12,7 @@
   import { slide } from "svelte/transition";
   import { quintOut } from "svelte/easing";
   import ToggleSwitch from "../ui/ToggleSwitch.svelte";
+  import Button from "../ui/Button.svelte";
 
   const queryClient = useQueryClient();
 
@@ -160,18 +161,20 @@
             <!-- Actions -->
             <div class="flex shrink-0 gap-1">
               <button
+                type="button"
                 onclick={() => startEdit(b)}
                 disabled={formBusy}
                 aria-label="Edit {b.name}"
-                class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+                class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg hover:text-fg disabled:pointer-events-none disabled:opacity-40"
               >
                 <Pencil size={13} />
               </button>
               <button
+                type="button"
                 onclick={() => handleDelete(b)}
                 disabled={deletingId === b.id || formBusy}
                 aria-label="Delete {b.name}"
-                class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-danger disabled:pointer-events-none disabled:opacity-40"
+                class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg hover:text-danger disabled:pointer-events-none disabled:opacity-40"
               >
                 <Trash2 size={13} />
               </button>
@@ -278,18 +281,21 @@
         {/if}
 
         <div class="flex justify-end gap-2 pt-1">
-          <button
+          <Button
+            variant="ghost"
+            outline
+            size="sm"
             type="button"
             onclick={cancelForm}
             disabled={formBusy}
-            class="h-8 rounded-md border border-line px-3 text-xs text-fg-muted transition-colors hover:bg-bg-elevated disabled:pointer-events-none disabled:opacity-40"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="accent"
+            size="sm"
             type="submit"
             disabled={formBusy}
-            class="flex h-8 items-center gap-1.5 rounded-md bg-accent px-4 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-50"
           >
             {#if formBusy}
               <span class="animate-spin">⟳</span> Saving…
@@ -297,7 +303,7 @@
               <Check size={13} />
               {formMode === "add" ? "Add" : "Save"}
             {/if}
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -305,7 +311,7 @@
     <div transition:slide={{ duration: 300 }}>
       <button
         onclick={startAdd}
-        class="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line py-2.5 text-sm text-fg-muted transition-colors hover:border-accent hover:text-accent cursor-pointer"
+        class="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line py-2.5 text-sm text-fg-muted transition-colors hover:border-accent hover:text-accent cursor-pointer hover:bg-bg-hover"
       >
         <Plus size={14} />
         Add backend

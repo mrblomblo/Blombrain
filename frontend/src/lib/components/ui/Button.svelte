@@ -2,16 +2,26 @@
   import type { Snippet } from "svelte";
   import type { HTMLButtonAttributes } from "svelte/elements";
 
-  type Variant = "primary" | "ghost" | "outline" | "danger";
+  export type ButtonVariant =
+    | "default"
+    | "accent"
+    | "danger"
+    | "ghost"
+    | "dark"
+    | "primary";
+
+  export type ButtonSize = "sm" | "md" | "lg" | "icon";
 
   interface Props extends HTMLButtonAttributes {
-    variant?: Variant;
-    size?: "sm" | "md";
-    children: Snippet;
+    variant?: ButtonVariant;
+    outline?: boolean;
+    size?: ButtonSize;
+    children?: Snippet;
   }
 
   let {
-    variant = "outline",
+    variant = "default",
+    outline = false,
     size = "md",
     class: className = "",
     children,
@@ -19,22 +29,55 @@
   }: Props = $props();
 
   const base =
-    "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent";
 
-  const sizes: Record<string, string> = {
+  const sizes: Record<ButtonSize, string> = {
     sm: "h-7 px-2.5 text-xs",
-    md: "h-9 px-3.5 text-sm",
+    md: "h-8.5 px-3 text-xs font-medium",
+    lg: "h-10 px-4 text-sm",
+    icon: "h-8 w-8 text-xs shrink-0 p-0",
   };
 
-  const variants: Record<Variant, string> = {
-    primary:
-      "bg-accent text-accent-fg hover:brightness-110 active:brightness-95",
-    outline: "border border-line text-fg bg-transparent hover:bg-bg-hover",
-    ghost: "text-fg-muted hover:text-fg hover:bg-bg-hover",
-    danger: "bg-danger text-danger-fg hover:brightness-110",
-  };
+  function getVariantClasses(v: ButtonVariant, isOutline: boolean) {
+    if (isOutline) {
+      switch (v) {
+        case "accent":
+        case "primary":
+          return "border border-accent/60 text-accent bg-transparent hover:bg-accent/10 hover:border-accent";
+        case "danger":
+          return "border border-danger/60 text-danger bg-transparent hover:bg-danger/10 hover:border-danger";
+        case "dark":
+          return "border border-line text-fg bg-bg/50 hover:bg-bg hover:border-line-strong";
+        case "ghost":
+          return "border border-line/40 text-fg-muted bg-transparent hover:text-fg hover:bg-bg-hover";
+        case "default":
+        default:
+          return "border border-line text-fg bg-transparent hover:bg-bg-hover hover:border-line-strong";
+      }
+    }
+
+    switch (v) {
+      case "accent":
+      case "primary":
+        return "bg-accent text-accent-fg hover:opacity-90 active:opacity-100";
+      case "danger":
+        return "bg-danger text-danger-fg hover:opacity-90 active:opacity-100";
+      case "dark":
+        return "bg-bg text-fg border border-line hover:bg-bg-elevated hover:border-line-strong";
+      case "ghost":
+        return "text-fg-muted bg-transparent hover:text-fg hover:bg-bg-hover";
+      case "default":
+      default:
+        return "bg-bg-elevated text-fg border border-line hover:bg-bg-hover hover:border-line-strong";
+    }
+  }
+
+  let computedVariant = $derived(getVariantClasses(variant, outline));
 </script>
 
-<button class="{base} {sizes[size]} {variants[variant]} {className}" {...rest}>
-  {@render children()}
+<button class="{base} {sizes[size]} {computedVariant} {className}" {...rest}>
+  {#if children}
+    {@render children()}
+  {/if}
 </button>
+

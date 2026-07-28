@@ -36,7 +36,7 @@
       disabled={currentIndex <= 0 || chatStore.isStreaming}
       aria-label="Previous branch version"
       title="Previous version"
-      class="flex h-5 w-5 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
+      class="flex h-5 w-5 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
     >
       <ChevronLeft size={13} class="shrink-0 -translate-x-[1px]" />
     </button>
@@ -51,7 +51,7 @@
       disabled={currentIndex >= siblings.length - 1 || chatStore.isStreaming}
       aria-label="Next branch version"
       title="Next version"
-      class="flex h-5 w-5 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
+      class="flex h-5 w-5 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
     >
       <ChevronRight size={13} class="shrink-0" />
     </button>

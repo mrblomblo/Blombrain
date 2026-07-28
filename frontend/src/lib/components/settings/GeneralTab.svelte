@@ -3,6 +3,7 @@
   import { uploadFile, serveUploadUrl } from "../../api";
   import { settingsStore } from "../../stores/settings.svelte";
   import ThemeSwitcher from "../ThemeSwitcher.svelte";
+  import Button from "../ui/Button.svelte";
 
   let imageUploading = $state(false);
   let formError = $state<string | null>(null);
@@ -86,13 +87,14 @@
           </label>
 
           {#if settingsStore.userAvatar}
-            <button
-              type="button"
+            <Button
+              variant="danger"
+              outline
+              size="sm"
               onclick={handleRemoveAvatar}
-              class="h-8 rounded-md border border-line px-2.5 text-xs text-danger transition-colors hover:bg-bg cursor-pointer"
             >
               Remove
-            </button>
+            </Button>
           {/if}
         </div>
       </div>

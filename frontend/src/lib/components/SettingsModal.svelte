@@ -4,6 +4,7 @@
   import BackendsTab from "./settings/BackendsTab.svelte";
   import ModelsTab from "./settings/ModelsTab.svelte";
   import GeneralTab from "./settings/GeneralTab.svelte";
+  import Button from "./ui/Button.svelte";
 
   type Tab = "general" | "models" | "backends";
 
@@ -65,20 +66,21 @@
       <div class="flex flex-col border-b border-line bg-bg px-5 pt-4">
         <div class="flex items-center justify-between">
           <h2 class="text-base font-semibold text-fg">Settings</h2>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onclick={onClose}
             aria-label="Close"
-            class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
           >
             <X size={16} />
-          </button>
+          </Button>
         </div>
 
         <div class="flex items-center gap-2 mt-3 -mb-px">
           <button
             type="button"
             onclick={() => setTab("general")}
-            class="flex items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
+            class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
             'general'
               ? 'border-accent text-accent'
               : 'border-transparent text-fg-muted hover:text-fg'}"
@@ -90,7 +92,7 @@
           <button
             type="button"
             onclick={() => setTab("models")}
-            class="flex items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
+            class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
             'models'
               ? 'border-accent text-accent'
               : 'border-transparent text-fg-muted hover:text-fg'}"
@@ -102,7 +104,7 @@
           <button
             type="button"
             onclick={() => setTab("backends")}
-            class="flex items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
+            class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
             'backends'
               ? 'border-accent text-accent'
               : 'border-transparent text-fg-muted hover:text-fg'}"

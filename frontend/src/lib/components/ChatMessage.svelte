@@ -11,6 +11,7 @@
   import MessageActions from "./MessageActions.svelte";
   import Markdown from "./Markdown.svelte";
   import MarkdownInput from "./MarkdownInput.svelte";
+  import Button from "./ui/Button.svelte";
   import { fly, fade } from "svelte/transition";
   import type { AttachmentOut } from "../types";
 
@@ -338,10 +339,11 @@
                 <button
                   type="button"
                   onclick={() => removeEditAttachment(att.id)}
-                  class="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-black/70 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black hover:text-danger z-10"
+                  class="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white/90 opacity-0 transition-all duration-150 group-hover:opacity-100 hover:bg-danger hover:text-white z-10 cursor-pointer shadow-xs"
                   aria-label="Remove attachment"
+                  title="Remove attachment"
                 >
-                  <X size={9} />
+                  <X size={11} />
                 </button>
               </div>
             {/each}
@@ -379,45 +381,49 @@
               disabled={isSaving || isUploadingEdit}
               aria-label="Add attachment"
               title="Add attachment"
-              class="flex h-7 w-7 items-center justify-center rounded-md border border-line bg-bg-elevated text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-40"
+              class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg-hover hover:text-fg disabled:opacity-40 disabled:pointer-events-none"
             >
               <Paperclip size={14} />
             </button>
           </div>
           <div class="flex items-center gap-2">
-            <button
+            <Button
+              variant="ghost"
+              outline
+              size="sm"
               type="button"
               onclick={cancelEdit}
               disabled={isSaving}
-              class="h-7 rounded-md border border-line px-2.5 text-xs text-fg-muted transition-colors hover:bg-bg-elevated"
             >
               Cancel
-            </button>
+            </Button>
 
-            <button
+            <Button
+              variant="default"
+              size="sm"
               type="button"
               onclick={handleSaveOnly}
               disabled={isSaving ||
                 isUploadingEdit ||
                 (!editDraft.trim() && editAttachments.length === 0)}
-              class="flex h-7 items-center gap-1 rounded-md border border-line bg-bg-elevated px-3 text-xs font-medium text-fg transition-colors hover:bg-bg-hover disabled:opacity-50"
             >
               <Check size={12} />
               Save
-            </button>
+            </Button>
 
             {#if message.role === "user"}
-              <button
+              <Button
+                variant="accent"
+                size="sm"
                 type="button"
                 onclick={handleSendBranch}
                 disabled={isSaving ||
                   isUploadingEdit ||
                   (!editDraft.trim() && editAttachments.length === 0)}
-                class="flex h-7 items-center gap-1 rounded-md bg-accent px-3 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 <SendIcon size={12} />
                 Send
-              </button>
+              </Button>
             {/if}
           </div>
         </div>

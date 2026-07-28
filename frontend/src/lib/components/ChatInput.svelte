@@ -194,14 +194,16 @@
               {/if}
             </div>
             <button
+              type="button"
               onclick={(e) => {
                 e.stopPropagation();
                 chatStore.removeAttachment(att.id);
               }}
-              class="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-black/70 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black hover:text-danger z-10"
+              class="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white/90 opacity-0 transition-all duration-150 group-hover:opacity-100 hover:bg-danger hover:text-white z-10 cursor-pointer shadow-xs"
               aria-label="Remove attachment"
+              title="Remove attachment"
             >
-              <X size={10} />
+              <X size={11} />
             </button>
           </div>
         {/each}
@@ -259,16 +261,16 @@
         <!-- Left Side Tools (Attachments, future MCP/Skills) -->
         <div class="flex items-center gap-1">
           {#if allowedAccepts}
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="icon"
               onclick={() => fileInput?.click()}
               disabled={chatStore.isStreaming || isUploading}
               aria-label="Add attachment"
               title="Add attachment"
-              class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-40"
             >
               <Paperclip size={16} />
-            </button>
+            </Button>
           {/if}
         </div>
 

@@ -14,6 +14,7 @@
   import { updateModelOrder } from "../../api";
   import type { ModelInfo } from "../../types";
   import { useQueryClient } from "@tanstack/svelte-query";
+  import Button from "../ui/Button.svelte";
 
   interface Props {
     open: boolean;
@@ -241,23 +242,24 @@
       {/if}
 
       <div class="flex justify-end gap-2 border-t border-line px-4 py-3 bg-bg">
-        <button
-          type="button"
+        <Button
+          variant="default"
+          outline
+          size="sm"
           onclick={onClose}
           disabled={isSaving}
-          class="h-8 rounded-md border border-line px-3 text-xs text-fg-muted transition-colors hover:bg-bg-elevated"
         >
           Cancel
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="accent"
+          size="sm"
           onclick={handleSave}
           disabled={isSaving}
-          class="flex h-8 items-center gap-1.5 rounded-md bg-accent px-4 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
         >
           <Check size={13} />
-          {isSaving ? "Saving..." : "Save Order"}
-        </button>
+          <span>{isSaving ? "Saving..." : "Save Order"}</span>
+        </Button>
       </div>
     </div>
   </div>

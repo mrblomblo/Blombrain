@@ -61,7 +61,7 @@
     type="button"
     {disabled}
     onclick={() => (isOpen = !isOpen)}
-    class="flex w-full items-center justify-between gap-2 rounded-md border border-line text-xs text-fg transition-colors hover:border-line-strong hover:bg-bg-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50 disabled:cursor-not-allowed {buttonClass ||
+    class="flex w-full items-center justify-between gap-2 rounded-md border border-line text-xs text-fg transition-colors cursor-pointer hover:border-line-strong hover:bg-bg-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50 disabled:cursor-not-allowed {buttonClass ||
       'h-8 bg-bg px-3'} {className}"
   >
     <span class="truncate">{selectedOption?.label || placeholder}</span>
@@ -83,10 +83,10 @@
           <button
             type="button"
             onclick={() => handleSelect(option.value)}
-            class="w-full flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors {value ===
+            class="w-full flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors cursor-pointer {value ===
             option.value
-              ? 'bg-accent/15 text-accent font-medium'
-              : 'hover:bg-bg-elevated text-fg'}"
+              ? 'bg-accent/15 text-accent font-medium hover:bg-accent/20'
+              : 'hover:bg-bg-hover text-fg'}"
           >
             <span class="truncate">{option.label}</span>
             {#if value === option.value}
