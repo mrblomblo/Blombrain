@@ -8,9 +8,15 @@
     thinkingDone?: boolean;
     streaming?: boolean;
     thinkingTimeMs?: number;
+    hasMainContent?: boolean;
   }
-  const { thinkingContent, thinkingDone, streaming, thinkingTimeMs }: Props =
-    $props();
+  const {
+    thinkingContent,
+    thinkingDone,
+    streaming,
+    thinkingTimeMs,
+    hasMainContent = true,
+  }: Props = $props();
 
   let isOpen = $state(false);
   let startTime = $state(0);
@@ -24,8 +30,13 @@
         elapsedSeconds = (Date.now() - startTime) / 1000;
       }, 100);
       return () => clearInterval(interval);
-    } else {
+    } else if (thinkingDone && streaming) {
       isOpen = false;
+      startTime = 0;
+    } else if (!streaming && (thinkingDone === false || !hasMainContent)) {
+      isOpen = true;
+      startTime = 0;
+    } else {
       startTime = 0;
     }
   });
@@ -54,9 +65,9 @@
           {#if streaming && !thinkingDone}
             Thinking ({elapsedSeconds.toFixed(1)}s)
           {:else if thinkingTimeMs}
-            Thought for {(thinkingTimeMs / 1000).toFixed(1)}s
+            Thought for {(thinkingTimeMs / 1000).toFixed(1)}s{#if thinkingDone === false} (interrupted){/if}
           {:else}
-            Thought process
+            Thought process{#if thinkingDone === false} (interrupted){/if}
           {/if}
         </span>
       </div>

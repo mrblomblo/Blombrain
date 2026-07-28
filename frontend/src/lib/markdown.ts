@@ -87,7 +87,7 @@ marked.use({
       </button>
     </div>
   </div>
-  <div class="overflow-x-auto rounded-b-md bg-bg-elevated" style="padding-top:34px;">
+  <div class="overflow-x-auto rounded-md bg-bg-elevated" style="padding-top:34px;">
     <pre class="text-xs font-mono leading-relaxed text-fg bg-transparent"><code class="hljs ${validLang ? `language-${validLang}` : ""} block">${text}</code></pre>
   </div>
 </div>`;

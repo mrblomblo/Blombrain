@@ -24,17 +24,20 @@ function makeId() {
 function parseThinking(raw: string): { content: string; thinkingContent?: string; thinkingDone?: boolean } {
   const start = raw.indexOf("<think>");
   if (start === -1) return { content: raw };
+  const beforeText = raw.slice(0, start).trim();
   const end = raw.indexOf("</think>", start);
   if (end === -1) {
     // Unterminated think block (e.g. response was cut off)
     return {
-      content: "",
+      content: beforeText,
       thinkingContent: raw.slice(start + 7).trim(),
       thinkingDone: false,
     };
   }
+  const afterText = raw.slice(end + 8).trimStart();
+  const fullContent = beforeText ? `${beforeText}\n${afterText}` : afterText;
   return {
-    content: raw.slice(end + 8).trimStart(),
+    content: fullContent,
     thinkingContent: raw.slice(start + 7, end).trim(),
     thinkingDone: true,
   };
@@ -232,7 +235,11 @@ class ChatStore {
 
     try {
       await apiDeleteMessage(convId, msgId);
+    } catch (err) {
+      console.warn("[chatStore] backend delete message call failed, removing locally anyway:", err);
+    }
 
+    try {
       if (target.role === "user") {
         // Find only the *direct* assistant child of this user message.
         const childAsst = this.messages.find(
@@ -281,7 +288,7 @@ class ChatStore {
 
       _invalidateConversations?.();
     } catch (err) {
-      console.error("[chatStore] failed to delete message:", err);
+      console.error("[chatStore] failed to process local message deletion:", err);
     }
   }
 

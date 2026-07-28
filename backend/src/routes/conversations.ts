@@ -424,8 +424,8 @@ export function persistChatTurn(opts: {
     assistantStats,
   } = opts;
 
-  const isNew = !incomingId;
   const conversationId = incomingId ?? crypto.randomUUID();
+  const isNew = !incomingId || !getConversation.get(conversationId);
 
   const persist = db.transaction(() => {
     const now = Date.now();

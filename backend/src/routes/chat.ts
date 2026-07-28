@@ -154,6 +154,8 @@ export async function chatRoutes(app: FastifyInstance) {
       stream_options: { include_usage: true },
     };
 
+    const abortController = new AbortController();
+
     let upstream: Response;
     try {
       upstream = await fetch(`${backend.baseUrl}/v1/chat/completions`, {
@@ -163,6 +165,7 @@ export async function chatRoutes(app: FastifyInstance) {
           ...(backend.apiKey ? { Authorization: `Bearer ${backend.apiKey}` } : {}),
         },
         body: JSON.stringify(upstreamBody),
+        signal: abortController.signal,
       });
     } catch (err) {
       return sendJsonError(
@@ -185,10 +188,26 @@ export async function chatRoutes(app: FastifyInstance) {
       Connection: "keep-alive",
     });
 
+    const isNewConversation = !body.conversationId;
+    const conversationId = body.conversationId ?? crypto.randomUUID();
+
+    if (isNewConversation) {
+      const earlyMetaEvent = `data: ${JSON.stringify({
+        type: "meta",
+        conversationId,
+        title: "New conversation",
+        isNew: true,
+        userMessageId,
+        assistantMessageId
+      })}\n\n`;
+      reply.raw.write(earlyMetaEvent);
+    }
+
     let assistantContent = "";
     let streamError: string | undefined;
     let usageStats: { promptTokens?: number; completionTokens?: number; totalTokens?: number; durationMs?: number; thinkingTimeMs?: number } | undefined;
     const startTime = Date.now();
+    let hasPersisted = false;
 
     const nodeStream = Readable.fromWeb(upstream.body as import("stream/web").ReadableStream);
     const decoder = new TextDecoder();
@@ -196,16 +215,78 @@ export async function chatRoutes(app: FastifyInstance) {
     let reasoningMode: "oob" | "inband" | null = null;
     let thinkingStartMs = 0;
 
-    req.raw.on("close", () => {
+    function doSaveTurn() {
+      if (hasPersisted) return;
+      hasPersisted = true;
+      try {
+        if (!usageStats) usageStats = {};
+        if (!usageStats.durationMs && Date.now() - startTime > 0) {
+          usageStats.durationMs = Date.now() - startTime;
+        }
+
+        if (assistantContent.includes("<think>") && !assistantContent.includes("</think>")) {
+          assistantContent += "\n</think>";
+        }
+
+        if (reasoningMode) {
+          usageStats.thinkingTimeMs = Date.now() - (thinkingStartMs || startTime);
+        }
+
+        const savedTurn = persistChatTurn({
+          conversationId,
+          model: body.model,
+          userMessageId,
+          userParentId,
+          userContent: originalUserContent,
+          assistantMessageId,
+          assistantContent,
+          assistantError: streamError,
+          assistantStats: usageStats,
+        });
+
+        if (attachmentIds && Array.isArray(attachmentIds)) {
+          const updateStmt = db.prepare(`UPDATE attachments SET message_id = ?, conversation_id = ? WHERE id = ?`);
+          for (const id of attachmentIds) {
+            updateStmt.run(userMessageId, savedTurn.conversationId, id);
+          }
+        }
+
+        if (!reply.raw.writableEnded) {
+          const metaEvent =
+            `data: ${JSON.stringify({
+              type: "meta",
+              conversationId: savedTurn.conversationId,
+              title: savedTurn.title,
+              isNew: savedTurn.isNew,
+              userMessageId,
+              assistantMessageId,
+              stats: usageStats,
+            })}\n\n`;
+          reply.raw.write(metaEvent);
+        }
+      } catch (err) {
+        console.error("[blombrain] failed to persist chat turn:", err);
+      }
+    }
+
+    const onClientDisconnect = () => {
+      if (reply.raw.writableEnded) return;
+      abortController.abort();
       if (!nodeStream.destroyed) nodeStream.destroy();
-    });
+      doSaveTurn();
+    };
+
+    reply.raw.on("close", onClientDisconnect);
+    req.raw.on("aborted", onClientDisconnect);
 
     await new Promise<void>((resolve) => {
       nodeStream.on("data", (chunk: Buffer) => {
         const text = typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
         buffer += text;
 
-        reply.raw.write(chunk);
+        if (!reply.raw.writableEnded) {
+          reply.raw.write(chunk);
+        }
 
         let sepIndex: number;
         while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
@@ -219,7 +300,11 @@ export async function chatRoutes(app: FastifyInstance) {
             try {
               const parsed = JSON.parse(payload);
               const delta: string | undefined = parsed?.choices?.[0]?.delta?.content;
-              const reasoning: string | undefined = parsed?.choices?.[0]?.delta?.reasoning_content;
+              const reasoning: string | undefined =
+                parsed?.choices?.[0]?.delta?.reasoning_content ||
+                parsed?.choices?.[0]?.delta?.reasoning ||
+                parsed?.choices?.[0]?.delta?.thinking_content ||
+                parsed?.choices?.[0]?.delta?.thinking;
 
               if (reasoning) {
                 if (!reasoningMode) {
@@ -270,58 +355,20 @@ export async function chatRoutes(app: FastifyInstance) {
       });
 
       nodeStream.on("end", () => {
-        try {
-          if (!usageStats) usageStats = {};
-          if (!usageStats.durationMs && Date.now() - startTime > 0) {
-            usageStats.durationMs = Date.now() - startTime;
-          }
-
-          if (reasoningMode) {
-            if (reasoningMode === "oob") {
-              assistantContent += "\n</think>";
-            }
-            usageStats.thinkingTimeMs = Date.now() - (thinkingStartMs || startTime);
-          }
-
-          const savedTurn = persistChatTurn({
-            conversationId: body.conversationId ?? null,
-            model: body.model,
-            userMessageId,
-            userParentId,
-            userContent: originalUserContent,
-            assistantMessageId,
-            assistantContent,
-            assistantError: streamError,
-            assistantStats: usageStats,
-          });
-
-          if (attachmentIds && Array.isArray(attachmentIds)) {
-            const updateStmt = db.prepare(`UPDATE attachments SET message_id = ?, conversation_id = ? WHERE id = ?`);
-            for (const id of attachmentIds) {
-              updateStmt.run(userMessageId, savedTurn.conversationId, id);
-            }
-          }
-
-          const metaEvent =
-            `data: ${JSON.stringify({
-              type: "meta",
-              conversationId: savedTurn.conversationId,
-              title: savedTurn.title,
-              isNew: savedTurn.isNew,
-              userMessageId,
-              assistantMessageId,
-              stats: usageStats,
-            })}\n\n`;
-          reply.raw.write(metaEvent);
-        } catch (err) {
-          console.error("[blombrain] failed to persist chat turn:", err);
-        }
-        reply.raw.end();
+        doSaveTurn();
+        if (!reply.raw.writableEnded) reply.raw.end();
         resolve();
       });
 
       nodeStream.on("error", () => {
-        reply.raw.end();
+        doSaveTurn();
+        if (!reply.raw.writableEnded) reply.raw.end();
+        resolve();
+      });
+
+      nodeStream.on("close", () => {
+        doSaveTurn();
+        if (!reply.raw.writableEnded) reply.raw.end();
         resolve();
       });
     });

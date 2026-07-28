@@ -73,6 +73,9 @@
           }
           return false;
         },
+        "Shift-Enter": ({ editor }) => {
+          return editor.commands.splitBlock();
+        },
       };
     },
   });
@@ -96,17 +99,22 @@
   });
 
   function checkAlerts(ed: Editor) {
-    const { doc } = ed.state;
+    const { doc, tr } = ed.state;
+    let modified = false;
     doc.descendants((node, pos) => {
       if (node.type.name === "blockquote") {
         const text = node.textContent.trim();
         const match = text.match(/^\[\!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i);
         const alertType = match ? match[1].toUpperCase() : null;
         if (node.attrs.alertType !== alertType) {
-          ed.commands.updateAttributes("blockquote", { alertType });
+          tr.setNodeMarkup(pos, undefined, { ...node.attrs, alertType });
+          modified = true;
         }
       }
     });
+    if (modified) {
+      ed.view.dispatch(tr);
+    }
   }
 
   onMount(() => {

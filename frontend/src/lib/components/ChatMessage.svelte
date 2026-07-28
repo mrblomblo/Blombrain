@@ -42,6 +42,13 @@
     return matches.map((m) => m.id);
   });
 
+  let hasCodeBlock = $derived(
+    !!(
+      message.content &&
+      (message.content.includes("```") || message.content.includes("<pre>"))
+    )
+  );
+
   // Edit Mode state
   let isEditing = $state(false);
   let editDraft = $state("");
@@ -414,12 +421,13 @@
           </div>
         </div>
       </div>
-    {:else if message.content || message.error || message.streaming}
+    {:else if message.content || message.thinkingContent || message.error || message.streaming}
       <div
         class="relative rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-full break-words
           {message.role === 'user'
           ? 'bg-accent-muted/90 text-fg rounded-tr-xs'
-          : 'bg-bg-elevated border border-line/60 text-fg rounded-tl-xs shadow-xs'}"
+          : 'bg-bg-elevated border border-line/60 text-fg rounded-tl-xs shadow-xs'}
+          {hasCodeBlock ? 'w-full' : ''}"
       >
         {#if message.role === "assistant"}
           <ThinkingBlock
@@ -427,6 +435,7 @@
             thinkingDone={message.thinkingDone}
             streaming={message.streaming}
             thinkingTimeMs={message.thinkingTimeMs}
+            hasMainContent={!!message.content}
           />
         {/if}
         {#if message.error}
