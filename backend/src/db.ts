@@ -91,11 +91,11 @@ db.exec(`
     id           TEXT PRIMARY KEY,
     user_name    TEXT NOT NULL DEFAULT 'You',
     user_avatar  TEXT,
-    theme        TEXT NOT NULL DEFAULT 'slate-ember'
+    theme        TEXT NOT NULL DEFAULT 'autumn'
   );
 
   INSERT OR IGNORE INTO global_settings (id, user_name, user_avatar, theme)
-  VALUES ('default', 'You', NULL, 'slate-ember');
+  VALUES ('default', 'You', NULL, 'autumn');
 
   -- Migration helper to ensure existing DBs get the new columns
   CREATE INDEX IF NOT EXISTS idx_attachments_conv ON attachments(conversation_id);

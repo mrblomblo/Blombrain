@@ -4,7 +4,7 @@ import { themeStore, type ThemeName } from "../theme.svelte";
 class SettingsStore {
   userName = $state("You");
   userAvatar = $state<string | null>(null);
-  theme = $state<ThemeName>("slate-ember");
+  theme = $state<ThemeName>("autumn");
   loaded = $state(false);
 
   async init() {

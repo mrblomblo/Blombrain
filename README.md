@@ -113,15 +113,10 @@ unchanged):
 
 ## Theming
 
-Every color in the UI comes from a semantic CSS variable in
-`frontend/src/app.css` -- no component hardcodes a hex value or a raw
-Tailwind color. Three themes ship today (`slate-ember`, `paper-fern`,
-`nightshade`), deliberately not just an inverted light/dark pair -- each
-has its own signal color and mood. To add a new theme, add one
-`[data-theme="your-name"]` block in `app.css` defining the same set of
-variables, and add the name to `THEMES` / `THEME_LABELS` in
-`frontend/src/lib/theme.ts`. The switcher in the sidebar picks it up
-automatically.
+Every color in the UI comes from a semantic CSS variable in `frontend/src/app.css` -- no component hardcodes a hex value or a raw Tailwind color.
+
+10 themes ship today (`autumn`, `ctp-mocha`, `ctp-latte`, `dracula`, `everforest-dark-hard`, `everforest-light-soft`, `gruvbox-dark-hard`, `gruvbox-light-soft`, `nord-polar-night`, `nord-snow-storm`), with Catppuccin Mocha as default.  
+To add a new theme, add one `[data-theme="your-name"]` block in `app.css` defining the same set of variables, and add the name to `THEMES` / `THEME_LABELS` in `frontend/src/lib/theme.svelte.ts`. The switcher in the settings picks it up automatically.
 
 ## Status
 

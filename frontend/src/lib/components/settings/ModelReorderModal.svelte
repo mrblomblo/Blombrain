@@ -253,7 +253,7 @@
           type="button"
           onclick={handleSave}
           disabled={isSaving}
-          class="flex h-8 items-center gap-1.5 rounded-md bg-accent px-4 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          class="flex h-8 items-center gap-1.5 rounded-md bg-accent px-4 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
         >
           <Check size={13} />
           {isSaving ? "Saving..." : "Save Order"}

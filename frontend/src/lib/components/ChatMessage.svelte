@@ -413,7 +413,7 @@
                 disabled={isSaving ||
                   isUploadingEdit ||
                   (!editDraft.trim() && editAttachments.length === 0)}
-                class="flex h-7 items-center gap-1 rounded-md bg-accent px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                class="flex h-7 items-center gap-1 rounded-md bg-accent px-3 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 <SendIcon size={12} />
                 Send

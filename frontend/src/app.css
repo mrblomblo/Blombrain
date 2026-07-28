@@ -1,105 +1,334 @@
 @import "tailwindcss";
 
-/* ============================================================================
-   BLOMBRAIN THEME SYSTEM
-   ----------------------------------------------------------------------------
-   Every color used anywhere in the app comes from a semantic CSS variable
-   below. Components never hardcode a hex value or a Tailwind color like
-   `bg-slate-800` -- they use `bg-[var(--bg-elevated)]` / the mapped utility
-   classes (`bg-elevated`, `text-fg`, `border-line`, etc, see @theme block).
-
-   Adding a new theme = adding one new `[data-theme="..."]` block here. The
-   active theme is set via `document.documentElement.dataset.theme` from
-   `src/lib/theme.ts` and persisted client-side only -- it is a UI preference,
-   not app data, so it doesn't touch the backend.
-   ========================================================================= */
-
 :root {
-  /* ---- Slate Ember (default, dark) ------------------------------------
-     Graphite, not pure black; a cool indigo signal color instead of the
-     ubiquitous "AI orange" or acid-green terminal accent. */
-  --bg: #14161b;
-  --bg-elevated: #1c1f26;
-  --bg-inset: #0e1014;
-  --bg-hover: #232733;
-  --fg: #e7e6e2;
-  --fg-muted: #8b8d97;
-  --fg-subtle: #5b5e69;
-  --line: #2b2e37;
-  --line-strong: #383c48;
-  --accent: #7c8cf8;
-  --accent-fg: #10121a;
-  --accent-muted: #2c3050;
-  --danger: #e5484d;
-  --danger-fg: #1a0d0e;
-  --success: #3dd68c;
-  --warning: #e5b84d;
+  --bg: #11111b;
+  --bg-elevated: #1e1e2e;
+  --bg-inset: color-mix(in srgb, #11111b 85%, black);
+  --bg-hover: #45475a;
+  --fg: #cdd6f4;
+  --fg-muted: #a6adc8;
+  --fg-subtle: #6c7086;
+  --line: #313244;
+  --line-strong: #313244;
+  --accent: #fab387;
+  --accent-fg: #11111b;
+  --accent-muted: color-mix(in srgb, #fab387 15%, transparent);
+  --danger: #f38ba8;
+  --danger-fg: #11111b;
+  --success: #a6e3a1;
+  --warning: #fab387;
   --shadow: rgba(0, 0, 0, 0.45);
+
+  --red: #f38ba8;
+  --green: #a6e3a1;
+  --purple: #cba6f7;
+  --blue: #89b4fa;
+  --orange: #fab387;
 }
 
-[data-theme="slate-ember"] {
-  --bg: #14161b;
-  --bg-elevated: #1c1f26;
-  --bg-inset: #0e1014;
-  --bg-hover: #232733;
-  --fg: #e7e6e2;
-  --fg-muted: #8b8d97;
-  --fg-subtle: #5b5e69;
-  --line: #2b2e37;
-  --line-strong: #383c48;
-  --accent: #7c8cf8;
-  --accent-fg: #10121a;
-  --accent-muted: #2c3050;
-  --danger: #e5484d;
-  --danger-fg: #1a0d0e;
-  --success: #3dd68c;
-  --warning: #e5b84d;
+[data-theme="autumn"] {
+  --bg: #1a1815;
+  --bg-elevated: #221f1a;
+  --bg-inset: color-mix(in srgb, #1a1815 85%, black);
+  --bg-hover: color-mix(in srgb, #221f1a 85%, white);
+  --fg: #ece6d8;
+  --fg-muted: #b8a898;
+  --fg-subtle: #b8a898;
+  --line: #5a4f3f;
+  --line-strong: #25241f;
+  --accent: #d4741a;
+  --accent-fg: #1a1815;
+  --accent-muted: color-mix(in srgb, #d4741a 15%, transparent);
+  --danger: #cc523e;
+  --danger-fg: #1a1815;
+  --success: #879a39;
+  --warning: #d4741a;
   --shadow: rgba(0, 0, 0, 0.45);
+
+  --red: #cc523e;
+  --green: #879a39;
+  --purple: #a86ea4;
+  --blue: #5da0a4;
+  --orange: #d4741a;
 }
 
-[data-theme="paper-fern"] {
-  /* Light theme. Deliberately not the cream-paper + terracotta combo that
-     shows up in every second AI-generated UI -- cooler paper tone, a fern
-     green signal color instead of clay/orange. */
-  --bg: #f1f0ec;
-  --bg-elevated: #ffffff;
-  --bg-inset: #e9e7e0;
-  --bg-hover: #e3e1d9;
-  --fg: #22241f;
-  --fg-muted: #6b6e63;
-  --fg-subtle: #93968b;
-  --line: #dad7cc;
-  --line-strong: #c7c3b5;
-  --accent: #3f6b4f;
-  --accent-fg: #f6f5f0;
-  --accent-muted: #d9e3da;
-  --danger: #b3261e;
-  --danger-fg: #ffffff;
-  --success: #2e7d4f;
-  --warning: #8a6416;
+/* 
+  * Catppuccin Latte color scheme by Catppuccin
+  * Copyright (c) 2021 Catppuccin
+  * Licensed under the MIT License - see LICENSE file for details: https://github.com/catppuccin/palette/blob/main/LICENSE
+  */
+[data-theme="ctp-latte"] {
+  --bg: #dce0e8;
+  --bg-elevated: #eff1f5;
+  --bg-inset: color-mix(in srgb, #dce0e8 92%, black);
+  --bg-hover: #acb0be;
+  --fg: #4c4f69;
+  --fg-muted: #5c5f77;
+  --fg-subtle: #8c8fa1;
+  --line: #ccd0da;
+  --line-strong: #ccd0da;
+  --accent: #fe640b;
+  --accent-fg: #eff1f5;
+  --accent-muted: color-mix(in srgb, #fe640b 15%, transparent);
+  --danger: #d20f39;
+  --danger-fg: #4c4f69;
+  --success: #40a02b;
+  --warning: #fe640b;
   --shadow: rgba(30, 30, 20, 0.12);
+
+  --red: #d20f39;
+  --green: #40a02b;
+  --purple: #8839ef;
+  --blue: #1e66f5;
+  --orange: #fe640b;
 }
 
-[data-theme="nightshade"] {
-  /* A second dark theme with a totally different signal color, to prove
-     this is a theme system and not a light/dark toggle in disguise. */
-  --bg: #17131a;
-  --bg-elevated: #201a26;
-  --bg-inset: #100d14;
-  --bg-hover: #2a2231;
-  --fg: #ece6ea;
-  --fg-muted: #9b8fa0;
-  --fg-subtle: #635a6b;
-  --line: #322939;
-  --line-strong: #40354a;
-  --accent: #e8698f;
-  --accent-fg: #1a0d13;
-  --accent-muted: #402633;
-  --danger: #f2555b;
-  --danger-fg: #1a0d0e;
-  --success: #5ecf9c;
-  --warning: #e8b15f;
-  --shadow: rgba(0, 0, 0, 0.5);
+/* 
+  * Catppuccin Mocha color scheme by Catppuccin
+  * Copyright (c) 2021 Catppuccin
+  * Licensed under the MIT License - see LICENSE file for details: https://github.com/catppuccin/palette/blob/main/LICENSE
+  */
+[data-theme="ctp-mocha"] {
+  --bg: #11111b;
+  --bg-elevated: #1e1e2e;
+  --bg-inset: color-mix(in srgb, #11111b 85%, black);
+  --bg-hover: #45475a;
+  --fg: #cdd6f4;
+  --fg-muted: #a6adc8;
+  --fg-subtle: #6c7086;
+  --line: #313244;
+  --line-strong: #313244;
+  --accent: #fab387;
+  --accent-fg: #11111b;
+  --accent-muted: color-mix(in srgb, #fab387 15%, transparent);
+  --danger: #f38ba8;
+  --danger-fg: #11111b;
+  --success: #a6e3a1;
+  --warning: #fab387;
+  --shadow: rgba(0, 0, 0, 0.45);
+
+  --red: #f38ba8;
+  --green: #a6e3a1;
+  --purple: #cba6f7;
+  --blue: #89b4fa;
+  --orange: #fab387;
+}
+
+/* 
+  * Dracula color scheme by Dracula Theme
+  * Copyright (c) 2023 Dracula Theme
+  * Licensed under the MIT License - see LICENSE file for details: https://github.com/dracula/dracula-theme/blob/main/LICENSE
+  */
+[data-theme="dracula"] {
+  --bg: #282a36;
+  --bg-elevated: color-mix(in srgb, #282a36 60%, #44475a);
+  --bg-inset: color-mix(in srgb, #282a36 85%, black);
+  --bg-hover: color-mix(in srgb, color-mix(in srgb, #282a36 60%, #44475a) 85%, white);
+  --fg: #f8f8f2;
+  --fg-muted: #6272a4;
+  --fg-subtle: #6272a4;
+  --line: #6272a4;
+  --line-strong: #44475a;
+  --accent: #bd93f9;
+  --accent-fg: #282a36;
+  --accent-muted: color-mix(in srgb, #bd93f9 15%, transparent);
+  --danger: #ff5555;
+  --danger-fg: #282a36;
+  --success: #50fa7b;
+  --warning: #ffb86c;
+  --shadow: rgba(0, 0, 0, 0.45);
+
+  --red: #ff5555;
+  --green: #50fa7b;
+  --purple: #bd93f9;
+  --blue: #8be9fd;
+  --orange: #ffb86c;
+}
+
+/* 
+  * Everforest Dark Hard color scheme by sainnhe
+  * Copyright (c) 2019 sainnhe
+  * Licensed under the MIT License - see LICENSE file for details: https://github.com/sainnhe/everforest/blob/master/LICENSE
+  */
+[data-theme="everforest-dark-hard"] {
+  --bg: #1e2326;
+  --bg-elevated: #272e33;
+  --bg-inset: color-mix(in srgb, #1e2326 85%, black);
+  --bg-hover: #414b50;
+  --fg: #d3c6aa;
+  --fg-muted: #9da9a0;
+  --fg-subtle: #859289;
+  --line: #374145;
+  --line-strong: #2e383c;
+  --accent: #a7c080;
+  --accent-fg: #1e2326;
+  --accent-muted: color-mix(in srgb, #a7c080 15%, transparent);
+  --danger: #e67e80;
+  --danger-fg: #1e2326;
+  --success: #a7c080;
+  --warning: #e69875;
+  --shadow: rgba(0, 0, 0, 0.45);
+
+  --red: #e67e80;
+  --green: #a7c080;
+  --purple: #d699b6;
+  --blue: #7fbbb3;
+  --orange: #dbbc7f;
+}
+
+/* 
+  * Everforest Light Soft color scheme by sainnhe
+  * Copyright (c) 2019 sainnhe
+  * Licensed under the MIT License - see LICENSE file for details: https://github.com/sainnhe/everforest/blob/master/LICENSE
+  */
+[data-theme="everforest-light-soft"] {
+  --bg: #f3ead3;
+  --bg-elevated: #eae4ca;
+  --bg-inset: color-mix(in srgb, #f3ead3 92%, black);
+  --bg-hover: #bec5b2;
+  --fg: #5c6a72;
+  --fg-muted: #708089;
+  --fg-subtle: #939f91;
+  --line: #ddd8be;
+  --line-strong: #e5dfc5;
+  --accent: #8da101;
+  --accent-fg: #f3ead3;
+  --accent-muted: color-mix(in srgb, #8da101 15%, transparent);
+  --danger: #f85552;
+  --danger-fg: #5c6a72;
+  --success: #8da101;
+  --warning: #f57d26;
+  --shadow: rgba(30, 30, 20, 0.12);
+
+  --red: #f85552;
+  --green: #8da101;
+  --purple: #df69ba;
+  --blue: #3a94c5;
+  --orange: #dfa000;
+}
+
+/* 
+  * Gruvbox Dark Hard color scheme by Pavel Pertsev
+  * Copyright (c) Pavel Pertsev
+  * Licensed under the MIT License - see LICENSE file for details: https://github.com/morhetz/gruvbox?tab=readme-ov-file#license
+  */
+[data-theme="gruvbox-dark-hard"] {
+  --bg: #1d2021;
+  --bg-elevated: #282828;
+  --bg-inset: color-mix(in srgb, #1d2021 85%, black);
+  --bg-hover: #504945;
+  --fg: #ebdbb2;
+  --fg-muted: #d5c4a1;
+  --fg-subtle: #bdae93;
+  --line: #3c3836;
+  --line-strong: #3c3836;
+  --accent: #d79921;
+  --accent-fg: #1d2021;
+  --accent-muted: color-mix(in srgb, #d79921 15%, transparent);
+  --danger: #cc241d;
+  --danger-fg: #11111b;
+  --success: #98971a;
+  --warning: #d65d0e;
+  --shadow: rgba(0, 0, 0, 0.45);
+
+  --red: #fb4934;
+  --green: #b8bb26;
+  --purple: #b16286;
+  --blue: #83a598;
+  --orange: #fe8019;
+}
+
+/* 
+  * Gruvbox Light Soft color scheme by Pavel Pertsev
+  * Copyright (c) Pavel Pertsev
+  * Licensed under the MIT License - see LICENSE file for details: https://github.com/morhetz/gruvbox?tab=readme-ov-file#license
+  */
+[data-theme="gruvbox-light-soft"] {
+  --bg: #f2e5bc;
+  --bg-elevated: #fdf4c1;
+  --bg-inset: color-mix(in srgb, #f2e5bc 92%, black);
+  --bg-hover: #bdae93;
+  --fg: #3c3836;
+  --fg-muted: #7c6f64;
+  --fg-subtle: #928374;
+  --line: #928374;
+  --line-strong: #ebdbb2;
+  --accent: #d79921;
+  --accent-fg: #3c3836;
+  --accent-muted: color-mix(in srgb, #d79921 15%, transparent);
+  --danger: #cc241d;
+  --danger-fg: #282828;
+  --success: #98971a;
+  --warning: #d65d0e;
+  --shadow: rgba(30, 30, 20, 0.12);
+
+  --red: #9d0006;
+  --green: #79740e;
+  --purple: #8f3f71;
+  --blue: #076678;
+  --orange: #af3a03;
+}
+
+/* 
+  * Nord Polar Night color scheme by Sven Greb
+  * Copyright (c) 2016-present Sven Greb development@svengreb.de (https://www.svengreb.de)
+  * Licensed under the MIT License - see LICENSE file for details: https://github.com/nordtheme/nord/blob/develop/license
+  */
+[data-theme="nord-polar-night"] {
+  --bg: #2e3440;
+  --bg-elevated: #3b4252;
+  --bg-inset: color-mix(in srgb, #2e3440 85%, black);
+  --bg-hover: color-mix(in srgb, #3b4252 85%, white);
+  --fg: #eceff4;
+  --fg-muted: #d8dee9;
+  --fg-subtle: #4c566a;
+  --line: #434c5e;
+  --line-strong: #434c5e;
+  --accent: #88c0d0;
+  --accent-fg: #2e3440;
+  --accent-muted: color-mix(in srgb, #88c0d0 15%, transparent);
+  --danger: #bf616a;
+  --danger-fg: #2e3440;
+  --success: #a3be8c;
+  --warning: #d08770;
+  --shadow: rgba(0, 0, 0, 0.45);
+
+  --red: #bf616a;
+  --green: #a3be8c;
+  --purple: #b48ead;
+  --blue: #81a1c1;
+  --orange: #d08770;
+}
+
+/* 
+  * Nord Snow Storm color scheme by Sven Greb
+  * Copyright (c) 2016-present Sven Greb development@svengreb.de (https://www.svengreb.de)
+  * Licensed under the MIT License - see LICENSE file for details: https://github.com/nordtheme/nord/blob/develop/license
+  */
+[data-theme="nord-snow-storm"] {
+  --bg: #eceff4;
+  --bg-elevated: #e5e9f0;
+  --bg-inset: color-mix(in srgb, #eceff4 92%, black);
+  --bg-hover: color-mix(in srgb, #e5e9f0 85%, black);
+  --fg: #2e3440;
+  --fg-muted: #4c566a;
+  --fg-subtle: #4c566a;
+  --line: #d8dee9;
+  --line-strong: #d8dee9;
+  --accent: #5e81ac;
+  --accent-fg: #eceff4;
+  --accent-muted: color-mix(in srgb, #5e81ac 15%, transparent);
+  --danger: #bf616a;
+  --danger-fg: #2e3440;
+  --success: #a3be8c;
+  --warning: #d08770;
+  --shadow: rgba(30, 30, 20, 0.12);
+
+  --red: #bf616a;
+  --green: #a3be8c;
+  --purple: #b48ead;
+  --blue: #5e81ac;
+  --orange: #d08770;
 }
 
 @theme {
@@ -314,8 +543,8 @@ body {
 }
 
 .prose blockquote {
-  border-left: 3px solid var(--accent);
-  background-color: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-left: 3px solid var(--bg-inset);
+  background-color: color-mix(in srgb, var(--bg-inset) 33%, transparent);
   padding: 0.5rem 1rem;
   border-radius: 0 0.5rem 0.5rem 0;
   margin-top: 0.75rem;

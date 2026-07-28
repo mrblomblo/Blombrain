@@ -371,7 +371,7 @@
             </button>
             <button
               onclick={startAddPreset}
-              class="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+              class="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90"
             >
               <Plus size={13} />
               Create Preset
@@ -390,7 +390,8 @@
                 <li
                   animate:flip={{ duration: 300, easing: quintOut }}
                   out:slide={{ duration: 250, easing: quintOut }}
-                  class="flex items-center justify-between rounded-lg border border-accent/40 bg-bg-elevated px-4 py-3 text-sm transition-colors {model.isHidden || model.isOrphaned
+                  class="flex items-center justify-between rounded-lg border border-accent/40 bg-bg-elevated px-4 py-3 text-sm transition-colors {model.isHidden ||
+                  model.isOrphaned
                     ? 'opacity-50'
                     : ''}"
                 >
@@ -991,7 +992,7 @@
             <button
               type="submit"
               disabled={formBusy}
-              class="flex h-8 items-center gap-1.5 rounded-md bg-accent px-4 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              class="flex h-8 items-center gap-1.5 rounded-md bg-accent px-4 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               <Check size={13} />
               Save

@@ -1,17 +1,33 @@
-export const THEMES = ["slate-ember", "paper-fern", "nightshade"] as const;
+export const THEMES = [
+  "autumn",
+  "ctp-mocha",
+  "ctp-latte",
+  "dracula",
+  "everforest-dark-hard",
+  "everforest-light-soft",
+  "gruvbox-dark-hard",
+  "gruvbox-light-soft",
+  "nord-polar-night",
+  "nord-snow-storm",
+] as const;
 export type ThemeName = (typeof THEMES)[number];
 
 export const THEME_CONFIG: Record<ThemeName, { label: string; isDark: boolean }> = {
-  "slate-ember": { label: "Slate Ember", isDark: true },
-  "paper-fern": { label: "Paper Fern", isDark: false },
-  nightshade: { label: "Nightshade", isDark: true },
+  "autumn": { label: "Autumn", isDark: true },
+  "ctp-mocha": { label: "Catppuccin Mocha", isDark: true },
+  "ctp-latte": { label: "Catppuccin Latte", isDark: false },
+  "dracula": { label: "Dracula", isDark: true },
+  "everforest-dark-hard": { label: "Everforest Dark", isDark: true },
+  "everforest-light-soft": { label: "Everforest Light", isDark: false },
+  "gruvbox-dark-hard": { label: "Gruvbox Dark", isDark: true },
+  "gruvbox-light-soft": { label: "Gruvbox Light", isDark: false },
+  "nord-polar-night": { label: "Nord Polar Night", isDark: true },
+  "nord-snow-storm": { label: "Nord Snow Storm", isDark: false },
 };
 
-export const THEME_LABELS: Record<ThemeName, string> = {
-  "slate-ember": THEME_CONFIG["slate-ember"].label,
-  "paper-fern": THEME_CONFIG["paper-fern"].label,
-  nightshade: THEME_CONFIG["nightshade"].label,
-};
+export const THEME_LABELS: Record<ThemeName, string> = Object.fromEntries(
+  THEMES.map((t) => [t, THEME_CONFIG[t].label]),
+) as Record<ThemeName, string>;
 
 const STORAGE_KEY = "blombrain:theme";
 
@@ -22,7 +38,7 @@ function readInitialTheme(): ThemeName {
       return stored as ThemeName;
     }
   }
-  return "slate-ember";
+  return "ctp-mocha";
 }
 
 class ThemeStore {

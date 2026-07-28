@@ -104,7 +104,9 @@
     doc.descendants((node, pos) => {
       if (node.type.name === "blockquote") {
         const text = node.textContent.trim();
-        const match = text.match(/^\[\!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i);
+        const match = text.match(
+          /^\[\!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i,
+        );
         const alertType = match ? match[1].toUpperCase() : null;
         if (node.attrs.alertType !== alertType) {
           tr.setNodeMarkup(pos, undefined, { ...node.attrs, alertType });
@@ -160,7 +162,8 @@
       content: value,
       onUpdate: ({ editor }) => {
         checkAlerts(editor);
-        const md = (editor.storage as any).markdown?.getMarkdown() ?? editor.getText();
+        const md =
+          (editor.storage as any).markdown?.getMarkdown() ?? editor.getText();
         if (value !== md) {
           value = md;
         }
@@ -210,7 +213,9 @@
     min-height: 1.5rem;
   }
 
-  :global(.markdown-input-editor .ProseMirror p.is-editor-empty:first-child::before) {
+  :global(
+      .markdown-input-editor .ProseMirror p.is-editor-empty:first-child::before
+    ) {
     color: var(--fg-subtle);
     content: attr(data-placeholder);
     float: left;
@@ -290,40 +295,53 @@
   }
 
   :global(.markdown-input-editor .ProseMirror blockquote) {
-    border-left: 3px solid var(--accent);
+    border-left: 3px solid
+      color-mix(in srgb, var(--line-strong) 50%, transparent);
     padding: 0.375rem 0.75rem;
     color: var(--fg-muted);
     font-style: normal;
     margin-top: 0.25rem;
     margin-bottom: 0.25rem;
-    background-color: var(--bg-inset);
+    background-color: color-mix(in srgb, var(--bg) 75%, transparent);
     border-radius: 0 0.375rem 0.375rem 0;
     transition: all 0.15s ease;
   }
 
-  :global(.markdown-input-editor .ProseMirror blockquote[data-alert-type="NOTE"]) {
-    border-left-color: var(--accent);
-    background-color: color-mix(in srgb, var(--accent) 10%, transparent);
+  :global(
+      .markdown-input-editor .ProseMirror blockquote[data-alert-type="NOTE"]
+    ) {
+    border-left-color: var(--blue);
+    background-color: color-mix(in srgb, var(--blue) 10%, transparent);
   }
 
-  :global(.markdown-input-editor .ProseMirror blockquote[data-alert-type="TIP"]) {
-    border-left-color: var(--success);
-    background-color: color-mix(in srgb, var(--success) 10%, transparent);
+  :global(
+      .markdown-input-editor .ProseMirror blockquote[data-alert-type="TIP"]
+    ) {
+    border-left-color: var(--green);
+    background-color: color-mix(in srgb, var(--green) 10%, transparent);
   }
 
-  :global(.markdown-input-editor .ProseMirror blockquote[data-alert-type="IMPORTANT"]) {
-    border-left-color: var(--accent);
-    background-color: color-mix(in srgb, var(--accent) 15%, transparent);
+  :global(
+      .markdown-input-editor
+        .ProseMirror
+        blockquote[data-alert-type="IMPORTANT"]
+    ) {
+    border-left-color: var(--purple);
+    background-color: color-mix(in srgb, var(--purple) 10%, transparent);
   }
 
-  :global(.markdown-input-editor .ProseMirror blockquote[data-alert-type="WARNING"]) {
-    border-left-color: var(--warning);
-    background-color: color-mix(in srgb, var(--warning) 10%, transparent);
+  :global(
+      .markdown-input-editor .ProseMirror blockquote[data-alert-type="WARNING"]
+    ) {
+    border-left-color: var(--orange);
+    background-color: color-mix(in srgb, var(--orange) 10%, transparent);
   }
 
-  :global(.markdown-input-editor .ProseMirror blockquote[data-alert-type="CAUTION"]) {
-    border-left-color: var(--danger);
-    background-color: color-mix(in srgb, var(--danger) 10%, transparent);
+  :global(
+      .markdown-input-editor .ProseMirror blockquote[data-alert-type="CAUTION"]
+    ) {
+    border-left-color: var(--red);
+    background-color: color-mix(in srgb, var(--red) 10%, transparent);
   }
 
   :global(.ProseMirror-dropcursor),

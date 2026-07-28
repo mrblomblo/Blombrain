@@ -289,7 +289,7 @@
           <button
             type="submit"
             disabled={formBusy}
-            class="flex h-8 items-center gap-1.5 rounded-md bg-accent px-4 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-50"
+            class="flex h-8 items-center gap-1.5 rounded-md bg-accent px-4 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-50"
           >
             {#if formBusy}
               <span class="animate-spin">⟳</span> Saving…
