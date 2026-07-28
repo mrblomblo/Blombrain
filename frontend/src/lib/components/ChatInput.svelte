@@ -16,7 +16,11 @@
   function handleContainerClick(e: MouseEvent) {
     const target = e.target as HTMLElement | null;
     if (!target) return;
-    if (target.closest("button, input, select, textarea, a, label, [role='button'], .markdown-input-editor")) {
+    if (
+      target.closest(
+        "button, input, select, textarea, a, label, [role='button'], .markdown-input-editor",
+      )
+    ) {
       return;
     }
     markdownInputRef?.focus();
@@ -236,9 +240,9 @@
       ondragleave={handleDragLeave}
       ondrop={handleDrop}
       onclick={handleContainerClick}
-      class="input-container relative flex flex-col rounded-xl border bg-bg-elevated p-2.5 transition-colors cursor-text {isDragging ? '!border-accent !ring-2 !ring-accent/25' : ''} {floating
-        ? 'shadow-lg border-line-strong'
-        : 'shadow-sm'}"
+      class="input-container relative flex flex-col rounded-xl border bg-bg-elevated p-2.5 transition-colors cursor-text {isDragging
+        ? '!border-accent !ring-2 !ring-accent/25'
+        : ''} {floating ? 'shadow-lg border-line-strong' : 'shadow-sm'}"
     >
       {#if isDragging}
         <div
@@ -246,7 +250,9 @@
           class="absolute inset-0 z-30 flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-accent bg-bg-elevated text-accent shadow-md"
         >
           <Paperclip size={22} class="animate-bounce" />
-          <span class="text-xs font-semibold text-fg">Drop file to add as an attachment</span>
+          <span class="text-xs font-semibold text-fg"
+            >Drop file to add as an attachment</span
+          >
         </div>
       {/if}
       {#if allowedAccepts}
@@ -275,7 +281,8 @@
         <div class="flex items-center gap-1">
           {#if allowedAccepts}
             <Button
-              variant="ghost"
+              variant="default"
+              outline
               size="icon"
               onclick={() => fileInput?.click()}
               disabled={chatStore.isStreaming || isUploading}

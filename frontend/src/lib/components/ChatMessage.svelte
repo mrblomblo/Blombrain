@@ -375,16 +375,17 @@
         />
         <div class="flex items-center justify-between text-xs text-fg-subtle">
           <div class="flex items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="default"
+              outline
+              size="icon"
               onclick={() => editFileInput?.click()}
               disabled={isSaving || isUploadingEdit}
               aria-label="Add attachment"
               title="Add attachment"
-              class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg-hover hover:text-fg disabled:opacity-40 disabled:pointer-events-none"
             >
-              <Paperclip size={14} />
-            </button>
+              <Paperclip size={16} />
+            </Button>
           </div>
           <div class="flex items-center gap-2">
             <Button
