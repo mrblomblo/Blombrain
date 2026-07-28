@@ -11,6 +11,7 @@
   import { flip } from "svelte/animate";
   import { slide } from "svelte/transition";
   import { quintOut } from "svelte/easing";
+  import ToggleSwitch from "../ui/ToggleSwitch.svelte";
 
   const queryClient = useQueryClient();
 
@@ -244,10 +245,12 @@
             class="h-8 rounded-md border border-line bg-bg px-3 font-mono text-sm text-fg outline-none focus-visible:outline-2 focus-visible:outline-accent"
           />
           {#if formMode === "edit"}
-            <label class="flex cursor-pointer items-center gap-2 text-xs text-fg-muted">
-              <input type="checkbox" bind:checked={formClearKey} class="accent-accent" />
-              Clear existing API key
-            </label>
+            <div class="flex items-center gap-2 pt-1">
+              <ToggleSwitch id="be-clearkey" bind:checked={formClearKey} />
+              <label for="be-clearkey" class="cursor-pointer text-xs text-fg-muted">
+                Clear existing API key
+              </label>
+            </div>
           {/if}
         </div>
 

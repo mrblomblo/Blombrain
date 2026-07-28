@@ -7,6 +7,8 @@
   import { flip } from "svelte/animate";
   import { slide, fade } from "svelte/transition";
   import { quintOut } from "svelte/easing";
+  import Dropdown from "../ui/Dropdown.svelte";
+  import ToggleSwitch from "../ui/ToggleSwitch.svelte";
 
   const queryClient = useQueryClient();
 
@@ -501,16 +503,12 @@
           {#if formMode === "add_preset" || (modelsQuery.data?.find(m => m.id === selectedModelId)?.isPreset)}
             <div class="flex flex-col gap-1">
               <label for="me-base" class="text-xs font-medium text-fg-muted">Parent Base Model</label>
-              <select
+              <Dropdown
                 id="me-base"
                 bind:value={formBaseModelId}
-                required
-                class="h-8 rounded-md border border-line bg-bg px-2 text-sm text-fg outline-none focus-visible:outline-2 focus-visible:outline-accent"
-              >
-                {#each baseModels as bm}
-                  <option value={bm.id}>{bm.name || bm.id} ({bm.backendName})</option>
-                {/each}
-              </select>
+                options={baseModels.map((bm) => ({ label: `${bm.name || bm.id} (${bm.backendName})`, value: bm.id }))}
+                placeholder="Select parent base model"
+              />
             </div>
           {/if}
 
@@ -529,19 +527,19 @@
           <!-- Capabilities -->
           <div class="flex flex-col gap-2 pt-2 border-t border-line">
             <span class="text-xs font-medium text-fg-muted">Multimodal Capabilities</span>
-            <div class="flex flex-wrap gap-4">
-              <label class="flex cursor-pointer items-center gap-2 text-xs text-fg">
-                <input type="checkbox" bind:checked={formCanImage} class="accent-accent" />
-                Image Support
-              </label>
-              <label class="flex cursor-pointer items-center gap-2 text-xs text-fg">
-                <input type="checkbox" bind:checked={formCanAudio} class="accent-accent" />
-                Audio Support
-              </label>
-              <label class="flex cursor-pointer items-center gap-2 text-xs text-fg">
-                <input type="checkbox" bind:checked={formCanVideo} class="accent-accent" />
-                Video Support
-              </label>
+            <div class="flex flex-wrap gap-5">
+              <div class="flex items-center gap-2">
+                <ToggleSwitch id="cap-img" bind:checked={formCanImage} />
+                <label for="cap-img" class="cursor-pointer text-xs text-fg">Image Support</label>
+              </div>
+              <div class="flex items-center gap-2">
+                <ToggleSwitch id="cap-aud" bind:checked={formCanAudio} />
+                <label for="cap-aud" class="cursor-pointer text-xs text-fg">Audio Support</label>
+              </div>
+              <div class="flex items-center gap-2">
+                <ToggleSwitch id="cap-vid" bind:checked={formCanVideo} />
+                <label for="cap-vid" class="cursor-pointer text-xs text-fg">Video Support</label>
+              </div>
             </div>
           </div>
 
@@ -696,24 +694,27 @@
                 <!-- Reasoning Effort -->
                 <div class="flex flex-col gap-1">
                   <label for="me-reaseff" class="text-[11px] font-medium text-fg-muted">Reasoning Effort</label>
-                  <select
+                  <Dropdown
                     id="me-reaseff"
                     bind:value={formReasoningEffort}
-                    class="h-7 rounded border border-line bg-bg-elevated px-1.5 text-xs text-fg outline-none"
-                  >
-                    <option value={undefined}>Default</option>
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
+                    options={[
+                      { label: "Default", value: "" },
+                      { label: "Low", value: "low" },
+                      { label: "Medium", value: "medium" },
+                      { label: "High", value: "high" },
+                    ]}
+                    placeholder="Default"
+                  />
                 </div>
 
-                <!-- Thinking Toggle -->
-                <div class="col-span-2 flex items-center gap-2 pt-1">
-                  <input id="me-think" type="checkbox" bind:checked={formThinking} class="accent-accent" />
-                  <label for="me-think" class="text-xs text-fg font-medium cursor-pointer">
-                    Enable Thinking Mode / Extended Reasoning
-                  </label>
+                <!-- Thinking Mode Toggle -->
+                <div class="flex flex-col justify-end gap-1 pb-1">
+                  <div class="flex items-center gap-2">
+                    <ToggleSwitch id="me-think" bind:checked={formThinking} />
+                    <label for="me-think" class="text-xs text-fg font-medium cursor-pointer">
+                      Extended Reasoning / Thinking Mode
+                    </label>
+                  </div>
                 </div>
               </div>
             {/if}

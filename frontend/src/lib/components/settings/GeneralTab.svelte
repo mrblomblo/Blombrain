@@ -2,7 +2,7 @@
   import { Upload } from "@lucide/svelte";
   import { uploadFile, serveUploadUrl } from "../../api";
   import { settingsStore } from "../../stores/settings.svelte";
-  import { THEMES, THEME_LABELS, type ThemeName } from "../../theme.svelte";
+  import ThemeSwitcher from "../ThemeSwitcher.svelte";
 
   let imageUploading = $state(false);
   let formError = $state<string | null>(null);
@@ -35,10 +35,7 @@
     await settingsStore.update({ userName: input.value });
   }
 
-  async function handleThemeChange(e: Event) {
-    const select = e.target as HTMLSelectElement;
-    await settingsStore.update({ theme: select.value as ThemeName });
-  }
+
 </script>
 
 <div class="flex flex-col gap-6">
@@ -122,16 +119,11 @@
       <label for="user-theme-select" class="text-xs font-medium text-fg-muted">
         Theme
       </label>
-      <select
+      <ThemeSwitcher
         id="user-theme-select"
         value={settingsStore.theme}
-        onchange={handleThemeChange}
-        class="h-9 w-full rounded-md border border-line bg-bg px-3 text-xs text-fg transition-colors focus:border-accent focus:outline-none"
-      >
-        {#each THEMES as theme (theme)}
-          <option value={theme}>{THEME_LABELS[theme]}</option>
-        {/each}
-      </select>
+        onchange={(t) => settingsStore.update({ theme: t })}
+      />
     </div>
   </div>
 </div>

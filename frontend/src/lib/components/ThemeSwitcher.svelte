@@ -1,14 +1,32 @@
 <script lang="ts">
   import { THEMES, THEME_LABELS, themeStore, type ThemeName } from "../theme.svelte";
+  import Dropdown from "./ui/Dropdown.svelte";
+
+  interface Props {
+    value?: ThemeName;
+    onchange?: (theme: ThemeName) => void;
+    id?: string;
+  }
+
+  let { value, onchange, id }: Props = $props();
+
+  const options = THEMES.map((t) => ({
+    label: THEME_LABELS[t],
+    value: t,
+  }));
+
+  let currentValue = $derived(value ?? themeStore.current);
+
+  function handleChange(newTheme: string) {
+    const t = newTheme as ThemeName;
+    themeStore.set(t);
+    onchange?.(t);
+  }
 </script>
 
-<select
-  class="h-8 rounded-md border border-line bg-bg-elevated px-2 text-xs text-fg outline-none"
-  value={themeStore.current}
-  onchange={(e) => themeStore.set(e.currentTarget.value as ThemeName)}
-  aria-label="Theme"
->
-  {#each THEMES as theme (theme)}
-    <option value={theme}>{THEME_LABELS[theme]}</option>
-  {/each}
-</select>
+<Dropdown
+  {id}
+  value={currentValue}
+  {options}
+  onchange={handleChange}
+/>
