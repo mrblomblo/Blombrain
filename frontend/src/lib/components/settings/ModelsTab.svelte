@@ -80,7 +80,7 @@
     resetForm();
 
     const allModels = modelsQuery.data ?? [];
-    const baseModels = allModels.filter((m) => !m.isPreset);
+    const baseModels = allModels.filter((m) => !m.isPreset && !m.isHidden);
     formBaseModelId = baseModels.length > 0 ? baseModels[0].id : "";
   }
 
@@ -506,7 +506,9 @@
               <Dropdown
                 id="me-base"
                 bind:value={formBaseModelId}
-                options={baseModels.map((bm) => ({ label: `${bm.name || bm.id} (${bm.backendName})`, value: bm.id }))}
+                options={baseModels
+                  .filter((bm) => !bm.isHidden || bm.id === formBaseModelId)
+                  .map((bm) => ({ label: `${bm.name || bm.id} (${bm.backendName})`, value: bm.id }))}
                 placeholder="Select parent base model"
               />
             </div>
