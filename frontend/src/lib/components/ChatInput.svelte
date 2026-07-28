@@ -172,12 +172,15 @@
   }
 </script>
 
-<div
-  class={floating
-    ? "w-full px-2 sm:px-6"
-    : "border-t border-line bg-bg px-2 sm:px-6 py-3"}
->
-  <div class="mx-auto flex max-w-3xl lg:max-w-4xl xl:max-w-5xl flex-col gap-2">
+<div class="relative {floating ? 'w-full px-2 sm:px-6' : 'px-2 sm:px-6 pb-3'}">
+  {#if !floating}
+    <div
+      class="pointer-events-none absolute inset-x-0 bottom-0 top-20 z-0 bg-linear-to-t from-bg-inset via-bg-inset/85 to-transparent"
+    ></div>
+  {/if}
+  <div
+    class="relative z-10 mx-auto flex max-w-3xl lg:max-w-4xl xl:max-w-5xl flex-col gap-2"
+  >
     <!-- Attachment Thumbnails -->
     {#if chatStore.pendingAttachments.length > 0}
       <div class="flex flex-wrap gap-2 px-1">
@@ -240,9 +243,9 @@
       ondragleave={handleDragLeave}
       ondrop={handleDrop}
       onclick={handleContainerClick}
-      class="input-container relative flex flex-col rounded-xl border bg-bg-elevated p-2.5 transition-colors cursor-text {isDragging
+      class="input-container relative flex flex-col rounded-xl border bg-bg-elevated p-2.5 cursor-text hover:border-accent focus:border-accent transition-all duration-150 {isDragging
         ? '!border-accent !ring-2 !ring-accent/25'
-        : ''} {floating ? 'shadow-lg border-line-strong' : 'shadow-sm'}"
+        : ''} {floating ? 'shadow-lg' : 'shadow-sm'}"
     >
       {#if isDragging}
         <div
@@ -327,21 +330,8 @@
 </div>
 
 <style>
-  .input-container {
-    border-color: var(--line);
-    transition:
-      border-color 0.15s ease,
-      box-shadow 0.15s ease;
-  }
-
-  .input-container:hover {
-    border-color: var(--line-strong);
-    box-shadow: 0 4px 12px var(--shadow);
-  }
-
   .input-container:focus-within,
   .input-container:focus-within:hover {
-    border-color: var(--accent);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
   }
 </style>
