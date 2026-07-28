@@ -5,8 +5,9 @@
   import { serveUploadUrl, fetchModels } from "../api";
   import { createQuery } from "@tanstack/svelte-query";
 
+  import MarkdownInput from "./MarkdownInput.svelte";
+
   let draft = $state("");
-  let textarea: HTMLTextAreaElement | undefined = $state();
   let fileInput: HTMLInputElement | undefined = $state();
   let isUploading = $state(false);
 
@@ -58,12 +59,6 @@
     return types.join(",");
   });
 
-  function autosize() {
-    if (!textarea) return;
-    textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
-  }
-
   async function handleSend() {
     if (
       (!draft.trim() && chatStore.pendingAttachments.length === 0) ||
@@ -73,15 +68,7 @@
       return;
     const toSend = draft;
     draft = "";
-    autosize();
     await chatStore.send(toSend);
-  }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
   }
 
   async function handleFileSelect(e: Event) {
@@ -175,16 +162,13 @@
         />
       {/if}
 
-      <!-- Textarea Row -->
-      <textarea
-        bind:this={textarea}
+      <!-- Textarea Row replaced with MarkdownInput -->
+      <MarkdownInput
         bind:value={draft}
-        oninput={autosize}
-        onkeydown={handleKeydown}
-        rows={floating ? 2 : 1}
+        onSubmit={handleSend}
+        disabled={chatStore.isStreaming || isUploading}
         placeholder="Message Blombrain…"
-        class="max-h-52 w-full resize-none bg-transparent px-2 py-1.5 text-sm text-fg placeholder:text-fg-subtle"
-      ></textarea>
+      />
 
       <!-- Bottom Action Bar Row -->
       <div class="flex items-center justify-between pt-1.5">
@@ -253,12 +237,5 @@
   .input-container:focus-within:hover {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
-  }
-
-  textarea,
-  textarea:focus,
-  textarea:focus-visible {
-    outline: none !important;
-    box-shadow: none !important;
   }
 </style>

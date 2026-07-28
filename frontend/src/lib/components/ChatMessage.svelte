@@ -10,6 +10,7 @@
   import BranchNavigator from "./BranchNavigator.svelte";
   import MessageActions from "./MessageActions.svelte";
   import Markdown from "./Markdown.svelte";
+  import MarkdownInput from "./MarkdownInput.svelte";
   import { fly, fade } from "svelte/transition";
   import type { AttachmentOut } from "../types";
 
@@ -127,12 +128,6 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
       cancelEdit();
-    } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-      if (message.role === "user") {
-        handleSendBranch();
-      } else {
-        handleSaveOnly();
-      }
     }
   }
 </script>
@@ -361,12 +356,13 @@
           class="hidden"
         />
 
-        <textarea
+        <MarkdownInput
           bind:value={editDraft}
-          onkeydown={handleKeydown}
-          rows="3"
-          class="edit-textarea w-full resize-y rounded-md bg-bg-elevated px-3 py-2 text-sm text-fg"
-        ></textarea>
+          onSubmit={() => (message.role === "user" ? handleSendBranch() : handleSaveOnly())}
+          disabled={isSaving || isUploadingEdit}
+          placeholder="Edit message…"
+          class="rounded-md bg-bg-elevated"
+        />
         <div class="flex items-center justify-between text-xs text-fg-subtle">
           <div class="flex items-center gap-2">
             <button
@@ -379,12 +375,6 @@
             >
               <Paperclip size={14} />
             </button>
-            <span
-              >Press <kbd
-                class="px-1 py-0.5 rounded bg-bg-elevated border border-line font-mono text-[10px]"
-                >Ctrl+Enter</kbd
-              > to confirm</span
-            >
           </div>
           <div class="flex items-center gap-2">
             <button
@@ -505,13 +495,5 @@
   .edit-container:focus-within:hover {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
-  }
-
-  .edit-textarea,
-  .edit-textarea:focus,
-  .edit-textarea:focus-visible {
-    outline: none !important;
-    box-shadow: none !important;
-    border-color: var(--line);
   }
 </style>
