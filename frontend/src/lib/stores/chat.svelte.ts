@@ -217,7 +217,7 @@ class ChatStore {
     }
   }
 
-  /** Delete a message (and its assistant response if user) */
+  /** Delete a message and reconnect the remaining conversation. */
   async deleteMessage(msgId: string) {
     if (!this.activeConversationId) return;
     const target = this.messages.find((m) => m.id === msgId);
@@ -225,13 +225,44 @@ class ChatStore {
 
     try {
       await apiDeleteMessage(this.activeConversationId, msgId);
-      // Remove from in-memory state
+
       if (target.role === "user") {
-        const childAsst = this.messages.find((m) => m.role === "assistant" && m.parentId === msgId);
-        this.messages = this.messages.filter((m) => m.id !== msgId && m.id !== childAsst?.id);
+        // Find only the *direct* assistant child of this user message.
+        const childAsst = this.messages.find(
+          (m) => m.role === "assistant" && m.parentId === msgId
+        );
+        const idsToDelete = new Set([msgId, ...(childAsst ? [childAsst.id] : [])]);
+
+        // Re-parent any messages that pointed to the deleted assistant so the
+        // deeper conversation thread stays connected after the deletion.
+        if (childAsst) {
+          this.messages = this.messages.map((m) =>
+            m.parentId === childAsst.id ? { ...m, parentId: target.parentId ?? null } : m
+          );
+        } else {
+          // If no assistant response existed, reparent the user message's direct children
+          this.messages = this.messages.map((m) =>
+            m.parentId === msgId ? { ...m, parentId: target.parentId ?? null } : m
+          );
+        }
+
+        this.messages = this.messages.filter((m) => !idsToDelete.has(m.id));
       } else {
-        this.messages = this.messages.filter((m) => m.id !== msgId);
+        // Assistant message: Delete this message and ALL its descendants
+        const toDelete = new Set<string>([msgId]);
+        const queue = [msgId];
+        while (queue.length > 0) {
+          const parentId = queue.shift()!;
+          for (const m of this.messages) {
+            if (m.parentId === parentId && !toDelete.has(m.id)) {
+              toDelete.add(m.id);
+              queue.push(m.id);
+            }
+          }
+        }
+        this.messages = this.messages.filter((m) => !toDelete.has(m.id));
       }
+
       _invalidateConversations?.();
     } catch (err) {
       console.error("[chatStore] failed to delete message:", err);

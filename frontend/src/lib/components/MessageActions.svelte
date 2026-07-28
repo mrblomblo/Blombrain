@@ -12,6 +12,15 @@
 
   let copied = $state(false);
 
+  let canDelete = $derived.by(() => {
+    if (message.role === "user") return true;
+    // For assistant messages, only allow deletion if there are alternative branches
+    const siblings = chatStore.messages.filter(
+      (m) => m.parentId === message.parentId && m.role === "assistant"
+    );
+    return siblings.length >= 2;
+  });
+
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(message.content);
@@ -95,15 +104,17 @@
   {/if}
 
   <!-- Delete -->
-  <button
-    type="button"
-    onclick={handleDelete}
-    disabled={chatStore.isStreaming}
-    aria-label="Delete message"
-    title="Delete"
-    class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-danger disabled:opacity-30 disabled:pointer-events-none"
-  >
-    <Trash2 size={13} />
-  </button>
+  {#if canDelete}
+    <button
+      type="button"
+      onclick={handleDelete}
+      disabled={chatStore.isStreaming}
+      aria-label="Delete message"
+      title="Delete"
+      class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-danger disabled:opacity-30 disabled:pointer-events-none"
+    >
+      <Trash2 size={13} />
+    </button>
+  {/if}
 
 </div>

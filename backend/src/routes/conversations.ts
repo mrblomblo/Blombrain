@@ -198,17 +198,32 @@ export async function conversationsRoutes(app: FastifyInstance) {
     }
 
     if (row.role === "user") {
-      // Find following assistant message that claims row.id as parent or created immediately after
+      // Find following assistant message that claims row.id as parent
       const childAsst = db.prepare<[string, string], MessageRow>(
         "SELECT * FROM messages WHERE conversation_id = ? AND role = 'assistant' AND parent_id = ?"
       ).get(convId, msgId);
 
       if (childAsst) {
+        // Reparent grandchildren to the user message's parent so they are not orphaned
+        db.prepare("UPDATE messages SET parent_id = ? WHERE parent_id = ? AND conversation_id = ?").run(row.parent_id, childAsst.id, convId);
         db.prepare("DELETE FROM messages WHERE id = ?").run(childAsst.id);
+      } else {
+        // Reparent direct children of the user message (if any)
+        db.prepare("UPDATE messages SET parent_id = ? WHERE parent_id = ? AND conversation_id = ?").run(row.parent_id, msgId, convId);
       }
+      db.prepare("DELETE FROM messages WHERE id = ?").run(msgId);
+    } else {
+      // Assistant message: Delete this message and ALL its descendants
+      db.prepare(`
+        WITH RECURSIVE descendants AS (
+          SELECT id FROM messages WHERE id = ?
+          UNION ALL
+          SELECT m.id FROM messages m
+          INNER JOIN descendants d ON m.parent_id = d.id
+        )
+        DELETE FROM messages WHERE id IN (SELECT id FROM descendants)
+      `).run(msgId);
     }
-
-    db.prepare("DELETE FROM messages WHERE id = ?").run(msgId);
     updateConversationMeta.run({ id: convId, title: null, model: null, updatedAt: Date.now() });
 
     return reply.code(204).send();
