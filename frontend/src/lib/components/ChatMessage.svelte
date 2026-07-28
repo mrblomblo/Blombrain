@@ -140,15 +140,9 @@
   }
 </script>
 
-<div
-  class="group relative flex gap-3 py-2 px-1 transition-colors rounded-xl hover:bg-bg-elevated/40 {message.role ===
-  'user'
-    ? 'flex-row-reverse'
-    : ''}"
->
-  <!-- Avatar / Icon -->
+{#snippet avatarContent(sizeClass = "h-8 w-8 rounded-lg")}
   <div
-    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden border border-line bg-bg-elevated shadow-xs select-none"
+    class="flex shrink-0 items-center justify-center overflow-hidden border border-line bg-bg-elevated shadow-xs select-none {sizeClass}"
   >
     {#if message.role === "user"}
       {#if settingsStore.userAvatar}
@@ -159,7 +153,7 @@
         />
       {:else}
         <div
-          class="flex h-full w-full items-center justify-center bg-accent text-accent-fg font-semibold text-xs uppercase"
+          class="flex h-full w-full items-center justify-center bg-accent text-accent-fg font-semibold text-[9px] sm:text-xs uppercase"
         >
           {settingsStore.userName ? settingsStore.userName.slice(0, 2) : "YOU"}
         </div>
@@ -172,11 +166,23 @@
       />
     {:else}
       <div
-        class="flex h-full w-full items-center justify-center bg-bg-inset text-fg-muted font-semibold text-xs"
+        class="flex h-full w-full items-center justify-center bg-bg-inset text-fg-muted font-semibold text-[9px] sm:text-xs"
       >
         AI
       </div>
     {/if}
+  </div>
+{/snippet}
+
+<div
+  class="group relative flex gap-2 sm:gap-3 py-2 px-1 transition-colors rounded-xl hover:bg-bg-elevated/40 {message.role ===
+  'user'
+    ? 'sm:flex-row-reverse'
+    : ''}"
+>
+  <!-- Avatar / Icon (Desktop / Tablet side avatar) -->
+  <div class="hidden sm:flex">
+    {@render avatarContent("h-8 w-8 rounded-lg")}
   </div>
 
   <div
@@ -185,7 +191,7 @@
       : 'items-start'}"
   >
     <!-- Header: Sender Name, Timestamp, Info -->
-    <div class="flex flex-wrap items-center gap-2 text-xs">
+    <div class="flex flex-wrap items-center gap-1.5 sm:gap-2 text-xs">
       {#if message.role === "user"}
         <!-- Timestamp -->
         <MessageTimestamp timestamp={message.createdAt} />
@@ -193,7 +199,17 @@
         <span class="font-medium text-fg">
           {settingsStore.userName || "You"}
         </span>
+
+        <!-- Mobile Inline Avatar -->
+        <div class="flex sm:hidden">
+          {@render avatarContent("h-5 w-5 rounded-md")}
+        </div>
       {:else}
+        <!-- Mobile Inline Avatar -->
+        <div class="flex sm:hidden">
+          {@render avatarContent("h-5 w-5 rounded-md")}
+        </div>
+
         <span class="font-medium text-fg">
           {currentModelInfo?.name || "Assistant"}
         </span>
@@ -312,7 +328,7 @@
     <!-- Message Content or Edit Input -->
     {#if isEditing}
       <div
-        class="edit-container w-full max-w-2xl flex flex-col gap-2 rounded-lg border bg-bg p-3 shadow-md"
+        class="edit-container w-full flex flex-col gap-2 rounded-lg border bg-bg p-3 shadow-md"
       >
         <!-- Existing & New Attachments Thumbnails -->
         {#if editAttachments.length > 0}
@@ -492,7 +508,7 @@
   </div>
 
   <!-- Spacer to balance hover background padding on the opposite side of avatar -->
-  <div class="w-8 shrink-0 invisible"></div>
+  <div class="hidden sm:block w-8 shrink-0 invisible"></div>
 </div>
 
 <style>

@@ -174,10 +174,10 @@
 
 <div
   class={floating
-    ? "w-full px-4 sm:px-6"
-    : "border-t border-line bg-bg px-4 sm:px-6 py-3"}
+    ? "w-full px-2 sm:px-6"
+    : "border-t border-line bg-bg px-2 sm:px-6 py-3"}
 >
-  <div class="mx-auto flex max-w-3xl flex-col gap-2">
+  <div class="mx-auto flex max-w-3xl lg:max-w-4xl xl:max-w-5xl flex-col gap-2">
     <!-- Attachment Thumbnails -->
     {#if chatStore.pendingAttachments.length > 0}
       <div class="flex flex-wrap gap-2 px-1">

@@ -68,7 +68,7 @@
 
 <div
   bind:this={scrollEl}
-  class="relative flex-1 overflow-y-auto px-4 sm:px-6 pb-4 pt-0"
+  class="relative flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-2 sm:px-6 pb-4 pt-0"
 >
   {#if activeMessages.length === 0}
     <div
@@ -103,7 +103,7 @@
       </div>
 
       <!-- Floating Chat Input -->
-      <div class="w-full max-w-3xl">
+      <div class="w-full max-w-3xl lg:max-w-4xl xl:max-w-5xl">
         <ChatInput floating={true} />
       </div>
     </div>
@@ -112,7 +112,7 @@
   {#if activeMessages.length > 0}
     {#key chatStore.activeConversationId}
       <div
-        class="mx-auto flex w-full max-w-3xl flex-col gap-3 relative z-10"
+        class="mx-auto flex w-full max-w-3xl lg:max-w-4xl xl:max-w-5xl flex-col gap-3 relative z-10"
         style="padding-bottom: {bottomPadding + 16}px;"
       >
         {#each activeMessages as message, i (message.id)}

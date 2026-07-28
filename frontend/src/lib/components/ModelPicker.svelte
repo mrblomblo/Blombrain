@@ -78,7 +78,7 @@
 
 <svelte:window onclick={handleWindowClick} onkeydown={handleKeydown} />
 
-<div class="model-picker-container relative">
+<div class="model-picker-container relative z-50">
   {#if modelsQuery.isLoading}
     <span class="text-xs text-fg-muted">Loading models…</span>
   {:else if modelsQuery.isError}
@@ -127,7 +127,7 @@
     {#if isOpen}
       <div
         transition:fly={{ y: -6, duration: 150 }}
-        class="absolute left-0 top-full z-50 mt-1 w-72 sm:w-80 rounded-xl border border-line bg-bg shadow-2xl overflow-hidden"
+        class="absolute left-0 top-full z-[100] mt-1 w-72 sm:w-80 rounded-xl border border-line bg-bg shadow-2xl overflow-hidden"
       >
         <!-- Search Bar (shown when visible models count > 10) -->
         {#if visibleModels.length > 10}

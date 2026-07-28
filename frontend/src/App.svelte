@@ -112,7 +112,7 @@
     <!-- Main Content Pane -->
     <main class="relative flex min-w-0 flex-1 flex-col h-full overflow-hidden">
       <header
-        class="flex items-center justify-between border-b border-line px-2.5 py-2.5 bg-bg shrink-0 z-10"
+        class="flex items-center justify-between border-b border-line px-2.5 py-2.5 bg-bg shrink-0 z-30"
       >
         <div class="flex items-center gap-3 min-w-0 flex-1">
           <!-- Mobile Menu -->
