@@ -15,6 +15,7 @@
     onchange?: (value: string) => void;
     id?: string;
     class?: string;
+    buttonClass?: string;
   }
 
   let {
@@ -25,6 +26,7 @@
     onchange,
     id,
     class: className = "",
+    buttonClass = "",
   }: Props = $props();
 
   let isOpen = $state(false);
@@ -59,7 +61,7 @@
     type="button"
     {disabled}
     onclick={() => (isOpen = !isOpen)}
-    class="flex h-8 w-full items-center justify-between gap-2 rounded-md border border-line bg-bg px-3 text-xs text-fg transition-colors hover:border-line-strong hover:bg-bg-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50 disabled:cursor-not-allowed {className}"
+    class="flex w-full items-center justify-between gap-2 rounded-md border border-line text-xs text-fg transition-colors hover:border-line-strong hover:bg-bg-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50 disabled:cursor-not-allowed {buttonClass || 'h-8 bg-bg px-3'} {className}"
   >
     <span class="truncate">{selectedOption?.label || placeholder}</span>
     <ChevronDown size={13} class="text-fg-subtle shrink-0 transition-transform duration-200 {isOpen ? 'rotate-180' : ''}" />

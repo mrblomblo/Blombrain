@@ -131,10 +131,9 @@
           <li
             animate:flip={{ duration: 300, easing: quintOut }}
             out:slide={{ duration: 250, easing: quintOut }}
-            class="flex items-center gap-3 rounded-lg border px-4 py-3 text-sm transition-colors"
+            class="flex items-center gap-3 rounded-lg border bg-bg-elevated px-4 py-3 text-sm transition-colors"
             class:border-accent={editingId === b.id}
             class:border-line={editingId !== b.id}
-            class:bg-bg-elevated={editingId === b.id}
           >
             <!-- Status dot -->
             <span

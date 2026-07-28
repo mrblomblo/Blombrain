@@ -381,7 +381,7 @@
               <li
                 animate:flip={{ duration: 300, easing: quintOut }}
                 out:slide={{ duration: 250, easing: quintOut }}
-                class="flex items-center justify-between rounded-lg border border-line px-4 py-3 text-sm transition-colors {model.isHidden ? 'opacity-50 bg-bg-inset/40' : ''}"
+                class="flex items-center justify-between rounded-lg border border-line bg-bg-elevated px-4 py-3 text-sm transition-colors {model.isHidden ? 'opacity-50 bg-bg-elevated/50' : ''}"
               >
                 <div class="flex items-center gap-3 min-w-0 flex-1">
                   {#if model.icon}
@@ -559,7 +559,7 @@
             </button>
 
             {#if showAdvanced}
-              <div class="mt-3 grid grid-cols-2 gap-3 rounded-lg bg-bg p-3 border border-line">
+              <div transition:slide={{ duration: 250 }} class="mt-3 grid grid-cols-2 gap-3 rounded-lg bg-bg p-3 border border-line">
                 <!-- Temperature -->
                 <div class="flex flex-col gap-1">
                   <label for="me-temp" class="text-[11px] font-medium text-fg-muted">Temperature</label>
@@ -704,6 +704,7 @@
                       { label: "High", value: "high" },
                     ]}
                     placeholder="Default"
+                    buttonClass="h-7 bg-bg-elevated px-2"
                   />
                 </div>
 
