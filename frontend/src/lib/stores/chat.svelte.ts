@@ -378,6 +378,7 @@ class ChatStore {
       conversationId: this.activeConversationId,
       userMessageId: currentUserId,
       userParentId: userMsg.parentId ?? null,
+      assistantMessageId: currentAsstId,
       attachmentIds,
       signal: this.abortController.signal,
 

@@ -4,6 +4,7 @@
   import { fetchBackends, fetchConversations, deleteConversation } from "../api";
   import { chatStore } from "../stores/chat.svelte";
   import type { ConversationSummary } from "../types";
+  import { slide } from "svelte/transition";
 
   interface Props {
     onOpenSettings: () => void;
@@ -68,8 +69,12 @@
   }
 </script>
 
-{#if collapsed}
-  <aside class="hidden md:flex h-full w-14 shrink-0 flex-col items-center justify-between border-r border-line bg-bg-inset py-3">
+<aside
+  class="hidden md:flex h-full shrink-0 flex-col border-r border-line bg-bg-inset transition-all duration-200 ease-in-out {collapsed
+    ? 'w-14 py-3 items-center justify-between'
+    : 'w-64'}"
+>
+  {#if collapsed}
     <!-- Top header icon (Expand sidebar) -->
     <div class="flex items-center justify-center py-1">
       {#if onToggleSidebar}
@@ -108,10 +113,8 @@
         <Settings size={16} />
       </button>
     </div>
-  </aside>
-{:else}
-<aside class="flex h-full w-64 shrink-0 flex-col border-r border-line bg-bg-inset">
-  <!-- Logo + new chat + mobile close -->
+  {:else}
+    <!-- Logo + new chat + mobile close -->
   <div class="flex items-center justify-between px-4 py-4">
     <div class="flex items-center gap-2">
       <div class="h-3.5 w-3.5 rotate-45 bg-accent"></div>
@@ -219,7 +222,7 @@
     </button>
 
     {#if showBackends}
-      <div class="mt-1 flex flex-col gap-1 max-h-36 overflow-y-auto">
+      <div transition:slide={{ duration: 150 }} class="mt-1 flex flex-col gap-1 max-h-36 overflow-y-auto">
         {#if backendsQuery.isLoading}
           <p class="text-xs text-fg-muted">Loading…</p>
         {:else if backendsQuery.isError}
@@ -256,5 +259,5 @@
       <span class="font-medium">Settings</span>
     </button>
   </div>
+  {/if}
 </aside>
-{/if}

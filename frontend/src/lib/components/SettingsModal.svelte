@@ -1,5 +1,6 @@
 <script lang="ts">
   import { X, Layers, Server, Sliders } from "@lucide/svelte";
+  import { fade, fly } from "svelte/transition";
   import BackendsTab from "./settings/BackendsTab.svelte";
   import ModelsTab from "./settings/ModelsTab.svelte";
   import GeneralTab from "./settings/GeneralTab.svelte";
@@ -13,6 +14,26 @@
   const { open, onClose }: Props = $props();
 
   let activeTab = $state<Tab>("general");
+  let previousTab = $state<Tab>("general");
+  const TABS: Tab[] = ["general", "models", "backends"];
+
+  function setTab(tab: Tab) {
+    if (tab === activeTab) return;
+    previousTab = activeTab;
+    activeTab = tab;
+  }
+
+  function getFlyParams(isIncoming: boolean) {
+    const currentIndex = TABS.indexOf(activeTab);
+    const previousIndex = TABS.indexOf(previousTab);
+    const isMovingRight = currentIndex > previousIndex;
+    const distance = 40;
+    
+    let x = isMovingRight ? distance : -distance;
+    if (!isIncoming) x = -x;
+    
+    return { x, duration: 300, opacity: 0 };
+  }
 
   function handleBackdropClick(e: MouseEvent) {
     if (e.target === e.currentTarget) onClose();
@@ -30,11 +51,13 @@
     aria-modal="true"
     aria-label="Settings"
     tabindex="-1"
+    transition:fade={{ duration: 150 }}
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
     onclick={handleBackdropClick}
     onkeydown={handleKeydown}
   >
     <div
+      transition:fly={{ y: 15, duration: 200 }}
       class="relative flex w-full max-w-3xl flex-col rounded-xl border border-line bg-bg shadow-2xl overflow-hidden"
       style="max-height: min(92vh, 760px); height: min(92vh, 760px);"
     >
@@ -54,7 +77,7 @@
         <div class="flex items-center gap-2 mt-3 -mb-px">
           <button
             type="button"
-            onclick={() => (activeTab = "general")}
+            onclick={() => setTab("general")}
             class="flex items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
             'general'
               ? 'border-accent text-accent'
@@ -66,7 +89,7 @@
 
           <button
             type="button"
-            onclick={() => (activeTab = "models")}
+            onclick={() => setTab("models")}
             class="flex items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
             'models'
               ? 'border-accent text-accent'
@@ -78,7 +101,7 @@
 
           <button
             type="button"
-            onclick={() => (activeTab = "backends")}
+            onclick={() => setTab("backends")}
             class="flex items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
             'backends'
               ? 'border-accent text-accent'
@@ -91,13 +114,19 @@
       </div>
 
       <!-- Body Content Area -->
-      <div class="flex-1 overflow-y-auto p-5">
+      <div class="flex-1 grid overflow-x-hidden relative">
         {#if activeTab === "general"}
-          <GeneralTab />
+          <div class="col-start-1 row-start-1 overflow-y-auto p-5" in:fly={getFlyParams(true)} out:fly={getFlyParams(false)}>
+            <GeneralTab />
+          </div>
         {:else if activeTab === "models"}
-          <ModelsTab />
+          <div class="col-start-1 row-start-1 overflow-y-auto p-5" in:fly={getFlyParams(true)} out:fly={getFlyParams(false)}>
+            <ModelsTab />
+          </div>
         {:else if activeTab === "backends"}
-          <BackendsTab />
+          <div class="col-start-1 row-start-1 overflow-y-auto p-5" in:fly={getFlyParams(true)} out:fly={getFlyParams(false)}>
+            <BackendsTab />
+          </div>
         {/if}
       </div>
     </div>

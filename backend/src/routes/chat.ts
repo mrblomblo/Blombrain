@@ -15,6 +15,7 @@ interface ChatCompletionBody {
   conversationId?: string;
   userMessageId?: string;
   userParentId?: string;
+  assistantMessageId?: string;
   attachments?: string[];
   [key: string]: unknown;
 }
@@ -70,9 +71,9 @@ export async function chatRoutes(app: FastifyInstance) {
           : "";
     const userMessageId = body.userMessageId ? String(body.userMessageId) : crypto.randomUUID();
     const userParentId = body.userParentId ? String(body.userParentId) : null;
-    const assistantMessageId = crypto.randomUUID();
+    const assistantMessageId = body.assistantMessageId ? String(body.assistantMessageId) : crypto.randomUUID();
 
-    const { model: _incomingModel, conversationId: _incomingConvId, userMessageId: _umId, userParentId: _upId, attachments: attachmentIds, messages: _msgs, ...rest } = body;
+    const { model: _incomingModel, conversationId: _incomingConvId, userMessageId: _umId, userParentId: _upId, assistantMessageId: _amId, attachments: attachmentIds, messages: _msgs, ...rest } = body;
 
     // Temperature precedence: preset/setting override > body request > default undefined
     const finalTemperature = settingRow?.temperature ?? body.temperature;

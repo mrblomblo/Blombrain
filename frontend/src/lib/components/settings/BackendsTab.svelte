@@ -8,6 +8,9 @@
     deleteBackend,
   } from "../../api";
   import type { BackendInfo } from "../../types";
+  import { flip } from "svelte/animate";
+  import { slide } from "svelte/transition";
+  import { quintOut } from "svelte/easing";
 
   const queryClient = useQueryClient();
 
@@ -125,6 +128,8 @@
       <ul class="mb-4 flex flex-col gap-2">
         {#each backends as b (b.id)}
           <li
+            animate:flip={{ duration: 300, easing: quintOut }}
+            out:slide={{ duration: 250, easing: quintOut }}
             class="flex items-center gap-3 rounded-lg border px-4 py-3 text-sm transition-colors"
             class:border-accent={editingId === b.id}
             class:border-line={editingId !== b.id}
@@ -173,7 +178,7 @@
 
   <!-- Add / Edit form -->
   {#if formMode !== "idle"}
-    <div class="rounded-lg border border-accent/40 bg-bg-elevated p-4">
+    <div transition:slide={{ duration: 300 }} class="rounded-lg border border-accent/40 bg-bg-elevated p-4">
       <h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-fg-subtle">
         {formMode === "add" ? "Add Backend" : "Edit Backend"}
       </h3>
@@ -275,12 +280,14 @@
       </form>
     </div>
   {:else}
-    <button
-      onclick={startAdd}
-      class="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line py-2.5 text-sm text-fg-muted transition-colors hover:border-accent hover:text-accent"
-    >
-      <Plus size={14} />
-      Add backend
-    </button>
+    <div transition:slide={{ duration: 300 }}>
+      <button
+        onclick={startAdd}
+        class="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line py-2.5 text-sm text-fg-muted transition-colors hover:border-accent hover:text-accent cursor-pointer"
+      >
+        <Plus size={14} />
+        Add backend
+      </button>
+    </div>
   {/if}
 </div>

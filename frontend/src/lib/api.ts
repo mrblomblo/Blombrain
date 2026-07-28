@@ -207,6 +207,7 @@ export interface StreamChatOptions {
   conversationId?: string | null;
   userMessageId?: string;
   userParentId?: string | null;
+  assistantMessageId?: string;
   attachmentIds?: string[];
   signal?: AbortSignal;
   onToken: (delta: string) => void;
@@ -236,6 +237,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
     conversationId,
     userMessageId,
     userParentId,
+    assistantMessageId,
     attachmentIds,
     signal,
     onToken,
@@ -256,6 +258,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
         conversationId,
         userMessageId,
         userParentId,
+        assistantMessageId,
         attachments: attachmentIds,
         stream: true,
       }),

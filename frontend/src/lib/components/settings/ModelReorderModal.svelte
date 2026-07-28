@@ -1,9 +1,12 @@
 <script lang="ts">
   import { X, GripVertical, ArrowUp, ArrowDown, Check, Star, EyeOff } from "@lucide/svelte";
+  import { fade, fly } from "svelte/transition";
+  import { flip } from "svelte/animate";
+  import { quintOut } from "svelte/easing";
   import { updateModelOrder } from "../../api";
   import type { ModelInfo } from "../../types";
   import { useQueryClient } from "@tanstack/svelte-query";
-
+  
   interface Props {
     open: boolean;
     models: ModelInfo[];
@@ -102,12 +105,14 @@
     aria-modal="true"
     aria-label="Reorder Models"
     tabindex="-1"
+    transition:fade={{ duration: 150 }}
     class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-xs"
     onclick={handleBackdropClick}
     onkeydown={handleKeydown}
   >
     <div
       role="presentation"
+      transition:fly={{ y: 15, duration: 200 }}
       class="relative flex w-full max-w-lg flex-col rounded-xl border border-line bg-bg shadow-2xl overflow-hidden"
       style="max-height: min(85vh, 600px); height: min(85vh, 600px);"
       onclick={(e) => e.stopPropagation()}
@@ -133,11 +138,12 @@
         {#each items as model, index (model.id)}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
+            animate:flip={{ duration: 250, easing: quintOut }}
             draggable="true"
             ondragstart={(e) => handleDragStart(index, e)}
             ondragover={(e) => handleDragOver(index, e)}
             ondragend={handleDragEnd}
-            class="flex items-center justify-between gap-3 rounded-lg border border-line bg-bg-elevated px-3 py-2 text-sm transition-all hover:border-line-strong select-none {draggedIndex === index ? 'opacity-40 border-dashed border-accent' : ''} {model.isHidden ? 'opacity-50 bg-bg/50' : ''}"
+            class="flex items-center justify-between gap-3 rounded-lg border border-line bg-bg-elevated px-3 py-2 text-sm transition-colors hover:border-line-strong select-none {draggedIndex === index ? 'opacity-40 border-dashed border-accent' : ''} {model.isHidden ? 'opacity-50 bg-bg/50' : ''}"
           >
             <div class="flex items-center gap-3 min-w-0 flex-1">
               <!-- Drag Handle Icon -->

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createQuery } from "@tanstack/svelte-query";
   import { ChevronDown, Search, Star, Sparkles, Check } from "@lucide/svelte";
+  import { fly, fade } from "svelte/transition";
   import { fetchModels } from "../api";
   import { chatStore } from "../stores/chat.svelte";
   import type { ModelInfo } from "../types";
@@ -107,7 +108,10 @@
 
     <!-- Popover Dropdown -->
     {#if isOpen}
-      <div class="absolute left-0 top-full z-50 mt-1 w-72 sm:w-80 rounded-xl border border-line bg-bg shadow-2xl overflow-hidden animate-in fade-in duration-100">
+      <div
+        transition:fly={{ y: -6, duration: 150 }}
+        class="absolute left-0 top-full z-50 mt-1 w-72 sm:w-80 rounded-xl border border-line bg-bg shadow-2xl overflow-hidden"
+      >
         <!-- Search Bar (shown when visible models count > 10) -->
         {#if visibleModels.length > 10}
           <div class="flex items-center gap-2 border-b border-line bg-bg-inset px-3 py-2">

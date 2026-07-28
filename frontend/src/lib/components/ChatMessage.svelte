@@ -9,6 +9,7 @@
   import MessageTimestamp from "./MessageTimestamp.svelte";
   import BranchNavigator from "./BranchNavigator.svelte";
   import MessageActions from "./MessageActions.svelte";
+  import { fly, fade } from "svelte/transition";
 
   interface Props {
     message: ChatMessageType;
@@ -42,6 +43,7 @@
   let isEditing = $state(false);
   let editDraft = $state("");
   let isSaving = $state(false);
+  let showStats = $state(false);
 
   function startEdit() {
     editDraft = message.content;
@@ -159,38 +161,50 @@
         <!-- Inline stats icon for assistant messages -->
         {#if message.stats}
           {@const s = message.stats}
-          <div class="relative group/stats">
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="relative"
+            onmouseenter={() => (showStats = true)}
+            onmouseleave={() => (showStats = false)}
+          >
             <button
               type="button"
               aria-label="Response stats"
-              class="flex items-center justify-center text-fg-subtle hover:text-fg-muted transition-colors"
+              onclick={(e) => {
+                e.stopPropagation();
+                showStats = !showStats;
+              }}
+              class="flex items-center justify-center text-fg-subtle hover:text-fg-muted transition-colors cursor-pointer"
             >
               <Info size={12} />
             </button>
             <!-- Stats tooltip -->
-            <div
-              class="absolute bottom-full right-0 mb-1.5 z-20 hidden group-hover/stats:flex flex-col gap-1 whitespace-nowrap rounded-lg border border-line bg-bg-elevated px-3 py-2 shadow-lg text-[11px] font-mono text-fg-muted"
-            >
-              {#if s.promptTokens !== undefined}
-                <span>Prompt: {s.promptTokens.toLocaleString()} tok</span>
-              {/if}
-              {#if s.completionTokens !== undefined}
-                <span>Output: {s.completionTokens.toLocaleString()} tok</span>
-              {/if}
-              {#if s.totalTokens !== undefined}
-                <span>Total: {s.totalTokens.toLocaleString()} tok</span>
-              {/if}
-              {#if s.durationMs !== undefined}
-                <span>Time: {(s.durationMs / 1000).toFixed(1)}s</span>
-              {/if}
-              {#if s.completionTokens !== undefined && s.durationMs !== undefined && s.durationMs > 0}
-                <span
-                  >Speed: {(s.completionTokens / (s.durationMs / 1000)).toFixed(
-                    1,
-                  )} tok/s</span
-                >
-              {/if}
-            </div>
+            {#if showStats}
+              <div
+                transition:fly={{ y: 6, duration: 150 }}
+                class="absolute bottom-full right-0 mb-1.5 z-20 flex flex-col gap-1 whitespace-nowrap rounded-lg border border-line bg-bg-elevated px-3 py-2 shadow-lg text-[11px] font-mono text-fg-muted"
+              >
+                {#if s.promptTokens !== undefined}
+                  <span>Prompt: {s.promptTokens.toLocaleString()} tok</span>
+                {/if}
+                {#if s.completionTokens !== undefined}
+                  <span>Output: {s.completionTokens.toLocaleString()} tok</span>
+                {/if}
+                {#if s.totalTokens !== undefined}
+                  <span>Total: {s.totalTokens.toLocaleString()} tok</span>
+                {/if}
+                {#if s.durationMs !== undefined}
+                  <span>Time: {(s.durationMs / 1000).toFixed(1)}s</span>
+                {/if}
+                {#if s.completionTokens !== undefined && s.durationMs !== undefined && s.durationMs > 0}
+                  <span
+                    >Speed: {(s.completionTokens / (s.durationMs / 1000)).toFixed(
+                      1,
+                    )} tok/s</span
+                  >
+                {/if}
+              </div>
+            {/if}
           </div>
         {/if}
 

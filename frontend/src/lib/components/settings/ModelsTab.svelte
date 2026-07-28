@@ -4,6 +4,9 @@
   import { fetchModels, createPreset, updateModelSettings, deleteModelSettings, uploadFile, serveUploadUrl } from "../../api";
   import type { ModelInfo, ModelSettingWriteBody } from "../../types";
   import ModelReorderModal from "./ModelReorderModal.svelte";
+  import { flip } from "svelte/animate";
+  import { slide, fade } from "svelte/transition";
+  import { quintOut } from "svelte/easing";
 
   const queryClient = useQueryClient();
 
@@ -272,54 +275,136 @@
 
     <!-- List View -->
     {#if formMode === "idle"}
-      <div class="mb-4 flex items-center justify-between">
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
-          Models ({allModels.length})
-        </h3>
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            onclick={() => (reorderModalOpen = true)}
-            class="flex items-center gap-1.5 rounded-md border border-line bg-bg-elevated px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-bg-hover"
-            title="Reorder models & presets"
-          >
-            <ArrowUpDown size={13} />
-            <span>Sort Order</span>
-          </button>
-          <button
-            onclick={startAddPreset}
-            class="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
-          >
-            <Plus size={13} />
-            Create Preset
-          </button>
+      <div>
+        <div class="mb-4 flex items-center justify-between">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+            Models ({allModels.length})
+          </h3>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              onclick={() => (reorderModalOpen = true)}
+              class="flex items-center gap-1.5 rounded-md border border-line bg-bg-elevated px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-bg-hover"
+              title="Reorder models & presets"
+            >
+              <ArrowUpDown size={13} />
+              <span>Sort Order</span>
+            </button>
+            <button
+              onclick={startAddPreset}
+              class="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              <Plus size={13} />
+              Create Preset
+            </button>
+          </div>
         </div>
-      </div>
 
-      <!-- Presets Section -->
-      {#if presets.length > 0}
-        <div class="mb-5">
-          <span class="mb-2 block text-xs font-medium text-fg-muted">Presets</span>
+        <!-- Presets Section -->
+        {#if presets.length > 0}
+          <div class="mb-5">
+            <span class="mb-2 block text-xs font-medium text-fg-muted">Presets</span>
+            <ul class="flex flex-col gap-2">
+              {#each presets as model (model.id)}
+                <li
+                  animate:flip={{ duration: 300, easing: quintOut }}
+                  out:slide={{ duration: 250, easing: quintOut }}
+                  class="flex items-center justify-between rounded-lg border border-accent/40 bg-bg-elevated px-4 py-3 text-sm transition-colors {model.isHidden ? 'opacity-50' : ''}"
+                >
+                  <div class="flex items-center gap-3 min-w-0 flex-1">
+                    {#if model.icon}
+                      <img src={model.icon} alt="Icon" class="h-7 w-7 rounded-md object-cover border border-line" />
+                    {:else}
+                      <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent/20 text-accent font-semibold text-xs">
+                        AI
+                      </div>
+                    {/if}
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-medium text-fg">{model.name || model.id}</span>
+                        <span class="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] font-mono text-accent">Preset</span>
+                        {#if model.isDefault}
+                          <span transition:slide={{ axis: 'x', duration: 250 }} class="rounded bg-amber-500/20 text-amber-500 px-1.5 py-0.5 text-[10px] font-semibold inline-block whitespace-nowrap">Default</span>
+                        {/if}
+                      </div>
+                      <p class="truncate text-xs text-fg-subtle mt-0.5">Base: {model.baseModelId}</p>
+                    </div>
+                  </div>
+
+                  <div class="flex shrink-0 gap-1">
+                    <!-- Star / Set Default -->
+                    <button
+                      onclick={() => handleToggleDefault(model)}
+                      class="flex h-7 w-7 items-center justify-center rounded transition-colors duration-200 {model.isDefault ? 'text-amber-400' : 'text-fg-muted hover:bg-bg hover:text-amber-400'}"
+                      title={model.isDefault ? "Current Default Model" : "Set as Default Model"}
+                    >
+                      <Star size={13} class="transition-colors duration-300 {model.isDefault ? 'fill-amber-400 text-amber-400' : ''}" />
+                    </button>
+                    <!-- Copy / Duplicate Preset -->
+                    <button
+                      onclick={() => handleDuplicatePreset(model)}
+                      class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-fg"
+                      title="Duplicate Preset"
+                    >
+                      <Copy size={13} />
+                    </button>
+                    <!-- Edit -->
+                    <button
+                      onclick={() => startEdit(model)}
+                      class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-fg"
+                      title="Edit preset"
+                    >
+                      <Pencil size={13} />
+                    </button>
+                    <!-- Delete -->
+                    <button
+                      onclick={() => handleDelete(model)}
+                      class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-danger"
+                      title="Delete preset"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+
+        <!-- Base Models Section -->
+        <div>
+          <span class="mb-2 block text-xs font-medium text-fg-muted">Base Models</span>
           <ul class="flex flex-col gap-2">
-            {#each presets as model (model.id)}
-              <li class="flex items-center justify-between rounded-lg border border-accent/40 bg-bg-elevated px-4 py-3 text-sm transition-opacity {model.isHidden ? 'opacity-50' : ''}">
+            {#each baseModels as model (model.id)}
+              <li
+                animate:flip={{ duration: 300, easing: quintOut }}
+                out:slide={{ duration: 250, easing: quintOut }}
+                class="flex items-center justify-between rounded-lg border border-line px-4 py-3 text-sm transition-colors {model.isHidden ? 'opacity-50 bg-bg-inset/40' : ''}"
+              >
                 <div class="flex items-center gap-3 min-w-0 flex-1">
                   {#if model.icon}
                     <img src={model.icon} alt="Icon" class="h-7 w-7 rounded-md object-cover border border-line" />
                   {:else}
-                    <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent/20 text-accent font-semibold text-xs">
+                    <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-bg-inset text-fg-muted font-semibold text-xs">
                       AI
                     </div>
                   {/if}
                   <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 flex-wrap">
                       <span class="font-medium text-fg">{model.name || model.id}</span>
-                      <span class="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] font-mono text-accent">Preset</span>
+                      <span class="rounded bg-bg px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle ring-1 ring-line">
+                        {model.backendName}
+                      </span>
                       {#if model.isDefault}
-                        <span class="rounded bg-amber-500/20 text-amber-500 px-1.5 py-0.5 text-[10px] font-semibold">Default</span>
+                        <span transition:slide={{ axis: 'x', duration: 250 }} class="rounded bg-amber-500/20 text-amber-500 px-1.5 py-0.5 text-[10px] font-semibold inline-block whitespace-nowrap">Default</span>
+                      {/if}
+                      {#if model.isHidden}
+                        <span transition:slide={{ axis: 'x', duration: 250 }} class="rounded bg-bg-inset text-fg-subtle px-1.5 py-0.5 text-[10px] inline-block whitespace-nowrap">Hidden</span>
                       {/if}
                     </div>
-                    <p class="truncate text-xs text-fg-subtle mt-0.5">Base: {model.baseModelId}</p>
+                    {#if model.systemPrompt}
+                      <p class="truncate text-xs text-fg-subtle mt-0.5">Prompt: "{model.systemPrompt}"</p>
+                    {/if}
                   </div>
                 </div>
 
@@ -327,113 +412,41 @@
                   <!-- Star / Set Default -->
                   <button
                     onclick={() => handleToggleDefault(model)}
-                    class="flex h-7 w-7 items-center justify-center rounded transition-colors {model.isDefault ? 'text-amber-400' : 'text-fg-muted hover:bg-bg hover:text-amber-400'}"
-                    title={model.isDefault ? "Current Default Model" : "Set as Default Model"}
+                    disabled={model.isHidden && !model.isDefault}
+                    class="flex h-7 w-7 items-center justify-center rounded transition-colors duration-200 {model.isDefault ? 'text-amber-400' : 'text-fg-muted hover:bg-bg hover:text-amber-400'} disabled:opacity-30 disabled:hover:text-fg-muted cursor-pointer disabled:cursor-not-allowed"
+                    title={model.isHidden && !model.isDefault ? "Hidden models cannot be set as default" : (model.isDefault ? "Current Default Model" : "Set as Default Model")}
                   >
-                    <Star size={13} class={model.isDefault ? "fill-amber-400" : ""} />
+                    <Star size={13} class="transition-colors duration-300 {model.isDefault ? 'fill-amber-400 text-amber-400' : ''}" />
                   </button>
-                  <!-- Copy / Duplicate Preset -->
+                  <!-- Hide / Show Eye Icon -->
                   <button
-                    onclick={() => handleDuplicatePreset(model)}
-                    class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-fg"
-                    title="Duplicate Preset"
+                    onclick={() => handleToggleHide(model)}
+                    class="flex h-7 w-7 items-center justify-center rounded transition-colors {model.isHidden ? 'text-accent' : 'text-fg-muted hover:bg-bg hover:text-fg'}"
+                    title={model.isHidden ? "Unhide model" : "Hide model from picker"}
                   >
-                    <Copy size={13} />
+                    {#if model.isHidden}
+                      <EyeOff size={13} />
+                    {:else}
+                      <Eye size={13} />
+                    {/if}
                   </button>
                   <!-- Edit -->
                   <button
                     onclick={() => startEdit(model)}
                     class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-fg"
-                    title="Edit preset"
+                    title="Edit model configuration"
                   >
                     <Pencil size={13} />
-                  </button>
-                  <!-- Delete -->
-                  <button
-                    onclick={() => handleDelete(model)}
-                    class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-danger"
-                    title="Delete preset"
-                  >
-                    <Trash2 size={13} />
                   </button>
                 </div>
               </li>
             {/each}
           </ul>
         </div>
-      {/if}
-
-      <!-- Base Models Section -->
-      <div>
-        <span class="mb-2 block text-xs font-medium text-fg-muted">Base Models</span>
-        <ul class="flex flex-col gap-2">
-          {#each baseModels as model (model.id)}
-            <li class="flex items-center justify-between rounded-lg border border-line px-4 py-3 text-sm transition-opacity {model.isHidden ? 'opacity-50 bg-bg-inset/40' : ''}">
-              <div class="flex items-center gap-3 min-w-0 flex-1">
-                {#if model.icon}
-                  <img src={model.icon} alt="Icon" class="h-7 w-7 rounded-md object-cover border border-line" />
-                {:else}
-                  <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-bg-inset text-fg-muted font-semibold text-xs">
-                    AI
-                  </div>
-                {/if}
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-2">
-                    <span class="font-medium text-fg">{model.name || model.id}</span>
-                    <span class="rounded bg-bg px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle ring-1 ring-line">
-                      {model.backendName}
-                    </span>
-                    {#if model.isDefault}
-                      <span class="rounded bg-amber-500/20 text-amber-500 px-1.5 py-0.5 text-[10px] font-semibold">Default</span>
-                    {/if}
-                    {#if model.isHidden}
-                      <span class="rounded bg-bg-inset text-fg-subtle px-1.5 py-0.5 text-[10px]">Hidden</span>
-                    {/if}
-                  </div>
-                  {#if model.systemPrompt}
-                    <p class="truncate text-xs text-fg-subtle mt-0.5">Prompt: "{model.systemPrompt}"</p>
-                  {/if}
-                </div>
-              </div>
-
-              <div class="flex shrink-0 gap-1">
-                <!-- Star / Set Default -->
-                <button
-                  onclick={() => handleToggleDefault(model)}
-                  disabled={model.isHidden && !model.isDefault}
-                  class="flex h-7 w-7 items-center justify-center rounded transition-colors {model.isDefault ? 'text-amber-400' : 'text-fg-muted hover:bg-bg hover:text-amber-400'} disabled:opacity-30 disabled:hover:text-fg-muted cursor-pointer disabled:cursor-not-allowed"
-                  title={model.isHidden && !model.isDefault ? "Hidden models cannot be set as default" : (model.isDefault ? "Current Default Model" : "Set as Default Model")}
-                >
-                  <Star size={13} class={model.isDefault ? "fill-amber-400" : ""} />
-                </button>
-                <!-- Hide / Show Eye Icon -->
-                <button
-                  onclick={() => handleToggleHide(model)}
-                  class="flex h-7 w-7 items-center justify-center rounded transition-colors {model.isHidden ? 'text-accent' : 'text-fg-muted hover:bg-bg hover:text-fg'}"
-                  title={model.isHidden ? "Unhide model" : "Hide model from picker"}
-                >
-                  {#if model.isHidden}
-                    <EyeOff size={13} />
-                  {:else}
-                    <Eye size={13} />
-                  {/if}
-                </button>
-                <!-- Edit -->
-                <button
-                  onclick={() => startEdit(model)}
-                  class="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg hover:text-fg"
-                  title="Edit model configuration"
-                >
-                  <Pencil size={13} />
-                </button>
-              </div>
-            </li>
-          {/each}
-        </ul>
       </div>
     {:else}
       <!-- Form View (Add Preset or Edit Model/Preset) -->
-      <div class="rounded-lg border border-line bg-bg-elevated p-4">
+      <div transition:slide={{ duration: 300 }} class="rounded-lg border border-line bg-bg-elevated p-4">
         <h3 class="mb-4 text-sm font-semibold">
           {formMode === "add_preset" ? "Create Model Preset" : `Edit ${selectedModelId}`}
         </h3>

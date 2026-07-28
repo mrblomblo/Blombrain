@@ -5,6 +5,10 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { Sparkles } from "@lucide/svelte";
 
+  import { flip } from "svelte/animate";
+  import { slide, fade, fly } from "svelte/transition";
+  import { quintOut } from "svelte/easing";
+
   let scrollEl: HTMLDivElement | undefined = $state();
 
   const modelsQuery = createQuery(() => ({
@@ -28,14 +32,21 @@
       m.thinkingContent;
     }
     requestAnimationFrame(() => {
-      scrollEl?.scrollTo({ top: scrollEl.scrollHeight, behavior: "smooth" });
+      if (!scrollEl) return;
+      const isAtBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 150;
+      if (isAtBottom || chatStore.isStreaming) {
+        scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: chatStore.isStreaming ? "auto" : "smooth" });
+      }
     });
   });
 </script>
 
-<div bind:this={scrollEl} class="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
+<div bind:this={scrollEl} class="relative flex-1 overflow-y-auto px-4 sm:px-6 py-4">
   {#if activeMessages.length === 0}
-    <div class="flex h-full flex-col items-center justify-center gap-3 text-center px-4 select-none">
+    <div
+      transition:fade={{ duration: 200 }}
+      class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-4 select-none pointer-events-none"
+    >
       {#if currentModel?.icon}
         <img src={currentModel.icon} alt="Model Icon" class="h-12 w-12 rounded-xl object-cover border border-line shadow-md" />
       {:else}
@@ -52,11 +63,17 @@
         </p>
       </div>
     </div>
-  {:else}
-    <div class="mx-auto flex max-w-3xl flex-col gap-3">
-      {#each activeMessages as message, i (message.id)}
-        <ChatMessage {message} isLast={i === activeMessages.length - 1} />
-      {/each}
-    </div>
+  {/if}
+
+  {#if activeMessages.length > 0}
+    {#key chatStore.activeConversationId}
+      <div class="mx-auto flex w-full max-w-3xl flex-col gap-3 relative z-10">
+        {#each activeMessages as message, i (message.id)}
+          <div animate:flip={{ duration: 400, easing: quintOut }} in:fly|local={{ y: 20, duration: 400, opacity: 0, easing: quintOut }} out:slide|local={{ duration: 300, easing: quintOut }}>
+            <ChatMessage {message} isLast={i === activeMessages.length - 1} />
+          </div>
+        {/each}
+      </div>
+    {/key}
   {/if}
 </div>
