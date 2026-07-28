@@ -168,11 +168,11 @@ export async function deleteConversation(id: string): Promise<void> {
   }
 }
 
-export async function patchMessage(convId: string, msgId: string, content: string): Promise<MessageOut> {
+export async function patchMessage(convId: string, msgId: string, content: string, attachmentIds?: string[]): Promise<MessageOut> {
   const res = await fetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, attachmentIds }),
   });
   return jsonOrThrow<MessageOut>(res);
 }
@@ -187,11 +187,11 @@ export async function deleteMessage(convId: string, msgId: string): Promise<void
   }
 }
 
-export async function branchMessage(convId: string, msgId: string, content: string): Promise<MessageOut> {
+export async function branchMessage(convId: string, msgId: string, content: string, attachmentIds?: string[]): Promise<MessageOut> {
   const res = await fetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}/branch`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, attachmentIds }),
   });
   return jsonOrThrow<MessageOut>(res);
 }

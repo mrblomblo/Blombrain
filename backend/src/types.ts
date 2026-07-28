@@ -67,6 +67,7 @@ export interface ModelInfo {
   isHidden?: boolean;
   sortOrder?: number;
   isDefault?: boolean;
+  isOrphaned?: boolean;
 }
 
 // ---------------------------------------------------------------------------

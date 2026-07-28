@@ -15,10 +15,10 @@
   let isOpen = $state(false);
   let searchQuery = $state("");
 
-  // Visible (non-hidden) models
+  // Visible (non-hidden, non-orphaned) models
   const visibleModels = $derived.by(() => {
     const models = modelsQuery.data ?? [];
-    return models.filter((m) => !m.isHidden);
+    return models.filter((m) => !m.isHidden && !m.isOrphaned);
   });
 
   // Filtered by search query

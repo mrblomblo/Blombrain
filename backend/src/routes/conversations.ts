@@ -25,7 +25,20 @@ function rowToSummary(row: ConversationRow): ConversationSummary {
   };
 }
 
+function rowToAttachment(a: import("../types.js").AttachmentRow) {
+  return {
+    id: a.id,
+    conversationId: a.conversation_id,
+    messageId: a.message_id,
+    originalName: a.original_name,
+    mimeType: a.mime_type,
+    sizeBytes: a.size_bytes,
+    createdAt: a.created_at,
+  };
+}
+
 function rowToMessage(row: MessageRow): MessageOut {
+  const attachRows = db.prepare(`SELECT * FROM attachments WHERE message_id = ?`).all(row.id) as import("../types.js").AttachmentRow[];
   return {
     id: row.id,
     conversationId: row.conversation_id,
@@ -36,6 +49,7 @@ function rowToMessage(row: MessageRow): MessageOut {
     stats: row.stats ? JSON.parse(row.stats) : undefined,
     model: row.model ?? undefined,
     createdAt: row.created_at,
+    attachments: attachRows.length > 0 ? attachRows.map(rowToAttachment) : undefined,
   };
 }
 
@@ -108,25 +122,14 @@ export async function conversationsRoutes(app: FastifyInstance) {
     if (!row) return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
 
     const messages = getMessages.all(id).map(rowToMessage);
-
-    // Attachments fetching
-    const attachRows = db.prepare(`SELECT * FROM attachments WHERE conversation_id = ?`).all(id) as import("../types.js").AttachmentRow[];
-    for (const msg of messages) {
-      msg.attachments = attachRows
-        .filter(a => a.message_id === msg.id)
-        .map(a => ({
-          id: a.id,
-          conversationId: a.conversation_id,
-          messageId: a.message_id,
-          originalName: a.original_name,
-          mimeType: a.mime_type,
-          sizeBytes: a.size_bytes,
-          createdAt: a.created_at,
-        }));
-    }
-
-    const detail: ConversationDetail = { ...rowToSummary(row), messages };
-    return detail;
+    return reply.send({
+      id: row.id,
+      title: row.title,
+      model: row.model,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      messages,
+    });
   });
 
   /** PATCH /api/conversations/:id -- update title and/or model. */
@@ -162,10 +165,10 @@ export async function conversationsRoutes(app: FastifyInstance) {
     return reply.code(204).send();
   });
 
-  /** PATCH /api/conversations/:convId/messages/:msgId -- update message content. */
+  /** PATCH /api/conversations/:convId/messages/:msgId -- update message content & attachments. */
   app.patch("/api/conversations/:convId/messages/:msgId", async (req: FastifyRequest, reply: FastifyReply) => {
     const { convId, msgId } = req.params as { convId: string; msgId: string };
-    const { content, error } = (req.body ?? {}) as { content?: string; error?: string | null };
+    const { content, error, attachmentIds } = (req.body ?? {}) as { content?: string; error?: string | null; attachmentIds?: string[] };
 
     const row = db.prepare<[string, string], MessageRow>(
       "SELECT * FROM messages WHERE id = ? AND conversation_id = ?"
@@ -179,6 +182,20 @@ export async function conversationsRoutes(app: FastifyInstance) {
     const newError = error !== undefined ? error : row.error;
 
     db.prepare("UPDATE messages SET content = ?, error = ? WHERE id = ?").run(newContent, newError, msgId);
+
+    if (Array.isArray(attachmentIds)) {
+      if (attachmentIds.length === 0) {
+        db.prepare("UPDATE attachments SET message_id = NULL WHERE message_id = ?").run(msgId);
+      } else {
+        const placeholders = attachmentIds.map(() => "?").join(",");
+        db.prepare(`UPDATE attachments SET message_id = NULL WHERE message_id = ? AND id NOT IN (${placeholders})`).run(msgId, ...attachmentIds);
+        const updateStmt = db.prepare("UPDATE attachments SET message_id = ?, conversation_id = ? WHERE id = ?");
+        for (const id of attachmentIds) {
+          updateStmt.run(msgId, convId, id);
+        }
+      }
+    }
+
     updateConversationMeta.run({ id: convId, title: null, model: null, updatedAt: Date.now() });
 
     const updatedRow = db.prepare<[string], MessageRow>("SELECT * FROM messages WHERE id = ?").get(msgId)!;
@@ -241,7 +258,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
   /** POST /api/conversations/:convId/messages/:msgId/branch -- create a sibling branch user message. */
   app.post("/api/conversations/:convId/messages/:msgId/branch", async (req: FastifyRequest, reply: FastifyReply) => {
     const { convId, msgId } = req.params as { convId: string; msgId: string };
-    const { content } = (req.body ?? {}) as { content: string };
+    const { content, attachmentIds } = (req.body ?? {}) as { content: string; attachmentIds?: string[] };
 
     const target = db.prepare<[string, string], MessageRow>(
       "SELECT * FROM messages WHERE id = ? AND conversation_id = ?"
@@ -265,6 +282,37 @@ export async function conversationsRoutes(app: FastifyInstance) {
       model: null,
       createdAt: now,
     });
+
+    if (Array.isArray(attachmentIds)) {
+      const updateStmt = db.prepare("UPDATE attachments SET message_id = ?, conversation_id = ? WHERE id = ?");
+      const insertAttachStmt = db.prepare(`
+        INSERT INTO attachments (id, conversation_id, message_id, original_name, mime_type, disk_path, size_bytes, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const id of attachmentIds) {
+        const existing = db.prepare("SELECT * FROM attachments WHERE id = ?").get(id) as import("../types.js").AttachmentRow | undefined;
+        if (existing) {
+          if (!existing.message_id) {
+            // Unattached new upload -> link to newMsgId
+            updateStmt.run(newMsgId, convId, id);
+          } else if (existing.message_id !== newMsgId) {
+            // Existing attachment from parent/sibling -> copy row for new branch message
+            const copyId = crypto.randomUUID();
+            insertAttachStmt.run(
+              copyId,
+              convId,
+              newMsgId,
+              existing.original_name,
+              existing.mime_type,
+              existing.disk_path,
+              existing.size_bytes,
+              now
+            );
+          }
+        }
+      }
+    }
 
     updateConversationMeta.run({ id: convId, title: null, model: null, updatedAt: now });
 

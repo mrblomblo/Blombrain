@@ -94,6 +94,30 @@
     formError = null;
   }
 
+  function populateFromBaseModel(baseModelId: string) {
+    const allModels = modelsQuery.data ?? [];
+    const baseModel = allModels.find((m) => m.id === baseModelId);
+    if (!baseModel) return;
+
+    formSystemPrompt = baseModel.systemPrompt ?? "";
+    formTemperature = baseModel.temperature;
+    formCanImage = Boolean(baseModel.canImage);
+    formCanAudio = Boolean(baseModel.canAudio);
+    formCanVideo = Boolean(baseModel.canVideo);
+    formIcon = baseModel.icon;
+    formSeed = baseModel.seed;
+    formReasoningEffort = baseModel.reasoningEffort;
+    formThinking = Boolean(baseModel.thinking);
+    formMaxTokens = baseModel.maxTokens;
+    formTopK = baseModel.topK;
+    formTopP = baseModel.topP;
+    formMinP = baseModel.minP;
+    formPresencePenalty = baseModel.presencePenalty;
+    formFrequencyPenalty = baseModel.frequencyPenalty;
+    formRepeatPenalty = baseModel.repeatPenalty;
+    formCtxLength = baseModel.ctxLength;
+  }
+
   function startAddPreset() {
     formMode = "add_preset";
     selectedModelId = null;
@@ -102,6 +126,9 @@
     const allModels = modelsQuery.data ?? [];
     const baseModels = allModels.filter((m) => !m.isPreset && !m.isHidden);
     formBaseModelId = baseModels.length > 0 ? baseModels[0].id : "";
+    if (formBaseModelId) {
+      populateFromBaseModel(formBaseModelId);
+    }
   }
 
   function startEdit(model: ModelInfo) {
@@ -363,7 +390,7 @@
                 <li
                   animate:flip={{ duration: 300, easing: quintOut }}
                   out:slide={{ duration: 250, easing: quintOut }}
-                  class="flex items-center justify-between rounded-lg border border-accent/40 bg-bg-elevated px-4 py-3 text-sm transition-colors {model.isHidden
+                  class="flex items-center justify-between rounded-lg border border-accent/40 bg-bg-elevated px-4 py-3 text-sm transition-colors {model.isHidden || model.isOrphaned
                     ? 'opacity-50'
                     : ''}"
                 >
@@ -390,16 +417,29 @@
                           class="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] font-mono text-accent"
                           >Preset</span
                         >
-                        {#if model.isDefault}
+                        {#if model.isOrphaned}
+                          <span
+                            transition:slide={{ axis: "x", duration: 250 }}
+                            class="rounded bg-danger/20 text-danger px-1.5 py-0.5 text-[10px] font-semibold inline-block whitespace-nowrap"
+                            >No Model</span
+                          >
+                        {:else if model.isDefault}
                           <span
                             transition:slide={{ axis: "x", duration: 250 }}
                             class="rounded bg-amber-500/20 text-amber-500 px-1.5 py-0.5 text-[10px] font-semibold inline-block whitespace-nowrap"
                             >Default</span
                           >
                         {/if}
+                        {#if model.isHidden}
+                          <span
+                            transition:slide={{ axis: "x", duration: 250 }}
+                            class="rounded bg-bg-inset text-fg-subtle px-1.5 py-0.5 text-[10px] inline-block whitespace-nowrap"
+                            >Hidden</span
+                          >
+                        {/if}
                       </div>
                       <p class="truncate text-xs text-fg-subtle mt-0.5">
-                        Base: {model.baseModelId}
+                        Base: {model.baseModelId || "None"}
                       </p>
                     </div>
                   </div>
@@ -652,7 +692,13 @@
               >
               <Dropdown
                 id="me-base"
-                bind:value={formBaseModelId}
+                value={formBaseModelId}
+                onchange={(val) => {
+                  formBaseModelId = val;
+                  if (formMode === "add_preset") {
+                    populateFromBaseModel(val);
+                  }
+                }}
                 options={baseModels
                   .filter((bm) => !bm.isHidden || bm.id === formBaseModelId)
                   .map((bm) => ({

@@ -205,7 +205,7 @@ class ChatStore {
   }
 
   /** Edit a message content in place (Save option) */
-  async editMessage(msgId: string, newContent: string) {
+  async editMessage(msgId: string, newContent: string, attachmentIds?: string[]) {
     if (!this.activeConversationId) return;
     const msg = this.messages.find((m) => m.id === msgId);
     if (!msg) return;
@@ -216,7 +216,8 @@ class ChatStore {
       : newContent;
 
     try {
-      await patchMessage(this.activeConversationId, msgId, contentToSave);
+      const updated = await patchMessage(this.activeConversationId, msgId, contentToSave, attachmentIds);
+      msg.attachments = updated.attachments;
     } catch (err) {
       console.error("[chatStore] failed to edit message:", err);
     }
@@ -285,24 +286,26 @@ class ChatStore {
   }
 
   /** Send an edited user message by creating a branch */
-  async sendEditedBranch(userMsgId: string, newContent: string) {
+  async sendEditedBranch(userMsgId: string, newContent: string, attachmentIds?: string[]) {
     if (this.isStreaming || !this.activeConversationId) return;
     const targetUserMsg = this.messages.find((m) => m.id === userMsgId);
     if (!targetUserMsg) return;
 
     try {
-      const newBranchUserMsg = await apiBranchMessage(this.activeConversationId, userMsgId, newContent);
+      const newBranchUserMsg = await apiBranchMessage(this.activeConversationId, userMsgId, newContent, attachmentIds);
       const newMsgObj: ChatMessage = {
         id: newBranchUserMsg.id,
         parentId: newBranchUserMsg.parentId,
         role: "user",
         content: newBranchUserMsg.content,
         createdAt: newBranchUserMsg.createdAt,
+        attachments: newBranchUserMsg.attachments,
       };
       this.messages.push(newMsgObj);
       this.setBranchSelection(newBranchUserMsg.parentId, newBranchUserMsg.id);
 
-      await this.triggerAssistantResponse(newBranchUserMsg);
+      const branchAttachmentIds = newBranchUserMsg.attachments?.map((a) => a.id) ?? attachmentIds;
+      await this.triggerAssistantResponse(newBranchUserMsg, branchAttachmentIds);
     } catch (err) {
       console.error("[chatStore] failed to branch message:", err);
     }

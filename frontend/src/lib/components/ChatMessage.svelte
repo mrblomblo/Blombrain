@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createQuery } from "@tanstack/svelte-query";
   import type { ChatMessage as ChatMessageType } from "../types";
-  import { serveUploadUrl, fetchModels } from "../api";
+  import { serveUploadUrl, fetchModels, uploadFile } from "../api";
   import { chatStore } from "../stores/chat.svelte";
   import { settingsStore } from "../stores/settings.svelte";
   import { Paperclip, Check, Send as SendIcon, X, Info } from "@lucide/svelte";
@@ -11,6 +11,7 @@
   import MessageActions from "./MessageActions.svelte";
   import Markdown from "./Markdown.svelte";
   import { fly, fade } from "svelte/transition";
+  import type { AttachmentOut } from "../types";
 
   interface Props {
     message: ChatMessageType;
@@ -43,24 +44,55 @@
   // Edit Mode state
   let isEditing = $state(false);
   let editDraft = $state("");
+  let editAttachments = $state<AttachmentOut[]>([]);
+  let editFileInput: HTMLInputElement | undefined = $state();
+  let isUploadingEdit = $state(false);
   let isSaving = $state(false);
   let showStats = $state(false);
 
   function startEdit() {
     editDraft = message.content;
+    editAttachments = message.attachments ? [...message.attachments] : [];
     isEditing = true;
   }
 
   function cancelEdit() {
     isEditing = false;
     editDraft = "";
+    editAttachments = [];
+  }
+
+  function removeEditAttachment(id: string) {
+    editAttachments = editAttachments.filter((a) => a.id !== id);
+  }
+
+  async function handleEditFileSelect(e: Event) {
+    const input = e.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0) return;
+    isUploadingEdit = true;
+    for (const file of Array.from(input.files)) {
+      try {
+        let fileToUpload = file;
+        if (file.type.startsWith("audio/")) {
+          const { encodeToWav } = await import("../audio");
+          fileToUpload = await encodeToWav(file);
+        }
+        const uploaded = await uploadFile(fileToUpload, chatStore.activeConversationId);
+        editAttachments.push(uploaded);
+      } catch (err) {
+        alert("Failed to upload " + file.name);
+      }
+    }
+    isUploadingEdit = false;
+    input.value = "";
   }
 
   async function handleSaveOnly() {
-    if (!editDraft.trim() || isSaving) return;
+    if ((!editDraft.trim() && editAttachments.length === 0) || isSaving || isUploadingEdit) return;
     isSaving = true;
     try {
-      await chatStore.editMessage(message.id, editDraft.trim());
+      const attIds = editAttachments.map((a) => a.id);
+      await chatStore.editMessage(message.id, editDraft.trim(), attIds);
       isEditing = false;
     } finally {
       isSaving = false;
@@ -68,11 +100,12 @@
   }
 
   async function handleSendBranch() {
-    if (!editDraft.trim() || isSaving) return;
+    if ((!editDraft.trim() && editAttachments.length === 0) || isSaving || isUploadingEdit) return;
     isSaving = true;
     try {
       isEditing = false;
-      await chatStore.sendEditedBranch(message.id, editDraft.trim());
+      const attIds = editAttachments.map((a) => a.id);
+      await chatStore.sendEditedBranch(message.id, editDraft.trim(), attIds);
     } finally {
       isSaving = false;
     }
@@ -279,6 +312,54 @@
       <div
         class="edit-container w-full max-w-2xl flex flex-col gap-2 rounded-lg border bg-bg p-3 shadow-md"
       >
+        <!-- Existing & New Attachments Thumbnails -->
+        {#if editAttachments.length > 0}
+          <div class="flex flex-wrap gap-2 pb-1">
+            {#each editAttachments as att (att.id)}
+              <div
+                class="group relative flex h-12 w-12 items-center justify-center rounded-lg border border-line bg-bg-elevated overflow-hidden shadow-xs"
+              >
+                {#if att.mimeType.startsWith("image/") || att.mimeType.startsWith("video/")}
+                  <img
+                    src={serveUploadUrl(att.id)}
+                    alt={att.originalName}
+                    class="h-full w-full object-cover"
+                  />
+                {:else if att.mimeType.startsWith("audio/")}
+                  <div class="text-[9px] text-fg-subtle font-mono">Audio</div>
+                {:else}
+                  <div class="text-[9px] text-fg-subtle truncate max-w-full px-1 font-mono">
+                    {att.originalName}
+                  </div>
+                {/if}
+                <button
+                  type="button"
+                  onclick={() => removeEditAttachment(att.id)}
+                  class="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-black/70 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black hover:text-danger z-10"
+                  aria-label="Remove attachment"
+                >
+                  <X size={9} />
+                </button>
+              </div>
+            {/each}
+            {#if isUploadingEdit}
+              <div
+                class="flex h-12 w-12 items-center justify-center rounded-lg border border-line bg-bg-elevated"
+              >
+                <span class="animate-spin text-fg-subtle text-xs">⟳</span>
+              </div>
+            {/if}
+          </div>
+        {/if}
+
+        <input
+          type="file"
+          bind:this={editFileInput}
+          onchange={handleEditFileSelect}
+          multiple
+          class="hidden"
+        />
+
         <textarea
           bind:value={editDraft}
           onkeydown={handleKeydown}
@@ -286,12 +367,24 @@
           class="edit-textarea w-full resize-y rounded-md bg-bg-elevated px-3 py-2 text-sm text-fg"
         ></textarea>
         <div class="flex items-center justify-between text-xs text-fg-subtle">
-          <span
-            >Press <kbd
-              class="px-1 py-0.5 rounded bg-bg-elevated border border-line font-mono text-[10px]"
-              >Ctrl+Enter</kbd
-            > to confirm</span
-          >
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              onclick={() => editFileInput?.click()}
+              disabled={isSaving || isUploadingEdit}
+              aria-label="Add attachment"
+              title="Add attachment"
+              class="flex h-7 w-7 items-center justify-center rounded-md border border-line bg-bg-elevated text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-40"
+            >
+              <Paperclip size={14} />
+            </button>
+            <span
+              >Press <kbd
+                class="px-1 py-0.5 rounded bg-bg-elevated border border-line font-mono text-[10px]"
+                >Ctrl+Enter</kbd
+              > to confirm</span
+            >
+          </div>
           <div class="flex items-center gap-2">
             <button
               type="button"
@@ -305,7 +398,7 @@
             <button
               type="button"
               onclick={handleSaveOnly}
-              disabled={isSaving || !editDraft.trim()}
+              disabled={isSaving || isUploadingEdit || (!editDraft.trim() && editAttachments.length === 0)}
               class="flex h-7 items-center gap-1 rounded-md border border-line bg-bg-elevated px-3 text-xs font-medium text-fg transition-colors hover:bg-bg-hover disabled:opacity-50"
             >
               <Check size={12} />
@@ -316,7 +409,7 @@
               <button
                 type="button"
                 onclick={handleSendBranch}
-                disabled={isSaving || !editDraft.trim()}
+                disabled={isSaving || isUploadingEdit || (!editDraft.trim() && editAttachments.length === 0)}
                 class="flex h-7 items-center gap-1 rounded-md bg-accent px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 <SendIcon size={12} />

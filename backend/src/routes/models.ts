@@ -86,6 +86,7 @@ export async function modelsRoutes(app: FastifyInstance) {
         backendId: parent ? parent.backendId : "unknown",
         backendName: parent ? parent.backendName : "Preset",
         isPreset: true,
+        isOrphaned: !parent,
         baseModelId: p.base_model_id ?? undefined,
         name: p.name ?? p.id,
         systemPrompt: p.system_prompt ?? undefined,
