@@ -47,7 +47,7 @@
 </script>
 
 <div
-  class="flex items-center gap-0.5 rounded-lg border border-line bg-bg-elevated/90 px-1 py-0.5 shadow-sm backdrop-blur-sm"
+  class="flex items-center gap-0.5 rounded-md border border-line bg-bg-elevated/90 p-0.75 shadow-sm backdrop-blur-sm"
 >
   <!-- Copy -->
   <button
@@ -56,7 +56,7 @@
     disabled={chatStore.isStreaming}
     aria-label="Copy text"
     title="Copy"
-    class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
+    class="flex h-5 w-5 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
   >
     {#if copied}
       <Check size={13} class="text-success" />
@@ -72,7 +72,7 @@
     disabled={chatStore.isStreaming}
     aria-label="Edit message"
     title="Edit"
-    class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
+    class="flex h-5 w-5 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
   >
     <Pencil size={13} />
   </button>
@@ -85,7 +85,7 @@
       disabled={chatStore.isStreaming}
       aria-label="Regenerate response"
       title="Regenerate"
-      class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
+      class="flex h-5 w-5 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
     >
       <RotateCw size={13} />
     </button>
@@ -99,7 +99,7 @@
       disabled={chatStore.isStreaming}
       aria-label="Continue response"
       title="Continue Response"
-      class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
+      class="flex h-5 w-5 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
     >
       <Play size={13} />
     </button>
@@ -113,7 +113,7 @@
       disabled={chatStore.isStreaming}
       aria-label="Delete message"
       title="Delete"
-      class="flex h-6 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-danger disabled:opacity-30 disabled:pointer-events-none"
+      class="flex h-5 w-5 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-hover hover:text-danger disabled:opacity-30 disabled:pointer-events-none"
     >
       <Trash2 size={13} />
     </button>

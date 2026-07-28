@@ -77,7 +77,10 @@
           const { encodeToWav } = await import("../audio");
           fileToUpload = await encodeToWav(file);
         }
-        const uploaded = await uploadFile(fileToUpload, chatStore.activeConversationId);
+        const uploaded = await uploadFile(
+          fileToUpload,
+          chatStore.activeConversationId,
+        );
         editAttachments.push(uploaded);
       } catch (err) {
         alert("Failed to upload " + file.name);
@@ -88,7 +91,12 @@
   }
 
   async function handleSaveOnly() {
-    if ((!editDraft.trim() && editAttachments.length === 0) || isSaving || isUploadingEdit) return;
+    if (
+      (!editDraft.trim() && editAttachments.length === 0) ||
+      isSaving ||
+      isUploadingEdit
+    )
+      return;
     isSaving = true;
     try {
       const attIds = editAttachments.map((a) => a.id);
@@ -100,7 +108,12 @@
   }
 
   async function handleSendBranch() {
-    if ((!editDraft.trim() && editAttachments.length === 0) || isSaving || isUploadingEdit) return;
+    if (
+      (!editDraft.trim() && editAttachments.length === 0) ||
+      isSaving ||
+      isUploadingEdit
+    )
+      return;
     isSaving = true;
     try {
       isEditing = false;
@@ -168,16 +181,9 @@
       ? 'items-end'
       : 'items-start'}"
   >
-    <!-- Header: Sender Name, Timestamp, Info, Branch Navigator -->
+    <!-- Header: Sender Name, Timestamp, Info -->
     <div class="flex flex-wrap items-center gap-2 text-xs">
       {#if message.role === "user"}
-        <!-- Branch Navigator -->
-        <BranchNavigator
-          parentId={message.parentId ?? null}
-          {siblings}
-          currentId={message.id}
-        />
-
         <!-- Timestamp -->
         <MessageTimestamp timestamp={message.createdAt} />
 
@@ -242,13 +248,6 @@
             {/if}
           </div>
         {/if}
-
-        <!-- Branch Navigator (right of Info icon) -->
-        <BranchNavigator
-          parentId={message.parentId ?? null}
-          {siblings}
-          currentId={message.id}
-        />
       {/if}
     </div>
 
@@ -328,7 +327,9 @@
                 {:else if att.mimeType.startsWith("audio/")}
                   <div class="text-[9px] text-fg-subtle font-mono">Audio</div>
                 {:else}
-                  <div class="text-[9px] text-fg-subtle truncate max-w-full px-1 font-mono">
+                  <div
+                    class="text-[9px] text-fg-subtle truncate max-w-full px-1 font-mono"
+                  >
                     {att.originalName}
                   </div>
                 {/if}
@@ -398,7 +399,9 @@
             <button
               type="button"
               onclick={handleSaveOnly}
-              disabled={isSaving || isUploadingEdit || (!editDraft.trim() && editAttachments.length === 0)}
+              disabled={isSaving ||
+                isUploadingEdit ||
+                (!editDraft.trim() && editAttachments.length === 0)}
               class="flex h-7 items-center gap-1 rounded-md border border-line bg-bg-elevated px-3 text-xs font-medium text-fg transition-colors hover:bg-bg-hover disabled:opacity-50"
             >
               <Check size={12} />
@@ -409,7 +412,9 @@
               <button
                 type="button"
                 onclick={handleSendBranch}
-                disabled={isSaving || isUploadingEdit || (!editDraft.trim() && editAttachments.length === 0)}
+                disabled={isSaving ||
+                  isUploadingEdit ||
+                  (!editDraft.trim() && editAttachments.length === 0)}
                 class="flex h-7 items-center gap-1 rounded-md bg-accent px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 <SendIcon size={12} />
@@ -455,12 +460,26 @@
       </div>
     {/if}
 
-    <!-- Hover Actions Toolbar -->
+    <!-- Hover Actions Toolbar & Branch Navigator -->
     {#if !isEditing}
       <div
-        class="mt-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+        class="mt-0.5 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
       >
-        <MessageActions {message} {isLast} onStartEdit={startEdit} />
+        {#if message.role === "user"}
+          <BranchNavigator
+            parentId={message.parentId ?? null}
+            {siblings}
+            currentId={message.id}
+          />
+          <MessageActions {message} {isLast} onStartEdit={startEdit} />
+        {:else}
+          <MessageActions {message} {isLast} onStartEdit={startEdit} />
+          <BranchNavigator
+            parentId={message.parentId ?? null}
+            {siblings}
+            currentId={message.id}
+          />
+        {/if}
       </div>
     {/if}
   </div>

@@ -28,28 +28,32 @@
 
 {#if siblings.length > 1}
   <div
-    class="inline-flex items-center gap-0.5 rounded-md border border-line bg-bg-inset px-1 py-0.5 text-[11px] font-mono text-fg-subtle select-none"
+    class="flex items-center gap-0.5 rounded-md border border-line bg-bg-elevated/90 p-0.75 shadow-sm backdrop-blur-sm select-none"
   >
     <button
       type="button"
       onclick={handlePrev}
-      disabled={currentIndex <= 0}
+      disabled={currentIndex <= 0 || chatStore.isStreaming}
       aria-label="Previous branch version"
-      class="flex h-4 w-4 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
+      title="Previous version"
+      class="flex h-5 w-5 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
     >
-      <ChevronLeft size={12} />
+      <ChevronLeft size={13} class="shrink-0 -translate-x-[1px]" />
     </button>
-    <span class="px-1 text-[10px] text-fg-muted">
-      {currentIndex + 1} / {siblings.length}
+    <span
+      class="px-0.5 text-[10px] font-mono text-fg-muted font-medium select-none"
+    >
+      {currentIndex + 1}/{siblings.length}
     </span>
     <button
       type="button"
       onclick={handleNext}
-      disabled={currentIndex >= siblings.length - 1}
+      disabled={currentIndex >= siblings.length - 1 || chatStore.isStreaming}
       aria-label="Next branch version"
-      class="flex h-4 w-4 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
+      title="Next version"
+      class="flex h-5 w-5 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
     >
-      <ChevronRight size={12} />
+      <ChevronRight size={13} class="shrink-0" />
     </button>
   </div>
 {/if}
