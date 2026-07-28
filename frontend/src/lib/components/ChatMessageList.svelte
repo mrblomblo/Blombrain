@@ -10,6 +10,11 @@
   import { slide, fade, fly } from "svelte/transition";
   import { quintOut } from "svelte/easing";
 
+  interface Props {
+    bottomPadding?: number;
+  }
+  const { bottomPadding = 112 }: Props = $props();
+
   let scrollEl: HTMLDivElement | undefined = $state();
 
   const modelsQuery = createQuery(() => ({
@@ -31,6 +36,7 @@
     const isNewConversationLoaded = currentId !== lastConversationId;
     lastConversationId = currentId;
 
+    bottomPadding;
     // Re-run whenever active path length or contents change
     activeMessages.length;
     for (const m of activeMessages) {
@@ -48,7 +54,7 @@
       } else {
         const isAtBottom =
           scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight <
-          150;
+          bottomPadding + 100;
         if (isAtBottom || chatStore.isStreaming) {
           scrollEl.scrollTo({
             top: scrollEl.scrollHeight,
@@ -106,7 +112,8 @@
   {#if activeMessages.length > 0}
     {#key chatStore.activeConversationId}
       <div
-        class="mx-auto flex w-full max-w-3xl flex-col gap-3 relative z-10 pb-28 sm:pb-32"
+        class="mx-auto flex w-full max-w-3xl flex-col gap-3 relative z-10"
+        style="padding-bottom: {bottomPadding + 16}px;"
       >
         {#each activeMessages as message, i (message.id)}
           <div

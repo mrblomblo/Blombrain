@@ -34,6 +34,7 @@
   let settingsOpen = $state(false);
   let mobileSidebarOpen = $state(false);
   let desktopSidebarOpen = $state(true);
+  let inputHeight = $state(112);
 
   let isNewChat = $derived(chatStore.activePath.length === 0);
 
@@ -131,9 +132,10 @@
         </div>
       </header>
 
-      <ChatMessageList />
+      <ChatMessageList bottomPadding={inputHeight} />
       {#if !isNewChat}
         <div
+          bind:clientHeight={inputHeight}
           in:fly={{ y: 50, duration: 350, opacity: 0, easing: quintOut }}
           out:fly={{ y: 50, duration: 300, opacity: 0, easing: quintOut }}
           class="absolute bottom-0 left-0 right-0 z-20 w-full"
