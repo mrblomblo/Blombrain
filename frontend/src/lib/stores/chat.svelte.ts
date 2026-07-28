@@ -6,6 +6,7 @@ import {
   deleteUpload,
   patchMessage,
   deleteMessage as apiDeleteMessage,
+  deleteConversation,
   branchMessage as apiBranchMessage,
 } from "../api";
 import { encodeToWav } from "../audio";
@@ -224,11 +225,12 @@ class ChatStore {
   /** Delete a message and reconnect the remaining conversation. */
   async deleteMessage(msgId: string) {
     if (!this.activeConversationId) return;
+    const convId = this.activeConversationId;
     const target = this.messages.find((m) => m.id === msgId);
     if (!target) return;
 
     try {
-      await apiDeleteMessage(this.activeConversationId, msgId);
+      await apiDeleteMessage(convId, msgId);
 
       if (target.role === "user") {
         // Find only the *direct* assistant child of this user message.
@@ -265,6 +267,15 @@ class ChatStore {
           }
         }
         this.messages = this.messages.filter((m) => !toDelete.has(m.id));
+      }
+
+      if (this.messages.length === 0) {
+        try {
+          await deleteConversation(convId);
+        } catch (e) {
+          // Ignore if already deleted by backend
+        }
+        this.newConversation();
       }
 
       _invalidateConversations?.();

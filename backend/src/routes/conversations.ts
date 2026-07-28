@@ -224,7 +224,16 @@ export async function conversationsRoutes(app: FastifyInstance) {
         DELETE FROM messages WHERE id IN (SELECT id FROM descendants)
       `).run(msgId);
     }
-    updateConversationMeta.run({ id: convId, title: null, model: null, updatedAt: Date.now() });
+
+    const remainingCount = db.prepare<[string], { count: number }>(
+      "SELECT COUNT(*) as count FROM messages WHERE conversation_id = ?"
+    ).get(convId)?.count ?? 0;
+
+    if (remainingCount === 0) {
+      deleteConversation.run(convId);
+    } else {
+      updateConversationMeta.run({ id: convId, title: null, model: null, updatedAt: Date.now() });
+    }
 
     return reply.code(204).send();
   });
