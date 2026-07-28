@@ -11,6 +11,12 @@
   let fileInput: HTMLInputElement | undefined = $state();
   let isUploading = $state(false);
 
+  interface Props {
+    floating?: boolean;
+  }
+
+  let { floating = false }: Props = $props();
+
   const modelsQuery = createQuery(() => ({
     queryKey: ["models"],
     queryFn: fetchModels,
@@ -71,7 +77,7 @@
   }
 </script>
 
-<div class="border-t border-line bg-bg px-4 sm:px-6 py-3">
+<div class={floating ? "w-full px-4 sm:px-6" : "border-t border-line bg-bg px-4 sm:px-6 py-3"}>
   <div class="mx-auto flex max-w-3xl flex-col gap-2">
     <!-- Attachment Thumbnails -->
     {#if chatStore.pendingAttachments.length > 0}
@@ -103,7 +109,7 @@
     {/if}
 
     <!-- Main Input Box -->
-    <div class="input-container relative flex items-end gap-2 rounded-xl border bg-bg-elevated p-2 shadow-sm">
+    <div class="input-container relative flex flex-col rounded-xl border bg-bg-elevated p-2.5 {floating ? 'shadow-lg border-line-strong' : 'shadow-sm'}">
       {#if allowedAccepts}
         <input
           type="file"
@@ -113,44 +119,58 @@
           multiple
           class="hidden"
         />
-        <button
-          type="button"
-          onclick={() => fileInput?.click()}
-          disabled={chatStore.isStreaming || isUploading}
-          aria-label="Add attachment"
-          class="flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-40"
-        >
-          <Paperclip size={16} />
-        </button>
       {/if}
 
+      <!-- Textarea Row -->
       <textarea
         bind:this={textarea}
         bind:value={draft}
         oninput={autosize}
         onkeydown={handleKeydown}
-        rows="1"
+        rows={floating ? 2 : 1}
         placeholder="Message Blombrain…"
-        class="max-h-52 flex-1 resize-none self-center bg-transparent px-2 py-1.5 text-sm text-fg placeholder:text-fg-subtle"
+        class="max-h-52 w-full resize-none bg-transparent px-2 py-1.5 text-sm text-fg placeholder:text-fg-subtle"
       ></textarea>
 
-      {#if chatStore.isStreaming}
-        <Button variant="danger" onclick={() => chatStore.stop()} aria-label="Stop generating" class="!px-3 !py-1.5 h-8 text-xs font-semibold">
-          <Square size={13} />
-          Stop
-        </Button>
-      {:else}
-        <Button
-          variant="primary"
-          onclick={handleSend}
-          disabled={(!draft.trim() && chatStore.pendingAttachments.length === 0) || isUploading}
-          aria-label="Send message"
-          class="!px-3 !py-1.5 h-8 text-xs font-semibold"
-        >
-          <Send size={13} />
-          Send
-        </Button>
-      {/if}
+      <!-- Bottom Action Bar Row -->
+      <div class="flex items-center justify-between pt-1.5">
+        <!-- Left Side Tools (Attachments, future MCP/Skills) -->
+        <div class="flex items-center gap-1">
+          {#if allowedAccepts}
+            <button
+              type="button"
+              onclick={() => fileInput?.click()}
+              disabled={chatStore.isStreaming || isUploading}
+              aria-label="Add attachment"
+              title="Add attachment"
+              class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg disabled:opacity-40"
+            >
+              <Paperclip size={16} />
+            </button>
+          {/if}
+        </div>
+
+        <!-- Right Side Actions (Send / Stop) -->
+        <div class="flex items-center gap-2">
+          {#if chatStore.isStreaming}
+            <Button variant="danger" onclick={() => chatStore.stop()} aria-label="Stop generating" class="!px-3 !py-1.5 h-8 text-xs font-semibold">
+              <Square size={13} />
+              Stop
+            </Button>
+          {:else}
+            <Button
+              variant="primary"
+              onclick={handleSend}
+              disabled={(!draft.trim() && chatStore.pendingAttachments.length === 0) || isUploading}
+              aria-label="Send message"
+              class="!px-3 !py-1.5 h-8 text-xs font-semibold"
+            >
+              <Send size={13} />
+              Send
+            </Button>
+          {/if}
+        </div>
+      </div>
     </div>
   </div>
 </div>

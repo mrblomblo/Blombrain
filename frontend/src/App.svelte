@@ -1,6 +1,8 @@
 <script lang="ts">
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { Menu } from "@lucide/svelte";
+  import { fly } from "svelte/transition";
+  import { quintOut } from "svelte/easing";
   import ChatInput from "./lib/components/ChatInput.svelte";
   import ChatMessageList from "./lib/components/ChatMessageList.svelte";
   import ModelPicker from "./lib/components/ModelPicker.svelte";
@@ -30,6 +32,8 @@
   let settingsOpen = $state(false);
   let mobileSidebarOpen = $state(false);
   let desktopSidebarOpen = $state(true);
+
+  let isNewChat = $derived(chatStore.activePath.length === 0);
 </script>
 
 <QueryClientProvider client={queryClient}>
@@ -65,9 +69,9 @@
     {/if}
 
     <!-- Main Content Pane -->
-    <main class="flex min-w-0 flex-1 flex-col h-full">
+    <main class="relative flex min-w-0 flex-1 flex-col h-full overflow-hidden">
       <header
-        class="flex items-center justify-between border-b border-line px-2.5 py-2.5 bg-bg"
+        class="flex items-center justify-between border-b border-line px-2.5 py-2.5 bg-bg shrink-0 z-10"
       >
         <div class="flex items-center gap-3 min-w-0 flex-1">
           <!-- Mobile Menu -->
@@ -88,7 +92,15 @@
       </header>
 
       <ChatMessageList />
-      <ChatInput />
+      {#if !isNewChat}
+        <div
+          in:fly={{ y: 50, duration: 350, opacity: 0, easing: quintOut }}
+          out:fly={{ y: 50, duration: 300, opacity: 0, easing: quintOut }}
+          class="absolute bottom-0 left-0 right-0 z-20 w-full"
+        >
+          <ChatInput />
+        </div>
+      {/if}
     </main>
   </div>
 
