@@ -24,19 +24,32 @@
   );
 
   let activeMessages = $derived(chatStore.activePath);
+  let lastConversationId = $state<string | null>(null);
 
   $effect(() => {
+    const currentId = chatStore.activeConversationId;
+    const isNewConversationLoaded = currentId !== lastConversationId;
+    lastConversationId = currentId;
+
     // Re-run whenever active path length or contents change
     activeMessages.length;
     for (const m of activeMessages) {
       m.content;
       m.thinkingContent;
     }
+
     requestAnimationFrame(() => {
       if (!scrollEl) return;
-      const isAtBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 150;
-      if (isAtBottom || chatStore.isStreaming) {
-        scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: chatStore.isStreaming ? "auto" : "smooth" });
+      if (isNewConversationLoaded) {
+        scrollEl.scrollTop = scrollEl.scrollHeight;
+        setTimeout(() => {
+          if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
+        }, 50);
+      } else {
+        const isAtBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 150;
+        if (isAtBottom || chatStore.isStreaming) {
+          scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: chatStore.isStreaming ? "auto" : "smooth" });
+        }
       }
     });
   });
