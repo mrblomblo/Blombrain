@@ -1,10 +1,16 @@
 export const THEMES = ["slate-ember", "paper-fern", "nightshade"] as const;
 export type ThemeName = (typeof THEMES)[number];
 
+export const THEME_CONFIG: Record<ThemeName, { label: string; isDark: boolean }> = {
+  "slate-ember": { label: "Slate Ember", isDark: true },
+  "paper-fern": { label: "Paper Fern", isDark: false },
+  nightshade: { label: "Nightshade", isDark: true },
+};
+
 export const THEME_LABELS: Record<ThemeName, string> = {
-  "slate-ember": "Slate Ember",
-  "paper-fern": "Paper Fern",
-  nightshade: "Nightshade",
+  "slate-ember": THEME_CONFIG["slate-ember"].label,
+  "paper-fern": THEME_CONFIG["paper-fern"].label,
+  nightshade: THEME_CONFIG["nightshade"].label,
 };
 
 const STORAGE_KEY = "blombrain:theme";
@@ -31,6 +37,10 @@ class ThemeStore {
         localStorage.setItem(STORAGE_KEY, this.current);
       });
     });
+  }
+
+  get isDark(): boolean {
+    return THEME_CONFIG[this.current]?.isDark ?? true;
   }
 
   set(theme: ThemeName) {

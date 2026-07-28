@@ -23,6 +23,20 @@ function rowToOut(row: AttachmentRow): AttachmentOut {
   };
 }
 
+function resolveMimeType(filename: string, rawMime: string): string {
+  const lower = filename.toLowerCase();
+  const codeExts = [
+    ".ts", ".tsx", ".mts", ".cts", ".svelte", ".vue", ".js", ".jsx", ".mjs", ".cjs",
+    ".py", ".rs", ".go", ".c", ".cpp", ".h", ".hpp", ".cs", ".java", ".kt", ".rb",
+    ".php", ".sh", ".bash", ".zsh", ".json", ".toml", ".yaml", ".yml", ".md", ".css",
+    ".scss", ".html", ".xml", ".sql"
+  ];
+  if (codeExts.some((ext) => lower.endsWith(ext))) {
+    return "text/plain";
+  }
+  return rawMime;
+}
+
 export async function uploadsRoutes(app: FastifyInstance) {
   // Upload a new file
   app.post<{ Querystring: { conversationId?: string } }>("/api/uploads", async (req, reply) => {
@@ -70,7 +84,7 @@ export async function uploadsRoutes(app: FastifyInstance) {
       conversationId,
       null, // message_id is null until sent
       data.filename,
-      data.mimetype,
+      resolveMimeType(data.filename, data.mimetype),
       diskPath, // Store absolute path or relative? Storing absolute for simplicity, or relative to DATA_DIR.
                 // It's safer to store relative to DATA_DIR so it's portable.
       stat.size,

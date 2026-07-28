@@ -226,40 +226,47 @@
       >
         {#each message.attachments as att (att.id)}
           {#if att.mimeType.startsWith("image/")}
-            <a
-              href={serveUploadUrl(att.id)}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onclick={() => (chatStore.selectedAttachment = att)}
+              class="cursor-pointer overflow-hidden rounded-lg border border-line bg-bg-elevated transition-transform hover:scale-[1.01]"
             >
               <img
                 src={serveUploadUrl(att.id)}
                 alt={att.originalName}
-                class="max-h-64 rounded-lg object-contain border border-line bg-bg-elevated"
+                class="max-h-64 rounded-lg object-contain"
               />
-            </a>
+            </button>
           {:else if att.mimeType.startsWith("video/")}
-            <!-- svelte-ignore a11y_media_has_caption -->
-            <video
-              controls
-              src={serveUploadUrl(att.id)}
-              class="max-h-64 rounded-lg border border-line bg-bg-elevated"
-            ></video>
+            <button
+              type="button"
+              onclick={() => (chatStore.selectedAttachment = att)}
+              class="cursor-pointer overflow-hidden rounded-lg border border-line bg-bg-elevated transition-transform hover:scale-[1.01]"
+            >
+              <!-- svelte-ignore a11y_media_has_caption -->
+              <video
+                src={serveUploadUrl(att.id)}
+                class="max-h-64 rounded-lg pointer-events-none"
+              ></video>
+            </button>
           {:else if att.mimeType.startsWith("audio/")}
-            <audio
-              controls
-              src={serveUploadUrl(att.id)}
-              class="rounded-lg border border-line bg-bg-elevated h-10"
-            ></audio>
-          {:else}
-            <a
-              href={serveUploadUrl(att.id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="flex items-center gap-2 rounded-lg border border-line bg-bg-elevated px-3 py-2 text-xs hover:bg-bg-inset transition-colors"
+            <button
+              type="button"
+              onclick={() => (chatStore.selectedAttachment = att)}
+              class="flex items-center gap-2 rounded-lg border border-line bg-bg-elevated px-3 py-2 text-xs hover:bg-bg-hover transition-colors cursor-pointer"
             >
               <Paperclip size={14} class="text-fg-muted" />
-              <span>{att.originalName}</span>
-            </a>
+              <span class="font-medium text-fg">{att.originalName}</span>
+            </button>
+          {:else}
+            <button
+              type="button"
+              onclick={() => (chatStore.selectedAttachment = att)}
+              class="flex items-center gap-2 rounded-lg border border-line bg-bg-elevated px-3 py-2 text-xs hover:bg-bg-hover transition-colors cursor-pointer"
+            >
+              <Paperclip size={14} class="text-fg-muted" />
+              <span class="font-medium text-fg">{att.originalName}</span>
+            </button>
           {/if}
         {/each}
       </div>

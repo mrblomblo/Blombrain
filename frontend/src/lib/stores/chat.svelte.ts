@@ -56,6 +56,7 @@ class ChatStore {
   activeConversationTitle = $state<string>("New conversation");
 
   pendingAttachments = $state<AttachmentOut[]>([]);
+  selectedAttachment = $state<AttachmentOut | null>(null);
 
   /** Maps parentId ("ROOT" for root messages) to the selected child message ID */
   branchSelections = $state<Record<string, string>>({});

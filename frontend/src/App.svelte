@@ -8,6 +8,7 @@
   import ModelPicker from "./lib/components/ModelPicker.svelte";
   import Sidebar from "./lib/components/Sidebar.svelte";
   import SettingsModal from "./lib/components/SettingsModal.svelte";
+  import AttachmentModal from "./lib/components/AttachmentModal.svelte";
   import {
     chatStore,
     registerConversationsInvalidator,
@@ -105,4 +106,5 @@
   </div>
 
   <SettingsModal open={settingsOpen} onClose={() => (settingsOpen = false)} />
+  <AttachmentModal />
 </QueryClientProvider>

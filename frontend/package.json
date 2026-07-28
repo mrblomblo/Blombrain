@@ -16,6 +16,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@tailwindcss/vite": "^4.3.3",
     "@tsconfig/svelte": "^5.0.8",
+    "@types/highlight.js": "^9.12.4",
     "@types/node": "^24.13.2",
     "svelte": "^5.56.4",
     "svelte-check": "^4.7.1",
@@ -27,6 +28,7 @@
     "@lucide/svelte": "^1.27.0",
     "@tanstack/svelte-query": "^6.1.38",
     "clsx": "^2.1.1",
+    "highlight.js": "^11.11.1",
     "tailwind-merge": "^3.6.0"
   }
 }

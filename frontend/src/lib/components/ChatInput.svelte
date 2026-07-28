@@ -84,16 +84,26 @@
       <div class="flex flex-wrap gap-2 px-1">
         {#each chatStore.pendingAttachments as att (att.id)}
           <div class="group relative flex h-14 w-14 items-center justify-center rounded-lg border border-line bg-bg-elevated overflow-hidden shadow-xs">
-            {#if att.mimeType.startsWith("image/") || att.mimeType.startsWith("video/")}
-              <img src={serveUploadUrl(att.id)} alt={att.originalName} class="h-full w-full object-cover" />
-            {:else if att.mimeType.startsWith("audio/")}
-              <div class="text-[9px] text-fg-subtle font-mono">Audio</div>
-            {:else}
-              <div class="text-[9px] text-fg-subtle truncate max-w-full px-1 font-mono">{att.originalName}</div>
-            {/if}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              onclick={() => (chatStore.selectedAttachment = att)}
+              class="h-full w-full flex items-center justify-center cursor-pointer hover:opacity-90 transition-opacity"
+            >
+              {#if att.mimeType.startsWith("image/") || att.mimeType.startsWith("video/")}
+                <img src={serveUploadUrl(att.id)} alt={att.originalName} class="h-full w-full object-cover" />
+              {:else if att.mimeType.startsWith("audio/")}
+                <div class="text-[9px] text-fg-subtle font-mono">Audio</div>
+              {:else}
+                <div class="text-[9px] text-fg-subtle truncate max-w-full px-1 font-mono">{att.originalName}</div>
+              {/if}
+            </div>
             <button
-              onclick={() => chatStore.removeAttachment(att.id)}
-              class="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-black/70 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black hover:text-danger"
+              onclick={(e) => {
+                e.stopPropagation();
+                chatStore.removeAttachment(att.id);
+              }}
+              class="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-black/70 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black hover:text-danger z-10"
               aria-label="Remove attachment"
             >
               <X size={10} />
