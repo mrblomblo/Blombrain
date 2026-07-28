@@ -32,6 +32,17 @@ export async function chatRoutes(app: FastifyInstance) {
       return sendJsonError(reply, 400, "Request body must include `model` and `messages`.");
     }
 
+    const abortController = new AbortController();
+    let clientDisconnected = false;
+    const handleEarlyDisconnect = () => {
+      if (clientDisconnected) return;
+      if (reply.raw.writableEnded) return;
+      clientDisconnected = true;
+      abortController.abort();
+    };
+    req.raw.on("aborted", handleEarlyDisconnect);
+    reply.raw.on("close", handleEarlyDisconnect);
+
     let targetModelId = body.model;
     const settingRow = db.prepare("SELECT * FROM model_settings WHERE id = ?").get(body.model) as ModelSettingRow | undefined;
 
@@ -154,8 +165,6 @@ export async function chatRoutes(app: FastifyInstance) {
       stream_options: { include_usage: true },
     };
 
-    const abortController = new AbortController();
-
     let upstream: Response;
     try {
       upstream = await fetch(`${backend.baseUrl}/v1/chat/completions`, {
@@ -168,6 +177,11 @@ export async function chatRoutes(app: FastifyInstance) {
         signal: abortController.signal,
       });
     } catch (err) {
+      if (clientDisconnected) {
+        // The upstream fetch was aborted because the client already left
+        // before generation started. Nothing to send, nothing to persist.
+        return;
+      }
       return sendJsonError(
         reply,
         502,
@@ -179,6 +193,14 @@ export async function chatRoutes(app: FastifyInstance) {
     if (!upstream.ok || !upstream.body) {
       const text = await upstream.text().catch(() => "");
       return sendJsonError(reply, upstream.status || 502, text || upstream.statusText);
+    }
+
+    // The client may have disconnected while we were waiting on the upstream
+    // fetch to resolve. In that case there's nothing to stream and nothing
+    // to persist — the user explicitly stopped before anything was generated.
+    if (clientDisconnected) {
+      upstream.body?.cancel().catch(() => { });
+      return;
     }
 
     reply.hijack();
@@ -271,6 +293,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const onClientDisconnect = () => {
       if (reply.raw.writableEnded) return;
+      streamError = "Operation aborted";
       abortController.abort();
       if (!nodeStream.destroyed) nodeStream.destroy();
       doSaveTurn();

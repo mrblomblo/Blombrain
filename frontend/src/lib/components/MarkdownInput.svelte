@@ -129,6 +129,15 @@
     }
   }
 
+  function unescapeHtmlEntities(str: string): string {
+    return str
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, "&");
+  }
+
   onMount(() => {
     if (!element) return;
 
@@ -172,8 +181,9 @@
       content: value,
       onUpdate: ({ editor }) => {
         checkAlerts(editor);
-        const md =
+        const rawMd =
           (editor.storage as any).markdown?.getMarkdown() ?? editor.getText();
+        const md = unescapeHtmlEntities(rawMd);
         if (value !== md) {
           value = md;
         }
@@ -192,7 +202,8 @@
   // Sync external value changes to the editor (e.g. draft cleared on send)
   $effect(() => {
     if (editor) {
-      const currentMd = (editor.storage as any).markdown?.getMarkdown() ?? "";
+      const rawMd = (editor.storage as any).markdown?.getMarkdown() ?? "";
+      const currentMd = unescapeHtmlEntities(rawMd);
       if (value !== currentMd) {
         editor.commands.setContent(value, { emitUpdate: false });
         checkAlerts(editor);
@@ -214,7 +225,7 @@
 
 <div
   bind:this={element}
-  class="markdown-input-editor w-full text-sm text-fg focus:outline-none overflow-y-auto max-h-52 px-2 py-1.5 {className}"
+  class="markdown-input-editor w-full text-sm text-fg overflow-y-auto max-h-52 px-2 py-1.5 {className}"
 ></div>
 
 <style>

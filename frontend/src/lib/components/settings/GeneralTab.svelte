@@ -124,7 +124,7 @@
         value={settingsStore.userName}
         onchange={handleNameChange}
         placeholder="Enter your name"
-        class="h-9 w-full rounded-md border border-line bg-bg px-3 text-xs text-fg transition-colors focus:border-accent focus:outline-none"
+        class="h-9 w-full rounded-md border border-line bg-bg px-3 text-xs text-fg transition-colors focus:border-accent"
       />
     </div>
   </div>

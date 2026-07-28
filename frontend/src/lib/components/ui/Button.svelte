@@ -29,7 +29,7 @@
   }: Props = $props();
 
   const base =
-    "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent";
+    "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none focus-visible:border-none";
 
   const sizes: Record<ButtonSize, string> = {
     sm: "h-7 px-2.5 text-xs",
@@ -80,4 +80,3 @@
     {@render children()}
   {/if}
 </button>
-

@@ -61,7 +61,7 @@
     type="button"
     {disabled}
     onclick={() => (isOpen = !isOpen)}
-    class="flex w-full items-center justify-between gap-2 rounded-md border border-line text-xs text-fg transition-colors cursor-pointer hover:border-line-strong hover:bg-bg-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50 disabled:cursor-not-allowed {buttonClass ||
+    class="flex w-full items-center justify-between gap-2 rounded-md border border-line text-xs text-fg transition-colors cursor-pointer hover:border-line-strong hover:bg-bg-hover disabled:opacity-50 disabled:cursor-not-allowed {buttonClass ||
       'h-8 bg-bg px-3'} {className}"
   >
     <span class="truncate">{selectedOption?.label || placeholder}</span>

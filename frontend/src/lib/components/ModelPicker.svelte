@@ -90,7 +90,7 @@
     <button
       type="button"
       onclick={() => (isOpen = !isOpen)}
-      class="flex h-8 items-center gap-2 rounded-lg border border-line bg-bg-elevated px-2.5 text-xs text-fg transition-colors cursor-pointer hover:bg-bg-hover hover:border-line-strong focus:outline-none"
+      class="flex h-8 items-center gap-2 rounded-lg border border-line bg-bg-elevated px-2.5 text-xs text-fg transition-colors cursor-pointer hover:bg-bg-hover hover:border-line-strong"
     >
       {#if selectedModel?.icon}
         <img
@@ -139,7 +139,7 @@
               type="text"
               bind:value={searchQuery}
               placeholder="Search models…"
-              class="w-full bg-transparent text-xs text-fg placeholder:text-fg-subtle outline-none"
+              class="w-full bg-transparent text-xs text-fg placeholder:text-fg-subtle"
               use:focusInput
             />
           </div>

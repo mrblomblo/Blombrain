@@ -70,6 +70,9 @@ marked.use({
   gfm: true,
   breaks: true,
   renderer: {
+    html({ text }: { text: string }) {
+      return escapeHtml(text);
+    },
     code({ text, lang }: { text: string; lang?: string }) {
       const rawLang = (lang || "").trim().split(/\s+/)[0];
       const validLang = hljs.getLanguage(rawLang) ? rawLang : "";

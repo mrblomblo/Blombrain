@@ -243,8 +243,8 @@
       ondragleave={handleDragLeave}
       ondrop={handleDrop}
       onclick={handleContainerClick}
-      class="input-container relative flex flex-col rounded-xl border bg-bg-elevated p-2.5 cursor-text hover:border-accent focus:border-accent transition-all duration-150 {isDragging
-        ? '!border-accent !ring-2 !ring-accent/25'
+      class="input-container relative flex flex-col rounded-xl border bg-bg-elevated p-2.5 cursor-text hover:border-accent transition-all duration-150 {isDragging
+        ? '!border-accent'
         : ''} {floating ? 'shadow-lg' : 'shadow-sm'}"
     >
       {#if isDragging}
@@ -332,6 +332,7 @@
 <style>
   .input-container:focus-within,
   .input-container:focus-within:hover {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+    border-color: var(--accent) !important;
+    box-shadow: none !important;
   }
 </style>

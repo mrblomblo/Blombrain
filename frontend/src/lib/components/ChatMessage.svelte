@@ -526,7 +526,7 @@
 
   .edit-container:focus-within,
   .edit-container:focus-within:hover {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+    border-color: var(--accent) !important;
+    box-shadow: none !important;
   }
 </style>

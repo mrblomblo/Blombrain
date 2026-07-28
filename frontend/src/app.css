@@ -411,10 +411,22 @@ body {
   background: transparent;
 }
 
-/* Visible keyboard focus everywhere, theme-driven */
-:focus-visible {
+/* Remove focus rings/outlines from all inputs globally */
+input,
+textarea,
+select,
+[contenteditable],
+.markdown-input-editor,
+.ProseMirror {
+  outline: none !important;
+  box-shadow: none !important;
+  --tw-ring-color: transparent !important;
+  --tw-ring-shadow: none !important;
+}
+
+/* Visible keyboard focus for non-input elements, theme-driven */
+:focus-visible:not(input):not(textarea):not(select):not([contenteditable]):not(.markdown-input-editor):not(.ProseMirror) {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {

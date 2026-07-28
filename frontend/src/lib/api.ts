@@ -265,6 +265,11 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
       signal,
     });
   } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      onError("Operation aborted");
+      onDone();
+      return;
+    }
     onError(err instanceof Error ? err.message : "Network request failed");
     return;
   }

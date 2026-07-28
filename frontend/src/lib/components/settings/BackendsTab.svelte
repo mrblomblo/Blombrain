@@ -165,7 +165,7 @@
               </p>
             </div>
             <span
-              class="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle ring-1 ring-line"
+              class="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle1"
             >
               {b.prefix}:
             </span>
@@ -218,7 +218,7 @@
               bind:value={formId}
               required
               placeholder="local"
-              class="h-8 rounded-md border border-line bg-bg px-3 text-sm text-fg outline-none focus-visible:outline-2 focus-visible:outline-accent"
+              class="h-8 rounded-md border border-line bg-bg px-3 text-sm text-fg focus-visible:border-accent transition-colors duration-200"
             />
           </div>
         {/if}
@@ -233,7 +233,7 @@
               bind:value={formName}
               required
               placeholder="Local llama-server"
-              class="h-8 rounded-md border border-line bg-bg px-3 text-sm text-fg outline-none focus-visible:outline-2 focus-visible:outline-accent"
+              class="h-8 rounded-md border border-line bg-bg px-3 text-sm text-fg focus-visible:border-accent transition-colors duration-200"
             />
           </div>
           <div class="flex w-28 flex-col gap-1">
@@ -243,7 +243,7 @@
               bind:value={formPrefix}
               required
               placeholder="local"
-              class="h-8 rounded-md border border-line bg-bg px-3 font-mono text-sm text-fg outline-none focus-visible:outline-2 focus-visible:outline-accent"
+              class="h-8 rounded-md border border-line bg-bg px-3 font-mono text-sm text-fg focus-visible:border-accent transition-colors duration-200"
             />
           </div>
         </div>
@@ -256,7 +256,7 @@
             required
             type="url"
             placeholder="http://127.0.0.1:8080"
-            class="h-8 rounded-md border border-line bg-bg px-3 font-mono text-sm text-fg outline-none focus-visible:outline-2 focus-visible:outline-accent"
+            class="h-8 rounded-md border border-line bg-bg px-3 font-mono text-sm text-fg focus-visible:border-accent transition-colors duration-200"
           />
         </div>
 
@@ -272,7 +272,7 @@
             placeholder={formMode === "edit"
               ? "Leave blank to keep existing key"
               : "sk-…"}
-            class="h-8 rounded-md border border-line bg-bg px-3 font-mono text-sm text-fg outline-none focus-visible:outline-2 focus-visible:outline-accent"
+            class="h-8 rounded-md border border-line bg-bg px-3 font-mono text-sm text-fg focus-visible:border-accent transition-colors duration-200"
           />
           {#if formMode === "edit"}
             <div class="flex items-center gap-2 pt-1">

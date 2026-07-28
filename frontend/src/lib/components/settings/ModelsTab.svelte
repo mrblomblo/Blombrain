@@ -559,7 +559,7 @@
                         >{model.name || model.id}</span
                       >
                       <span
-                        class="rounded bg-bg px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle ring-1 ring-line"
+                        class="rounded bg-bg px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
                       >
                         {model.backendName}
                       </span>
@@ -717,7 +717,7 @@
                 ? "My Custom Assistant"
                 : "Custom display name"}
               required={formMode === "add_preset"}
-              class="h-8 rounded-md border border-line bg-bg px-3 text-sm text-fg outline-none focus-visible:outline-2 focus-visible:outline-accent"
+              class="h-8 rounded-md border border-line bg-bg px-3 text-sm text-fg focus-visible:border-accent transition-colors duration-200"
             />
           </div>
 
@@ -757,7 +757,7 @@
               bind:value={formSystemPrompt}
               rows="3"
               placeholder="Instructions for the model..."
-              class="resize-y rounded-md border border-line bg-bg px-3 py-2 text-sm text-fg outline-none focus-visible:outline-2 focus-visible:outline-accent"
+              class="resize-y rounded-md border border-line bg-bg px-3 py-2 text-sm text-fg focus-visible:border-accent transition-colors duration-200"
             ></textarea>
           </div>
 
@@ -823,7 +823,7 @@
                     max="2"
                     bind:value={formTemperature}
                     placeholder="Default (e.g. 0.7)"
-                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg outline-none"
+                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg focus-visible:border-accent transition-colors duration-200"
                   />
                 </div>
                 <!-- Seed -->
@@ -837,7 +837,7 @@
                     type="number"
                     bind:value={formSeed}
                     placeholder="Random"
-                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg outline-none"
+                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg focus-visible:border-accent transition-colors duration-200"
                   />
                 </div>
 
@@ -853,7 +853,7 @@
                     type="number"
                     bind:value={formMaxTokens}
                     placeholder="Default"
-                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg outline-none"
+                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg focus-visible:border-accent transition-colors duration-200"
                   />
                 </div>
 
@@ -869,7 +869,7 @@
                     type="number"
                     bind:value={formCtxLength}
                     placeholder="Default (e.g. 4096)"
-                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg outline-none"
+                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg focus-visible:border-accent transition-colors duration-200"
                   />
                 </div>
 
@@ -887,7 +887,7 @@
                     max="1"
                     bind:value={formTopP}
                     placeholder="e.g. 0.9"
-                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg outline-none"
+                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg focus-visible:border-accent transition-colors duration-200"
                   />
                 </div>
 
@@ -902,7 +902,7 @@
                     type="number"
                     bind:value={formTopK}
                     placeholder="e.g. 40"
-                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg outline-none"
+                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg focus-visible:border-accent transition-colors duration-200"
                   />
                 </div>
 
@@ -920,7 +920,7 @@
                     max="1"
                     bind:value={formMinP}
                     placeholder="e.g. 0.05"
-                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg outline-none"
+                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg focus-visible:border-accent transition-colors duration-200"
                   />
                 </div>
 
@@ -937,7 +937,7 @@
                     step="0.1"
                     bind:value={formPresencePenalty}
                     placeholder="0.0"
-                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg outline-none"
+                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg focus-visible:border-accent transition-colors duration-200"
                   />
                 </div>
 
@@ -954,7 +954,7 @@
                     step="0.1"
                     bind:value={formFrequencyPenalty}
                     placeholder="0.0"
-                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg outline-none"
+                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg focus-visible:border-accent transition-colors duration-200"
                   />
                 </div>
 
@@ -971,7 +971,7 @@
                     step="0.05"
                     bind:value={formRepeatPenalty}
                     placeholder="1.0"
-                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg outline-none"
+                    class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg focus-visible:border-accent transition-colors duration-200"
                   />
                 </div>
 
