@@ -375,17 +375,19 @@
         />
         <div class="flex items-center justify-between text-xs text-fg-subtle">
           <div class="flex items-center gap-2">
-            <Button
-              variant="default"
-              outline
-              size="icon"
-              onclick={() => editFileInput?.click()}
-              disabled={isSaving || isUploadingEdit}
-              aria-label="Add attachment"
-              title="Add attachment"
-            >
-              <Paperclip size={16} />
-            </Button>
+            {#if message.role === "user"}
+              <Button
+                variant="default"
+                outline
+                size="icon"
+                onclick={() => editFileInput?.click()}
+                disabled={isSaving || isUploadingEdit}
+                aria-label="Add attachment"
+                title="Add attachment"
+              >
+                <Paperclip size={16} />
+              </Button>
+            {/if}
           </div>
           <div class="flex items-center gap-2">
             <Button
