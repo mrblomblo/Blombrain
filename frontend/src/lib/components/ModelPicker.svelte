@@ -145,7 +145,7 @@
               <button
                 type="button"
                 onclick={() => selectModel(model.id)}
-                class="w-full flex items-center justify-between gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs transition-colors {model.id ===
+                class="w-full flex items-center justify-between gap-2.5 rounded-md px-2.5 py-2 text-left text-xs transition-colors {model.id ===
                 chatStore.selectedModel
                   ? 'bg-accent/15 text-accent font-medium'
                   : 'hover:bg-bg-elevated text-fg'}"
