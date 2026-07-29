@@ -217,14 +217,25 @@
       editor.setEditable(!disabled);
     }
   });
+
+  function handleContainerMousedown(e: MouseEvent) {
+    if (disabled || !editor) return;
+    const target = e.target as HTMLElement | null;
+    if (target === element || target?.classList.contains("markdown-input-editor")) {
+      e.preventDefault();
+      editor.commands.focus();
+    }
+  }
 </script>
 
 <svelte:head>
   {@html `<style id="hljs-input-theme">${themeStore.isDark ? githubDarkCss : githubLightCss}</style>`}
 </svelte:head>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   bind:this={element}
+  onmousedown={handleContainerMousedown}
   class="markdown-input-editor w-full text-sm text-fg overflow-y-auto max-h-52 px-2 py-1.5 {className}"
 ></div>
 
