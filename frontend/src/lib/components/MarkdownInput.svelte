@@ -16,6 +16,7 @@
     value?: string;
     placeholder?: string;
     disabled?: boolean;
+    disableSubmit?: boolean;
     onSubmit?: () => void;
     class?: string;
   }
@@ -24,6 +25,7 @@
     value = $bindable(""),
     placeholder = "Message Blombrain…",
     disabled = false,
+    disableSubmit = false,
     onSubmit,
     class: className = "",
   }: Props = $props();
@@ -43,8 +45,9 @@
 
   const lowlight = createLowlight(common);
 
-  // Keep a fresh reference to onSubmit for the extension keyboard handler
+  // Keep a fresh reference to onSubmit and disableSubmit for the extension keyboard handler
   let getOnSubmit = $derived(() => onSubmit);
+  let getDisableSubmit = $derived(() => disableSubmit);
 
   const CustomShortcuts = Extension.create({
     name: "customShortcuts",
@@ -76,11 +79,14 @@
             return false;
           }
 
-          const fn = getOnSubmit();
-          if (fn) {
-            fn();
-            return true;
+          if (!getDisableSubmit()) {
+            const fn = getOnSubmit();
+            if (fn) {
+              fn();
+              return true;
+            }
           }
+          
           return false;
         },
         "Shift-Enter": ({ editor }) => {

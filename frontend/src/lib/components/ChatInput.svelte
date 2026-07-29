@@ -109,7 +109,7 @@
 
   function handleDragEnter(e: DragEvent) {
     e.preventDefault();
-    if (chatStore.isStreaming || isUploading) return;
+    if (isUploading) return;
     dragCounter++;
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = "copy";
@@ -119,7 +119,7 @@
 
   function handleDragOver(e: DragEvent) {
     e.preventDefault();
-    if (chatStore.isStreaming || isUploading) return;
+    if (isUploading) return;
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = "copy";
     }
@@ -138,7 +138,7 @@
     e.preventDefault();
     dragCounter = 0;
     isDragging = false;
-    if (chatStore.isStreaming || isUploading) return;
+    if (isUploading) return;
     if (!e.dataTransfer?.files || e.dataTransfer.files.length === 0) return;
 
     const files = Array.from(e.dataTransfer.files).filter(isFileAllowed);
@@ -274,8 +274,9 @@
         bind:this={markdownInputRef}
         bind:value={draft}
         onSubmit={handleSend}
-        disabled={chatStore.isStreaming || isUploading}
-        placeholder="Message Blombrain…"
+        disabled={isUploading}
+        disableSubmit={chatStore.isStreaming}
+        placeholder={chatStore.isStreaming ? "Typing next message..." : "Message Blombrain…"}
       />
 
       <!-- Bottom Action Bar Row -->
@@ -288,7 +289,7 @@
               outline
               size="icon"
               onclick={() => fileInput?.click()}
-              disabled={chatStore.isStreaming || isUploading}
+              disabled={isUploading}
               aria-label="Add attachment"
               title="Add attachment"
             >
