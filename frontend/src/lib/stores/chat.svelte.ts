@@ -245,20 +245,23 @@ class ChatStore {
 
     try {
       if (target.role === "user") {
-        // Find only the *direct* assistant child of this user message.
-        const childAsst = this.messages.find(
+        // Find all assistant children of this user message (handles retry branches)
+        const childAssts = this.messages.filter(
           (m) => m.role === "assistant" && m.parentId === msgId
         );
-        const idsToDelete = new Set([msgId, ...(childAsst ? [childAsst.id] : [])]);
+        const idsToDelete = new Set([msgId, ...childAssts.map((a) => a.id)]);
 
-        // Re-parent any messages that pointed to the deleted assistant so the
-        // deeper conversation thread stays connected after the deletion.
-        if (childAsst) {
+        if (childAssts.length > 0) {
+          const childAsstIds = new Set(childAssts.map((a) => a.id));
+          // Re-parent any messages that pointed to any of the deleted assistant branches
+          // so that the deeper conversation threads stay connected as sibling branches.
           this.messages = this.messages.map((m) =>
-            m.parentId === childAsst.id ? { ...m, parentId: target.parentId ?? null } : m
+            m.parentId && childAsstIds.has(m.parentId)
+              ? { ...m, parentId: target.parentId ?? null }
+              : m
           );
         } else {
-          // If no assistant response existed, reparent the user message's direct children
+          // If no assistant responses existed, reparent the user message's direct children
           this.messages = this.messages.map((m) =>
             m.parentId === msgId ? { ...m, parentId: target.parentId ?? null } : m
           );

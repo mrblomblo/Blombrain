@@ -215,15 +215,17 @@ export async function conversationsRoutes(app: FastifyInstance) {
     }
 
     if (row.role === "user") {
-      // Find following assistant message that claims row.id as parent
-      const childAsst = db.prepare<[string, string], MessageRow>(
+      // Find all assistant messages that claim row.id as parent (handles retry branches)
+      const childAssts = db.prepare<[string, string], MessageRow>(
         "SELECT * FROM messages WHERE conversation_id = ? AND role = 'assistant' AND parent_id = ?"
-      ).get(convId, msgId);
+      ).all(convId, msgId);
 
-      if (childAsst) {
-        // Reparent grandchildren to the user message's parent so they are not orphaned
-        db.prepare("UPDATE messages SET parent_id = ? WHERE parent_id = ? AND conversation_id = ?").run(row.parent_id, childAsst.id, convId);
-        db.prepare("DELETE FROM messages WHERE id = ?").run(childAsst.id);
+      if (childAssts.length > 0) {
+        for (const childAsst of childAssts) {
+          // Reparent grandchildren of each branch to the user message's parent so they become sibling branches
+          db.prepare("UPDATE messages SET parent_id = ? WHERE parent_id = ? AND conversation_id = ?").run(row.parent_id, childAsst.id, convId);
+          db.prepare("DELETE FROM messages WHERE id = ?").run(childAsst.id);
+        }
       } else {
         // Reparent direct children of the user message (if any)
         db.prepare("UPDATE messages SET parent_id = ? WHERE parent_id = ? AND conversation_id = ?").run(row.parent_id, msgId, convId);
