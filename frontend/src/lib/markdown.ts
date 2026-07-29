@@ -4,8 +4,9 @@ import hljs from "highlight.js";
 import DOMPurify from "dompurify";
 
 export function encodeBase64(str: string): string {
-  if (typeof Buffer !== "undefined") {
-    return Buffer.from(str, "utf8").toString("base64");
+  const gBuf = (globalThis as any).Buffer;
+  if (typeof gBuf !== "undefined") {
+    return gBuf.from(str, "utf8").toString("base64");
   }
   const bytes = new TextEncoder().encode(str);
   const binString = Array.from(bytes, (byte) => String.fromCodePoint(byte)).join("");
@@ -13,8 +14,9 @@ export function encodeBase64(str: string): string {
 }
 
 export function decodeBase64(b64: string): string {
-  if (typeof Buffer !== "undefined") {
-    return Buffer.from(b64, "base64").toString("utf8");
+  const gBuf = (globalThis as any).Buffer;
+  if (typeof gBuf !== "undefined") {
+    return gBuf.from(b64, "base64").toString("utf8");
   }
   const binString = atob(b64);
   const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0)!);
@@ -130,12 +132,13 @@ marked.use({
       const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
       return `<img src="${escapeHtml(href)}" alt="${escapeHtml(text)}"${titleAttr} class="max-w-full rounded-md my-2" />`;
     },
-    code({ text, lang }: { text: string; lang?: string }) {
+    code(this: any, { text, lang }: { text: string; lang?: string }) {
+      const isArtifactPreview = !!(this.options as any)?.isArtifactPreview;
       const rawLang = (lang || "").trim().split(/\s+/)[0].toLowerCase();
       const validLang = hljs.getLanguage(rawLang) ? rawLang : "";
       const displayLang = validLang || rawLang || "code";
 
-      if (rawLang === "html" || rawLang === "svg" || rawLang === "markdown" || rawLang === "md") {
+      if (!isArtifactPreview && (rawLang === "html" || rawLang === "svg" || rawLang === "markdown" || rawLang === "md")) {
         let cardTitle = "HTML Web Content";
         let iconSvg = `<svg class="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`;
         if (rawLang === "svg") {
@@ -238,16 +241,47 @@ marked.use({
   },
 });
 
+function findMatchingCloseIndex(lines: string[], startIndex: number, fenceChar: string, fenceLength: number): number {
+  for (let i = startIndex; i < lines.length; i++) {
+    const line = lines[i];
+    const fenceMatch = line.match(/^( {0,3})(`{3,}|~{3,})(.*)$/);
+    if (fenceMatch) {
+      const currChar = fenceMatch[2][0];
+      const currLength = fenceMatch[2].length;
+      const rest = fenceMatch[3].trim();
+      const currLang = rest.split(/\s+/)[0].toLowerCase();
+
+      if (currLang) {
+        return -1; // Another opening fence
+      }
+
+      if (currChar === fenceChar && currLength >= fenceLength) {
+        return i; // Found matching close
+      }
+    }
+  }
+  return -1;
+}
+
+function hasFenceAfter(lines: string[], startIndex: number): boolean {
+  for (let i = startIndex; i < lines.length; i++) {
+    if (lines[i].match(/^( {0,3})(`{3,}|~{3,})(.*)$/)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function fixNestedMarkdownCodeBlocks(src: string): string {
-  const lines = src.split("\n");
+  const normalizedSrc = src.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lines = normalizedSrc.split("\n");
   const result: string[] = [];
 
-  const stack: Array<{
-    char: string;
-    length: number;
-    isArtifact: boolean;
-    indent: string;
-  }> = [];
+  let inArtifact = false;
+  let artifactIndent = "";
+  let artifactFenceChar = "";
+  let artifactFenceLength = 0;
+  let innerStack: Array<{ char: string; length: number }> = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -261,40 +295,51 @@ function fixNestedMarkdownCodeBlocks(src: string): string {
       const rest = fenceMatch[3].trim();
       const rawLang = rest.split(/\s+/)[0].toLowerCase();
 
-      if (stack.length > 0) {
-        const top = stack[stack.length - 1];
-
-        if (fenceChar === top.char && fenceLength >= top.length && !rawLang) {
-          stack.pop();
-          if (top.isArtifact) {
-            result.push(`${indent}${"`".repeat(20)}`);
-            continue;
-          }
-        } else if (rawLang) {
-          stack.push({
-            char: fenceChar,
-            length: fenceLength,
-            isArtifact: false,
-            indent,
-          });
-        }
-      } else {
+      if (!inArtifact) {
         if (rawLang === "markdown" || rawLang === "md") {
-          stack.push({
-            char: fenceChar,
-            length: fenceLength,
-            isArtifact: true,
-            indent,
-          });
+          inArtifact = true;
+          artifactIndent = indent;
+          artifactFenceChar = fenceChar;
+          artifactFenceLength = fenceLength;
+          innerStack = [];
           result.push(`${indent}${"`".repeat(20)}${rawLang}`);
           continue;
+        }
+      } else {
+        if (innerStack.length > 0) {
+          const top = innerStack[innerStack.length - 1];
+          if (fenceChar === top.char && fenceLength >= top.length && !rawLang) {
+            innerStack.pop();
+            result.push(line);
+            continue;
+          } else {
+            // Literal text inside inner code block
+            result.push(line);
+            continue;
+          }
         } else {
-          stack.push({
-            char: fenceChar,
-            length: fenceLength,
-            isArtifact: false,
-            indent,
-          });
+          // innerStack is empty
+          if (rawLang) {
+            // Potential opening fence for inner block
+            const closeIndex = findMatchingCloseIndex(lines, i + 1, fenceChar, fenceLength);
+            // Only treat as inner block if it has a matching close AND there's another fence after it
+            if (closeIndex !== -1 && hasFenceAfter(lines, closeIndex + 1)) {
+              innerStack.push({ char: fenceChar, length: fenceLength });
+              result.push(line);
+              continue;
+            } else {
+              // No matching close, or no fence after. Treat as artifact close.
+              inArtifact = false;
+              result.push(`${artifactIndent}${"`".repeat(20)}`);
+              continue;
+            }
+          } else {
+            // Bare fence
+            // Close artifact
+            inArtifact = false;
+            result.push(`${artifactIndent}${"`".repeat(20)}`);
+            continue;
+          }
         }
       }
     }
@@ -302,26 +347,29 @@ function fixNestedMarkdownCodeBlocks(src: string): string {
     result.push(line);
   }
 
-  while (stack.length > 0) {
-    const top = stack.pop()!;
-    if (top.isArtifact) {
-      result.push(`${top.indent}${"`".repeat(20)}`);
-    }
+  if (inArtifact) {
+    result.push(`${artifactIndent}${"`".repeat(20)}`);
   }
 
   return result.join("\n");
 }
 
-export function renderMarkdown(content: string): string {
+export function renderMarkdown(
+  content: string,
+  options?: { isArtifactPreview?: boolean }
+): string {
   if (!content) return "";
   try {
-    const processedContent = fixNestedMarkdownCodeBlocks(content);
-    const rawHtml = marked.parse(processedContent) as string;
-    
+    const isArtifactPreview = !!options?.isArtifactPreview;
+    const processedContent = isArtifactPreview
+      ? content
+      : fixNestedMarkdownCodeBlocks(content);
+    const rawHtml = (marked.parse(processedContent, { isArtifactPreview } as any) as unknown) as string;
+
     if (typeof window === "undefined") {
       return rawHtml;
     }
-    
+
     return DOMPurify.sanitize(rawHtml, {
       ADD_ATTR: ["target", "rel"],
     });

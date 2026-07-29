@@ -10,11 +10,17 @@
     content: string;
     class?: string;
     streaming?: boolean;
+    isArtifactPreview?: boolean;
   }
 
-  const { content, class: className = "", streaming = false }: Props = $props();
+  const {
+    content,
+    class: className = "",
+    streaming = false,
+    isArtifactPreview = false,
+  }: Props = $props();
 
-  let html = $derived(renderMarkdown(content));
+  let html = $derived(renderMarkdown(content, { isArtifactPreview }));
 
   // Tooltip state for inline code snippets
   let tooltip = $state<{
@@ -170,7 +176,9 @@
 
       if (streaming && !card.hasAttribute("data-auto-opened")) {
         card.setAttribute("data-auto-opened", "true");
-        artifactStore.openArtifact({ id, code, language: lang, title });
+        if (!artifactStore.isOpen) {
+          artifactStore.openArtifact({ id, code, language: lang, title });
+        }
       }
 
       if (artifactStore.activeId === id) {

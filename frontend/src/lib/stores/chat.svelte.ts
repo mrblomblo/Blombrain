@@ -11,6 +11,7 @@ import {
 } from "../api";
 import { encodeToWav } from "../audio";
 import type { ChatMessage, ConversationSummary, AttachmentOut, ResponseStats } from "../types";
+import { artifactStore } from "./artifact.svelte";
 
 function makeId() {
   return crypto.randomUUID();
@@ -191,6 +192,7 @@ class ChatStore {
       this.pendingAttachments = [];
       if (detail.model) this.selectedModel = detail.model;
       this.loadBranchSelections(detail.id);
+      artifactStore.close();
     } catch (err) {
       console.error("[chatStore] failed to load conversation:", err);
     }
@@ -205,6 +207,7 @@ class ChatStore {
     this.pendingAttachments = [];
     this.branchSelections = {};
     this.selectedModel = null;
+    artifactStore.close();
   }
 
   /** Edit a message content in place (Save option) */
@@ -221,6 +224,7 @@ class ChatStore {
     try {
       const updated = await patchMessage(this.activeConversationId, msgId, contentToSave, attachmentIds);
       msg.attachments = updated.attachments;
+      artifactStore.close();
     } catch (err) {
       console.error("[chatStore] failed to edit message:", err);
     }
@@ -286,6 +290,7 @@ class ChatStore {
         this.newConversation();
       }
 
+      artifactStore.close();
       _invalidateConversations?.();
     } catch (err) {
       console.error("[chatStore] failed to process local message deletion:", err);
@@ -310,6 +315,7 @@ class ChatStore {
       };
       this.messages.push(newMsgObj);
       this.setBranchSelection(newBranchUserMsg.parentId, newBranchUserMsg.id);
+      artifactStore.close();
 
       const branchAttachmentIds = newBranchUserMsg.attachments?.map((a) => a.id) ?? attachmentIds;
       await this.triggerAssistantResponse(newBranchUserMsg, branchAttachmentIds);
@@ -556,6 +562,7 @@ class ChatStore {
     this.activeConversationTitle = "New conversation";
     this.pendingAttachments = [];
     this.branchSelections = {};
+    artifactStore.close();
   }
 }
 

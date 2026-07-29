@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ChevronLeft, ChevronRight } from "@lucide/svelte";
   import { chatStore } from "../stores/chat.svelte";
+  import { artifactStore } from "../stores/artifact.svelte";
 
   interface Props {
     parentId: string | null;
@@ -15,6 +16,7 @@
     if (currentIndex > 0) {
       const prevId = siblings[currentIndex - 1];
       chatStore.setBranchSelection(parentId, prevId);
+      artifactStore.close();
     }
   }
 
@@ -22,6 +24,7 @@
     if (currentIndex < siblings.length - 1) {
       const nextId = siblings[currentIndex + 1];
       chatStore.setBranchSelection(parentId, nextId);
+      artifactStore.close();
     }
   }
 </script>

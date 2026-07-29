@@ -307,7 +307,7 @@
       {#if artifactStore.language === "markdown" || artifactStore.language === "md"}
         <div class="h-full w-full overflow-auto bg-bg text-fg">
           <div class="p-6">
-            <Markdown content={debouncedCode} />
+            <Markdown content={debouncedCode} isArtifactPreview={true} />
           </div>
         </div>
       {:else}
