@@ -244,7 +244,7 @@
       ondrop={handleDrop}
       onclick={handleContainerClick}
       class="input-container relative flex flex-col rounded-xl border bg-bg-elevated p-2.5 cursor-text hover:border-accent transition-all duration-150 {isDragging
-        ? '!border-accent'
+        ? 'border-accent!'
         : ''} {floating ? 'shadow-lg' : 'shadow-sm'}"
     >
       {#if isDragging}
@@ -276,7 +276,9 @@
         onSubmit={handleSend}
         disabled={isUploading}
         disableSubmit={chatStore.isStreaming}
-        placeholder={chatStore.isStreaming ? "Typing next message..." : "Message Blombrain…"}
+        placeholder={chatStore.isStreaming
+          ? "Typing next message..."
+          : "Message Blombrain…"}
       />
 
       <!-- Bottom Action Bar Row -->
@@ -305,7 +307,7 @@
               variant="danger"
               onclick={() => chatStore.stop()}
               aria-label="Stop generating"
-              class="!px-3 !py-1.5 h-8 text-xs font-semibold"
+              class="px-3! py-1.5! h-8 text-xs font-semibold"
             >
               <Square size={13} />
               Stop
@@ -318,7 +320,7 @@
                 chatStore.pendingAttachments.length === 0) ||
                 isUploading}
               aria-label="Send message"
-              class="!px-3 !py-1.5 h-8 text-xs font-semibold"
+              class="px-3! py-1.5! h-8 text-xs font-semibold"
             >
               <Send size={13} />
               Send
