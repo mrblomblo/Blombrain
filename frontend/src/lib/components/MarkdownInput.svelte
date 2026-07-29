@@ -157,6 +157,7 @@
           },
           codeBlock: false,
           blockquote: false,
+          link: false,
         }),
         CustomBlockquote,
         CodeBlockLowlight.configure({
