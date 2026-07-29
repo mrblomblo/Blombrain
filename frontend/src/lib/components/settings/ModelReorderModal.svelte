@@ -217,7 +217,7 @@
                 type="button"
                 disabled={index === 0}
                 onclick={() => moveItem(index, "up")}
-                class="flex h-6 w-6 items-center justify-center rounded text-fg-subtle transition-colors hover:bg-bg hover:text-fg disabled:opacity-30"
+                class="flex h-6 w-6 items-center justify-center rounded text-fg-subtle transition-colors hover:bg-bg hover:text-fg cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
                 title="Move Up"
               >
                 <ArrowUp size={13} />
@@ -226,7 +226,7 @@
                 type="button"
                 disabled={index === items.length - 1}
                 onclick={() => moveItem(index, "down")}
-                class="flex h-6 w-6 items-center justify-center rounded text-fg-subtle transition-colors hover:bg-bg hover:text-fg disabled:opacity-30"
+                class="flex h-6 w-6 items-center justify-center rounded text-fg-subtle transition-colors hover:bg-bg hover:text-fg cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
                 title="Move Down"
               >
                 <ArrowDown size={13} />
