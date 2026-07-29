@@ -159,7 +159,7 @@ marked.use({
         <div class="text-sm font-semibold text-fg truncate">${cardTitle}</div>
         <div class="hidden sm:flex text-xs text-fg-muted items-center gap-1.5 mt-0.5">
           <span class="font-mono text-[11px] uppercase px-1.5 py-0.2 rounded bg-bg-inset border border-line">${rawLang}</span>
-          <span>Click to view artifact in side panel</span>
+          <span class="artifact-click-label">Click to view artifact in side panel</span>
         </div>
         <div class="flex sm:hidden text-xs text-fg-muted items-center gap-1.5 mt-0.5">
           <span class="font-mono text-[11px] uppercase px-1.5 py-0.2 rounded bg-bg-inset border border-line">${rawLang}</span>
@@ -167,15 +167,15 @@ marked.use({
       </div>
     </div>
     <button type="button" class="open-artifact-btn hidden sm:flex shrink-0 items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent transition-all hover:bg-accent hover:text-white shadow-xs">
-      <span>View Artifact</span>
-      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
+      <span class="btn-text">View Artifact</span>
+      <svg class="btn-icon w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
     </button>
   </div>
   <div class="flex sm:hidden items-center justify-between w-full border-t border-line/50 pt-2.5 mt-0.5">
-    <span class="text-xs text-fg-muted">Click to view artifact</span>
+    <span class="text-xs text-fg-muted artifact-mobile-click-label">Click to view artifact</span>
     <button type="button" class="open-artifact-btn shrink-0 flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent transition-all hover:bg-accent hover:text-white shadow-xs">
-      <span>View Artifact</span>
-      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
+      <span class="btn-text">View Artifact</span>
+      <svg class="btn-icon w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
     </button>
   </div>
 </div>`;
@@ -227,13 +227,13 @@ marked.use({
     ${config.iconSvg}
     <span>${config.title}</span>
   </div>
-  <div class="text-sm leading-relaxed text-fg [&>:first-child]:!mt-0 [&>:last-child]:!mb-0">
+  <div class="text-sm leading-relaxed text-fg *:first:mt-0! *:last:mb-0!">
     ${content}
   </div>
 </div>`;
       }
 
-      return `<blockquote class="my-3 border-l-3 border-bg-inset bg-bg-inset/45 px-3.5 py-2 rounded-l-xs rounded-r-md text-fg-muted italic [&>:first-child]:!mt-0 [&>:last-child]:!mb-0 [&>blockquote]:my-2 [&>blockquote]:border-bg-inset [&>blockquote]:bg-bg-inset/25">${innerHtml}</blockquote>`;
+      return `<blockquote class="my-3 border-l-3 border-bg-inset bg-bg-inset/45 px-3.5 py-2 rounded-l-xs rounded-r-md text-fg-muted italic *:first:mt-0! *:last:mb-0! [&>blockquote]:my-2 [&>blockquote]:border-bg-inset [&>blockquote]:bg-bg-inset/25">${innerHtml}</blockquote>`;
     },
     codespan({ text }: { text: string }) {
       return `<code class="inline-code cursor-pointer rounded-sm border border-line bg-bg-elevated px-1.5 py-0.5 text-[0.85em] font-mono text-fg transition-colors hover:border-accent/40 hover:bg-bg-hover">${escapeHtml(text)}</code>`;

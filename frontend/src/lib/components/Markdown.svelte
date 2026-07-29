@@ -160,11 +160,15 @@
 
   $effect(() => {
     const _html = html;
+    const activeId = artifactStore.activeId;
+    const isOpen = artifactStore.isOpen;
     if (!containerEl) return;
 
-    const artifactCards = containerEl.querySelectorAll<HTMLElement>(".artifact-card");
+    const artifactCards =
+      containerEl.querySelectorAll<HTMLElement>(".artifact-card");
     artifactCards.forEach((card, index) => {
-      const id = card.getAttribute("data-artifact-id") || `${instanceId}-${index}`;
+      const id =
+        card.getAttribute("data-artifact-id") || `${instanceId}-${index}`;
       if (!card.hasAttribute("data-artifact-id")) {
         card.setAttribute("data-artifact-id", id);
       }
@@ -176,13 +180,38 @@
 
       if (streaming && !card.hasAttribute("data-auto-opened")) {
         card.setAttribute("data-auto-opened", "true");
-        if (!artifactStore.isOpen) {
+        if (!isOpen) {
           artifactStore.openArtifact({ id, code, language: lang, title });
         }
       }
 
-      if (artifactStore.activeId === id) {
+      const isActive = isOpen && activeId === id;
+      if (isActive) {
         artifactStore.updateCode(id, code, lang);
+      }
+
+      // Update button text and labels reactively
+      const btnTexts = card.querySelectorAll<HTMLElement>(".btn-text");
+      btnTexts.forEach((span) => {
+        span.textContent = isActive ? "Close Artifact" : "View Artifact";
+      });
+
+      const clickLabel = card.querySelector<HTMLElement>(
+        ".artifact-click-label",
+      );
+      if (clickLabel) {
+        clickLabel.textContent = isActive
+          ? "Click to close artifact"
+          : "Click to view artifact in side panel";
+      }
+
+      const mobileClickLabel = card.querySelector<HTMLElement>(
+        ".artifact-mobile-click-label",
+      );
+      if (mobileClickLabel) {
+        mobileClickLabel.textContent = isActive
+          ? "Click to close artifact"
+          : "Click to view artifact";
       }
     });
   });
@@ -195,12 +224,17 @@
     if (artifactCard) {
       e.preventDefault();
       const id = artifactCard.getAttribute("data-artifact-id") || "";
-      const b64Code = artifactCard.getAttribute("data-artifact-code") || "";
-      const code = b64Code ? decodeBase64(b64Code) : "";
-      const lang = artifactCard.getAttribute("data-artifact-lang") || "html";
-      const title = artifactCard.getAttribute("data-artifact-title") || "Artifact";
+      if (artifactStore.isOpen && artifactStore.activeId === id) {
+        artifactStore.close();
+      } else {
+        const b64Code = artifactCard.getAttribute("data-artifact-code") || "";
+        const code = b64Code ? decodeBase64(b64Code) : "";
+        const lang = artifactCard.getAttribute("data-artifact-lang") || "html";
+        const title =
+          artifactCard.getAttribute("data-artifact-title") || "Artifact";
 
-      artifactStore.openArtifact({ id, code, language: lang, title });
+        artifactStore.openArtifact({ id, code, language: lang, title });
+      }
       return;
     }
 

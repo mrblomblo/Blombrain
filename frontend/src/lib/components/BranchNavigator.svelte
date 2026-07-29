@@ -41,7 +41,7 @@
       title="Previous version"
       class="flex h-5 w-5 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
     >
-      <ChevronLeft size={13} class="shrink-0 -translate-x-[1px]" />
+      <ChevronLeft size={13} class="shrink-0 -translate-x-px" />
     </button>
     <span
       class="px-0.5 text-[10px] font-mono text-fg-muted font-medium select-none"

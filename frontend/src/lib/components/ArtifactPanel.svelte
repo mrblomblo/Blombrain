@@ -39,23 +39,29 @@
   let srcDoc = $derived.by(() => {
     const code = debouncedCode;
     const CSP_META = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https:; font-src data: https:; connect-src 'none'; base-uri 'none'; form-action 'none';">`;
-    
+
     if (artifactStore.language === "svg") {
       return `<!DOCTYPE html><html><head><meta charset="utf-8"/>${CSP_META}<style>body{margin:0;padding:24px;display:flex;align-items:center;justify-content:center;min-height:100vh;background-color:#0d0f12;color:#e1e7ec;box-sizing:border-box;}svg{max-width:100%;height:auto;}</style></head><body>${code}</body></html>`;
     }
-    
+
     if (/<head[^>]*>/i.test(code)) {
       return code.replace(/(<head[^>]*>)/i, `$1\n${CSP_META}\n`);
     }
-    
+
     if (/<html[^>]*>/i.test(code)) {
-      return code.replace(/(<html[^>]*>)/i, `$1\n<head>\n${CSP_META}\n</head>\n`);
+      return code.replace(
+        /(<html[^>]*>)/i,
+        `$1\n<head>\n${CSP_META}\n</head>\n`,
+      );
     }
-    
+
     if (/<!doctype[^>]*>/i.test(code)) {
-      return code.replace(/(<!doctype[^>]*>)/i, `$1\n<head>\n${CSP_META}\n</head>\n`);
+      return code.replace(
+        /(<!doctype[^>]*>)/i,
+        `$1\n<head>\n${CSP_META}\n</head>\n`,
+      );
     }
-    
+
     return `<!DOCTYPE html>\n<html>\n<head>\n${CSP_META}\n</head>\n<body>\n${code}\n</body>\n</html>`;
   });
 
@@ -170,7 +176,7 @@
 >
   <!-- Top Bar / Header matching Chat header height and padding -->
   <div
-    class="flex min-h-[53px] shrink-0 items-center justify-between border-b border-line bg-bg-elevated px-4 py-2.5 z-30"
+    class="flex min-h-13.25 shrink-0 items-center justify-between border-b border-line bg-bg-elevated px-4 py-2.5 z-30"
   >
     <!-- Title & Language -->
     <div class="flex items-center gap-2.5 min-w-0">
