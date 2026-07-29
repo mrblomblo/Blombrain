@@ -16,7 +16,11 @@ const marked = new Marked(
     emptyLangClass: "hljs",
     langPrefix: "hljs language-",
     highlight(code, lang) {
-      const language = hljs.getLanguage(lang) ? lang : "";
+      const rawLang = (lang || "").trim().split(/\s+/)[0].toLowerCase();
+      if (rawLang === "html" || rawLang === "svg" || rawLang === "markdown" || rawLang === "md") {
+        return code;
+      }
+      const language = hljs.getLanguage(rawLang) ? rawLang : "";
       if (language) {
         return hljs.highlight(code, { language }).value;
       }
@@ -74,9 +78,52 @@ marked.use({
       return escapeHtml(text);
     },
     code({ text, lang }: { text: string; lang?: string }) {
-      const rawLang = (lang || "").trim().split(/\s+/)[0];
+      const rawLang = (lang || "").trim().split(/\s+/)[0].toLowerCase();
       const validLang = hljs.getLanguage(rawLang) ? rawLang : "";
       const displayLang = validLang || rawLang || "code";
+
+      if (rawLang === "html" || rawLang === "svg" || rawLang === "markdown" || rawLang === "md") {
+        let cardTitle = "HTML Web Content";
+        let iconSvg = `<svg class="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`;
+        if (rawLang === "svg") {
+          cardTitle = "SVG Graphic";
+          iconSvg = `<svg class="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="12 8 8 16 16 16"/></svg>`;
+        } else if (rawLang === "markdown" || rawLang === "md") {
+          cardTitle = "Markdown Document";
+          iconSvg = `<svg class="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>`;
+        }
+
+        return `<div class="artifact-card relative my-4 rounded-xl border border-line bg-bg-elevated p-3 sm:p-3.5 shadow-sm transition-all hover:border-accent group cursor-pointer flex flex-col gap-2.5" data-artifact-lang="${rawLang}" data-artifact-title="Artifact" data-artifact-code="${escapeHtml(text)}">
+  <div class="flex items-center justify-between w-full gap-3">
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/10 border border-accent/20">
+        ${iconSvg}
+      </div>
+      <div class="min-w-0">
+        <div class="text-sm font-semibold text-fg truncate">${cardTitle}</div>
+        <div class="hidden sm:flex text-xs text-fg-muted items-center gap-1.5 mt-0.5">
+          <span class="font-mono text-[11px] uppercase px-1.5 py-0.2 rounded bg-bg-inset border border-line">${rawLang}</span>
+          <span>Click to view artifact in side panel</span>
+        </div>
+        <div class="flex sm:hidden text-xs text-fg-muted items-center gap-1.5 mt-0.5">
+          <span class="font-mono text-[11px] uppercase px-1.5 py-0.2 rounded bg-bg-inset border border-line">${rawLang}</span>
+        </div>
+      </div>
+    </div>
+    <button type="button" class="open-artifact-btn hidden sm:flex shrink-0 items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent transition-all hover:bg-accent hover:text-white shadow-xs">
+      <span>View Artifact</span>
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
+    </button>
+  </div>
+  <div class="flex sm:hidden items-center justify-between w-full border-t border-line/50 pt-2.5 mt-0.5">
+    <span class="text-xs text-fg-muted">Click to view artifact</span>
+    <button type="button" class="open-artifact-btn shrink-0 flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent transition-all hover:bg-accent hover:text-white shadow-xs">
+      <span>View Artifact</span>
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
+    </button>
+  </div>
+</div>`;
+      }
 
       return `<div class="code-block-wrapper relative my-4 rounded-md border border-line shadow-sm group">
   <div style="position:absolute;inset:0 0 4.5rem 0;z-index:10;pointer-events:none;">
@@ -138,10 +185,64 @@ marked.use({
   },
 });
 
+function fixNestedMarkdownCodeBlocks(src: string): string {
+  const lines = src.split("\n");
+  const result: string[] = [];
+
+  let inMarkdownArtifact = false;
+  let artifactBacktickCount = 4;
+  let nestedDepth = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const match = line.match(/^(\s*)(`{3,}|~{3,})(\S+)?\s*$/);
+
+    if (match) {
+      const indent = match[1];
+      const ticks = match[2];
+      const rawLang = match[3]?.toLowerCase();
+
+      if (!inMarkdownArtifact) {
+        if (rawLang === "markdown" || rawLang === "md") {
+          inMarkdownArtifact = true;
+          nestedDepth = 1;
+          artifactBacktickCount = Math.max(ticks.length + 1, 4);
+          const newTicks = "`".repeat(artifactBacktickCount);
+          result.push(`${indent}${newTicks}${rawLang}`);
+          continue;
+        }
+      } else {
+        if (rawLang) {
+          nestedDepth++;
+        } else {
+          if (nestedDepth > 1) {
+            nestedDepth--;
+          } else {
+            inMarkdownArtifact = false;
+            nestedDepth = 0;
+            const newTicks = "`".repeat(artifactBacktickCount);
+            result.push(`${indent}${newTicks}`);
+            continue;
+          }
+        }
+      }
+    }
+
+    result.push(line);
+  }
+
+  if (inMarkdownArtifact) {
+    result.push("`".repeat(artifactBacktickCount));
+  }
+
+  return result.join("\n");
+}
+
 export function renderMarkdown(content: string): string {
   if (!content) return "";
   try {
-    return marked.parse(content) as string;
+    const processedContent = fixNestedMarkdownCodeBlocks(content);
+    return marked.parse(processedContent) as string;
   } catch (err) {
     console.error("[markdown] parse error:", err);
     return content;

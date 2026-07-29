@@ -3,6 +3,7 @@
   import { fly } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
   import morphdom from "morphdom";
+  import { artifactStore } from "../stores/artifact.svelte";
 
   interface Props {
     content: string;
@@ -148,8 +149,49 @@
     };
   });
 
+  const instanceId = Math.random().toString(36).substring(2, 9);
+
+  $effect(() => {
+    const _html = html;
+    if (!containerEl) return;
+
+    const artifactCards = containerEl.querySelectorAll<HTMLElement>(".artifact-card");
+    artifactCards.forEach((card, index) => {
+      const id = card.getAttribute("data-artifact-id") || `${instanceId}-${index}`;
+      if (!card.hasAttribute("data-artifact-id")) {
+        card.setAttribute("data-artifact-id", id);
+      }
+
+      const code = card.getAttribute("data-artifact-code") || "";
+      const lang = card.getAttribute("data-artifact-lang") || "html";
+      const title = card.getAttribute("data-artifact-title") || "Artifact";
+
+      if (streaming && !card.hasAttribute("data-auto-opened")) {
+        card.setAttribute("data-auto-opened", "true");
+        artifactStore.openArtifact({ id, code, language: lang, title });
+      }
+
+      if (artifactStore.activeId === id) {
+        artifactStore.updateCode(id, code, lang);
+      }
+    });
+  });
+
   function handleContainerClick(e: MouseEvent) {
     const target = e.target as HTMLElement;
+
+    // Handle Artifact Card Click
+    const artifactCard = target.closest<HTMLElement>(".artifact-card");
+    if (artifactCard) {
+      e.preventDefault();
+      const id = artifactCard.getAttribute("data-artifact-id") || "";
+      const code = artifactCard.getAttribute("data-artifact-code") || "";
+      const lang = artifactCard.getAttribute("data-artifact-lang") || "html";
+      const title = artifactCard.getAttribute("data-artifact-title") || "Artifact";
+
+      artifactStore.openArtifact({ id, code, language: lang, title });
+      return;
+    }
 
     // Handle Code Block Copy Button
     const copyBtn = target.closest<HTMLButtonElement>(".copy-code-btn");

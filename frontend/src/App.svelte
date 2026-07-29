@@ -11,11 +11,13 @@
   import SettingsModal from "./lib/components/SettingsModal.svelte";
   import AttachmentModal from "./lib/components/AttachmentModal.svelte";
   import ConfirmModal from "./lib/components/ConfirmModal.svelte";
+  import ArtifactPanel from "./lib/components/ArtifactPanel.svelte";
   import {
     chatStore,
     registerConversationsInvalidator,
   } from "./lib/stores/chat.svelte";
   import { settingsStore } from "./lib/stores/settings.svelte";
+  import { artifactStore } from "./lib/stores/artifact.svelte";
 
   settingsStore.init();
 
@@ -76,6 +78,15 @@
       }
     }
   });
+  function panelFly(node: Element, { duration = 300 }) {
+    const isDesktop = window.matchMedia("(min-width: 1024px)").matches;
+    return fly(node, {
+      x: isDesktop ? 400 : 0,
+      y: isDesktop ? 0 : window.innerHeight || 600,
+      duration,
+      easing: quintOut,
+    });
+  }
 </script>
 
 <QueryClientProvider client={queryClient}>
@@ -110,41 +121,54 @@
       </div>
     {/if}
 
-    <!-- Main Content Pane -->
-    <main class="relative flex min-w-0 flex-1 flex-col h-full overflow-hidden">
-      <header
-        class="flex items-center justify-between border-b border-line px-2.5 py-2.5 bg-bg shrink-0 z-30"
-      >
-        <div class="flex items-center gap-3 min-w-0 flex-1">
-          <!-- Mobile Menu -->
-          <button
-            type="button"
-            onclick={() => (mobileSidebarOpen = true)}
-            aria-label="Open menu"
-            class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted md:hidden hover:bg-bg-elevated hover:text-fg"
-          >
-            <Menu size={18} />
-          </button>
-
-          <!-- Model Picker taking the place of conversation title -->
-          <div class="min-w-0">
-            <ModelPicker />
-          </div>
-        </div>
-      </header>
-
-      <ChatMessageList bottomPadding={inputHeight} />
-      {#if !isNewChat}
-        <div
-          bind:clientHeight={inputHeight}
-          in:fly={{ y: 50, duration: 350, opacity: 0, easing: quintOut }}
-          out:fly={{ y: 50, duration: 300, opacity: 0, easing: quintOut }}
-          class="absolute bottom-0 left-0 right-0 z-20 w-full"
+    <!-- Main Content Area with conditional Artifact Panel -->
+    <div class="relative flex min-w-0 flex-1 h-full overflow-hidden">
+      <!-- Main Content Pane -->
+      <main class="relative flex min-w-0 flex-1 flex-col h-full overflow-hidden {artifactStore.isOpen ? (artifactStore.isExpanded ? 'hidden' : 'hidden lg:flex') : ''}">
+        <header
+          class="flex items-center justify-between border-b border-line px-2.5 py-2.5 bg-bg shrink-0 z-30"
         >
-          <ChatInput />
-        </div>
+          <div class="flex items-center gap-3 min-w-0 flex-1">
+            <!-- Mobile Menu -->
+            <button
+              type="button"
+              onclick={() => (mobileSidebarOpen = true)}
+              aria-label="Open menu"
+              class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted md:hidden hover:bg-bg-elevated hover:text-fg"
+            >
+              <Menu size={18} />
+            </button>
+
+            <!-- Model Picker taking the place of conversation title -->
+            <div class="min-w-0">
+              <ModelPicker />
+            </div>
+          </div>
+        </header>
+
+        <ChatMessageList bottomPadding={inputHeight} />
+        {#if !isNewChat}
+          <div
+            bind:clientHeight={inputHeight}
+            in:fly={{ y: 50, duration: 350, opacity: 0, easing: quintOut }}
+            out:fly={{ y: 50, duration: 300, opacity: 0, easing: quintOut }}
+            class="absolute bottom-0 left-0 right-0 z-20 w-full"
+          >
+            <ChatInput />
+          </div>
+        {/if}
+      </main>
+
+      <!-- Artifact Side Panel (Fullscreen on mobile, side panel on desktop) -->
+      {#if artifactStore.isOpen}
+        <aside
+          transition:panelFly={{ duration: 300 }}
+          class="w-full {artifactStore.isExpanded ? '' : 'lg:w-[48%]'} shrink-0 h-full overflow-hidden z-30"
+        >
+          <ArtifactPanel />
+        </aside>
       {/if}
-    </main>
+    </div>
   </div>
 
   <SettingsModal open={settingsOpen} onClose={() => (settingsOpen = false)} />
