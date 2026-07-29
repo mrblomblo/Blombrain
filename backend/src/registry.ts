@@ -8,6 +8,7 @@ function rowToResolved(row: BackendRow): ResolvedBackend {
     baseUrl: row.base_url,
     prefix: row.prefix,
     apiKey: row.api_key ?? undefined,
+    apiType: (row.api_type as "openai" | "ollama") ?? "openai",
   };
 }
 
@@ -47,14 +48,15 @@ class BackendRegistry {
 
   add(body: BackendWriteBody & { id: string }): ResolvedBackend {
     db.prepare(
-      `INSERT INTO backends (id, name, base_url, prefix, api_key)
-       VALUES (@id, @name, @baseUrl, @prefix, @apiKey)`,
+      `INSERT INTO backends (id, name, base_url, prefix, api_key, api_type)
+       VALUES (@id, @name, @baseUrl, @prefix, @apiKey, @apiType)`,
     ).run({
       id: body.id,
       name: body.name,
       baseUrl: body.baseUrl.replace(/\/+$/, ""),
       prefix: body.prefix,
       apiKey: body.apiKey ?? null,
+      apiType: body.apiType ?? "openai",
     });
     return this.getById(body.id)!;
   }
@@ -64,7 +66,7 @@ class BackendRegistry {
     if (!existing) return undefined;
     db.prepare(
       `UPDATE backends
-       SET name = @name, base_url = @baseUrl, prefix = @prefix, api_key = @apiKey
+       SET name = @name, base_url = @baseUrl, prefix = @prefix, api_key = @apiKey, api_type = @apiType
        WHERE id = @id`,
     ).run({
       id,
@@ -72,6 +74,7 @@ class BackendRegistry {
       baseUrl: body.baseUrl.replace(/\/+$/, ""),
       prefix: body.prefix,
       apiKey: body.apiKey ?? null,
+      apiType: body.apiType ?? existing.apiType ?? "openai",
     });
     return this.getById(id)!;
   }

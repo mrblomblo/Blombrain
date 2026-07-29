@@ -22,6 +22,7 @@ function toBackendInfo(b: ResolvedBackend, status: BackendInfo["status"] = "unkn
     baseUrl: b.baseUrl,
     hasApiKey: Boolean(b.apiKey),
     status,
+    apiType: b.apiType ?? "openai",
   };
 }
 

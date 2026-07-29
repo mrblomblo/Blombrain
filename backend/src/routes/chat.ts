@@ -153,21 +153,45 @@ export async function chatRoutes(app: FastifyInstance) {
       if (settingRow.frequency_penalty !== null && settingRow.frequency_penalty !== undefined) extraParams.frequency_penalty = settingRow.frequency_penalty;
       if (settingRow.repeat_penalty !== null && settingRow.repeat_penalty !== undefined) extraParams.repeat_penalty = settingRow.repeat_penalty;
       if (settingRow.reasoning_effort) extraParams.reasoning_effort = settingRow.reasoning_effort;
+      if (settingRow.ctx_length !== null && settingRow.ctx_length !== undefined) {
+        extraParams.num_ctx = settingRow.ctx_length;
+      }
     }
 
-    const upstreamBody = {
-      ...rest,
-      ...extraParams,
-      model: rawModelId,
-      messages: outgoingMessages,
-      ...(finalTemperature !== undefined ? { temperature: finalTemperature } : {}),
-      stream: true,
-      stream_options: { include_usage: true },
-    };
+    const isOllama = backend.apiType === "ollama";
+    let upstreamUrl: string;
+    let upstreamBody: any;
+
+    if (isOllama) {
+      upstreamUrl = `${backend.baseUrl}/api/chat`;
+      const options: Record<string, any> = { ...extraParams };
+      if (finalTemperature !== undefined) options.temperature = finalTemperature;
+      if (extraParams.max_tokens !== undefined) {
+        options.num_predict = extraParams.max_tokens;
+      }
+
+      upstreamBody = {
+        model: rawModelId,
+        messages: outgoingMessages,
+        options,
+        stream: true,
+      };
+    } else {
+      upstreamUrl = `${backend.baseUrl}/v1/chat/completions`;
+      upstreamBody = {
+        ...rest,
+        ...extraParams,
+        model: rawModelId,
+        messages: outgoingMessages,
+        ...(finalTemperature !== undefined ? { temperature: finalTemperature } : {}),
+        stream: true,
+        stream_options: { include_usage: true },
+      };
+    }
 
     let upstream: Response;
     try {
-      upstream = await fetch(`${backend.baseUrl}/v1/chat/completions`, {
+      upstream = await fetch(upstreamUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -302,76 +326,138 @@ export async function chatRoutes(app: FastifyInstance) {
     reply.raw.on("close", onClientDisconnect);
     req.raw.on("aborted", onClientDisconnect);
 
+    const processContentDelta = (delta?: string, reasoning?: string, errMsg?: string) => {
+      if (errMsg) streamError = errMsg;
+
+      if (reasoning) {
+        if (!reasoningMode) {
+          reasoningMode = "oob";
+          thinkingStartMs = Date.now();
+          assistantContent += "<think>\n";
+        }
+        assistantContent += reasoning;
+      }
+
+      if (delta) {
+        if (reasoningMode === "oob") {
+          reasoningMode = null;
+          if (!usageStats) usageStats = {};
+          usageStats.thinkingTimeMs = Date.now() - (thinkingStartMs || startTime);
+          assistantContent += "\n</think>\n";
+        }
+
+        if (delta.includes("<think>")) {
+          reasoningMode = "inband";
+          thinkingStartMs = Date.now();
+        }
+
+        if (reasoningMode === "inband" && delta.includes("</think>")) {
+          reasoningMode = null;
+          if (!usageStats) usageStats = {};
+          usageStats.thinkingTimeMs = Date.now() - (thinkingStartMs || startTime);
+        }
+
+        assistantContent += delta;
+      }
+    };
+
     await new Promise<void>((resolve) => {
       nodeStream.on("data", (chunk: Buffer) => {
         const text = typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
         buffer += text;
 
-        if (!reply.raw.writableEnded) {
-          reply.raw.write(chunk);
-        }
+        if (isOllama) {
+          let lineIndex: number;
+          while ((lineIndex = buffer.indexOf("\n")) !== -1) {
+            const rawLine = buffer.slice(0, lineIndex).trim();
+            buffer = buffer.slice(lineIndex + 1);
+            if (!rawLine) continue;
 
-        let sepIndex: number;
-        while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
-          const rawEvent = buffer.slice(0, sepIndex);
-          buffer = buffer.slice(sepIndex + 2);
-          for (const line of rawEvent.split("\n")) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith("data:")) continue;
-            const payload = trimmed.slice(5).trim();
-            if (payload === "[DONE]") continue;
             try {
-              const parsed = JSON.parse(payload);
-              const delta: string | undefined = parsed?.choices?.[0]?.delta?.content;
-              const reasoning: string | undefined =
-                parsed?.choices?.[0]?.delta?.reasoning_content ||
-                parsed?.choices?.[0]?.delta?.reasoning ||
-                parsed?.choices?.[0]?.delta?.thinking_content ||
-                parsed?.choices?.[0]?.delta?.thinking;
+              const parsed = JSON.parse(rawLine);
+              const delta: string | undefined = parsed?.message?.content;
+              const reasoning: string | undefined = parsed?.message?.thinking;
 
-              if (reasoning) {
-                if (!reasoningMode) {
-                  reasoningMode = "oob";
-                  thinkingStartMs = Date.now();
-                  assistantContent += "<think>\n";
+              const ssePayload = {
+                id: `chatcmpl-ollama-${Date.now()}`,
+                object: "chat.completion.chunk",
+                created: Math.floor(Date.now() / 1000),
+                model: rawModelId,
+                choices: [
+                  {
+                    index: 0,
+                    delta: {
+                      ...(delta ? { content: delta } : {}),
+                      ...(reasoning ? { reasoning_content: reasoning } : {}),
+                    },
+                    finish_reason: parsed?.done ? (parsed?.done_reason ?? "stop") : null,
+                  },
+                ],
+                ...(parsed?.done ? {
+                  usage: {
+                    prompt_tokens: parsed?.prompt_eval_count,
+                    completion_tokens: parsed?.eval_count,
+                    total_tokens: (parsed?.prompt_eval_count ?? 0) + (parsed?.eval_count ?? 0),
+                  }
+                } : {}),
+              };
+
+              if (!reply.raw.writableEnded) {
+                reply.raw.write(`data: ${JSON.stringify(ssePayload)}\n\n`);
+                if (parsed?.done) {
+                  reply.raw.write("data: [DONE]\n\n");
                 }
-                assistantContent += reasoning;
               }
 
-              if (delta) {
-                if (reasoningMode === "oob") {
-                  reasoningMode = null;
-                  if (!usageStats) usageStats = {};
-                  usageStats.thinkingTimeMs = Date.now() - (thinkingStartMs || startTime);
-                  assistantContent += "\n</think>\n";
-                }
+              processContentDelta(delta, reasoning, parsed?.error);
 
-                if (delta.includes("<think>")) {
-                  reasoningMode = "inband";
-                  thinkingStartMs = Date.now();
-                }
-
-                if (reasoningMode === "inband" && delta.includes("</think>")) {
-                  reasoningMode = null;
-                  if (!usageStats) usageStats = {};
-                  usageStats.thinkingTimeMs = Date.now() - (thinkingStartMs || startTime);
-                }
-
-                assistantContent += delta;
-              }
-              const errMsg: string | undefined = parsed?.error?.message;
-              if (errMsg) streamError = errMsg;
-
-              const usage = parsed?.usage || parsed?.x_groq?.usage;
-              if (usage) {
+              if (parsed?.done) {
                 if (!usageStats) usageStats = {};
-                usageStats.promptTokens = usage.prompt_tokens ?? usageStats.promptTokens;
-                usageStats.completionTokens = usage.completion_tokens ?? usageStats.completionTokens;
-                usageStats.totalTokens = usage.total_tokens ?? usageStats.totalTokens;
+                usageStats.promptTokens = parsed?.prompt_eval_count ?? usageStats.promptTokens;
+                usageStats.completionTokens = parsed?.eval_count ?? usageStats.completionTokens;
+                usageStats.totalTokens = (parsed?.prompt_eval_count ?? 0) + (parsed?.eval_count ?? 0);
                 usageStats.durationMs = Date.now() - startTime;
               }
             } catch {
-              // Partial chunk
+              // Partial line
+            }
+          }
+        } else {
+          if (!reply.raw.writableEnded) {
+            reply.raw.write(chunk);
+          }
+
+          let sepIndex: number;
+          while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
+            const rawEvent = buffer.slice(0, sepIndex);
+            buffer = buffer.slice(sepIndex + 2);
+            for (const line of rawEvent.split("\n")) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith("data:")) continue;
+              const payload = trimmed.slice(5).trim();
+              if (payload === "[DONE]") continue;
+              try {
+                const parsed = JSON.parse(payload);
+                const delta: string | undefined = parsed?.choices?.[0]?.delta?.content;
+                const reasoning: string | undefined =
+                  parsed?.choices?.[0]?.delta?.reasoning_content ||
+                  parsed?.choices?.[0]?.delta?.reasoning ||
+                  parsed?.choices?.[0]?.delta?.thinking_content ||
+                  parsed?.choices?.[0]?.delta?.thinking;
+
+                processContentDelta(delta, reasoning, parsed?.error?.message);
+
+                const usage = parsed?.usage || parsed?.x_groq?.usage;
+                if (usage) {
+                  if (!usageStats) usageStats = {};
+                  usageStats.promptTokens = usage.prompt_tokens ?? usageStats.promptTokens;
+                  usageStats.completionTokens = usage.completion_tokens ?? usageStats.completionTokens;
+                  usageStats.totalTokens = usage.total_tokens ?? usageStats.totalTokens;
+                  usageStats.durationMs = Date.now() - startTime;
+                }
+              } catch {
+                // Partial chunk
+              }
             }
           }
         }

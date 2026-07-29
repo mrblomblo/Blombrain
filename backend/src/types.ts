@@ -9,6 +9,7 @@ export interface BackendRow {
   base_url: string;
   prefix: string;
   api_key: string | null;
+  api_type: "openai" | "ollama";
 }
 
 /** A backend after loading from DB with snake_case mapped to camelCase. */
@@ -18,6 +19,7 @@ export interface ResolvedBackend {
   baseUrl: string;
   prefix: string;
   apiKey?: string;
+  apiType?: "openai" | "ollama";
 }
 
 /** Public shape sent to the frontend -- never includes the API key. */
@@ -28,6 +30,7 @@ export interface BackendInfo {
   baseUrl: string;
   hasApiKey: boolean;
   status: "online" | "offline" | "unknown";
+  apiType: "openai" | "ollama";
 }
 
 /** Body accepted by POST /api/backends and PUT /api/backends/:id */
@@ -37,6 +40,7 @@ export interface BackendWriteBody {
   baseUrl: string;
   prefix: string;
   apiKey?: string;
+  apiType?: "openai" | "ollama";
 }
 
 export interface ModelInfo {

@@ -28,7 +28,8 @@ db.exec(`
     name      TEXT NOT NULL,
     base_url  TEXT NOT NULL,
     prefix    TEXT NOT NULL UNIQUE,
-    api_key   TEXT
+    api_key   TEXT,
+    api_type  TEXT NOT NULL DEFAULT 'openai'
   );
 
   -- Conversations
@@ -127,6 +128,14 @@ for (const col of columnsToAdd) {
       db.exec(`ALTER TABLE model_settings ADD COLUMN ${col.name} ${col.type}`);
     } catch (e) { }
   }
+}
+
+// Migration helper for backends.api_type
+const backendCols = (db.pragma("table_info(backends)") as { name: string }[]).map(c => c.name);
+if (!backendCols.includes("api_type")) {
+  try {
+    db.exec(`ALTER TABLE backends ADD COLUMN api_type TEXT NOT NULL DEFAULT 'openai'`);
+  } catch (e) { }
 }
 
 // Migration helper for messages.parent_id and messages.model

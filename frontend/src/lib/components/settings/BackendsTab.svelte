@@ -9,10 +9,16 @@
   } from "../../api";
   import type { BackendInfo } from "../../types";
   import { flip } from "svelte/animate";
-  import { slide } from "svelte/transition";
+  import { slide, fade } from "svelte/transition";
   import { quintOut } from "svelte/easing";
   import ToggleSwitch from "../ui/ToggleSwitch.svelte";
   import Button from "../ui/Button.svelte";
+  import Dropdown from "../ui/Dropdown.svelte";
+
+  const apiTypeOptions = [
+    { label: "OpenAI Compatible", value: "openai" },
+    { label: "Ollama Native", value: "ollama" },
+  ];
 
   const queryClient = useQueryClient();
 
@@ -30,6 +36,7 @@
   let formBaseUrl = $state("");
   let formPrefix = $state("");
   let formApiKey = $state("");
+  let formApiType = $state<"openai" | "ollama">("openai");
   let formClearKey = $state(false);
 
   let formError = $state<string | null>(null);
@@ -44,6 +51,7 @@
     formBaseUrl = "";
     formPrefix = "";
     formApiKey = "";
+    formApiType = "openai";
     formClearKey = false;
     formError = null;
   }
@@ -56,6 +64,7 @@
     formBaseUrl = b.baseUrl;
     formPrefix = b.prefix;
     formApiKey = "";
+    formApiType = b.apiType ?? "openai";
     formClearKey = false;
     formError = null;
   }
@@ -79,6 +88,7 @@
           baseUrl: formBaseUrl.trim(),
           prefix: formPrefix.trim(),
           apiKey: formApiKey.trim() || undefined,
+          apiType: formApiType,
         });
       } else if (formMode === "edit" && editingId) {
         await updateBackend(editingId, {
@@ -86,6 +96,7 @@
           baseUrl: formBaseUrl.trim(),
           prefix: formPrefix.trim(),
           apiKey: formClearKey ? "" : formApiKey.trim() || undefined,
+          apiType: formApiType,
         });
       }
       await queryClient.invalidateQueries({ queryKey: ["backends"] });
@@ -164,6 +175,14 @@
                 {b.baseUrl}
               </p>
             </div>
+            {#key b.apiType}
+              <span
+                transition:fade={{ duration: 200 }}
+                class="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 font-sans text-[10px] text-accent font-medium"
+              >
+                {b.apiType === "ollama" ? "Ollama" : "OpenAI"}
+              </span>
+            {/key}
             <span
               class="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle1"
             >
@@ -257,6 +276,15 @@
             type="url"
             placeholder="http://127.0.0.1:8080"
             class="h-8 rounded-md border border-line bg-bg px-3 font-mono text-sm text-fg focus-visible:border-accent transition-colors duration-200"
+          />
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label for="be-apitype" class="text-xs text-fg-muted">API Protocol</label>
+          <Dropdown
+            id="be-apitype"
+            bind:value={formApiType}
+            options={apiTypeOptions}
           />
         </div>
 
