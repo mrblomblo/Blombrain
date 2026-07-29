@@ -27,6 +27,11 @@ export async function fetchBackends(): Promise<BackendInfo[]> {
   return jsonOrThrow<BackendInfo[]>(res);
 }
 
+export async function fetchBackendProtocols(): Promise<import("./types").BackendProtocolInfo[]> {
+  const res = await fetch("/api/backends/protocols");
+  return jsonOrThrow<import("./types").BackendProtocolInfo[]>(res);
+}
+
 export async function createBackend(data: BackendCreateBody): Promise<BackendInfo> {
   const res = await fetch("/api/backends", {
     method: "POST",

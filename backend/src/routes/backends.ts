@@ -26,7 +26,14 @@ function toBackendInfo(b: ResolvedBackend, status: BackendInfo["status"] = "unkn
   };
 }
 
+import { getAllAdaptersInfo } from "../adapters/index.js";
+
 export async function backendsRoutes(app: FastifyInstance) {
+  /** GET /api/backends/protocols -- list supported API adapter protocols. */
+  app.get("/api/backends/protocols", async () => {
+    return getAllAdaptersInfo();
+  });
+
   /** GET /api/backends -- list all backends with live status ping. */
   app.get("/api/backends", async () => {
     const backends = backendRegistry.getAll();

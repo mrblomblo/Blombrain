@@ -5,7 +5,13 @@ export interface BackendInfo {
   baseUrl: string;
   hasApiKey: boolean;
   status: "online" | "offline" | "unknown";
-  apiType?: "openai" | "ollama";
+  apiType?: string;
+}
+
+export interface BackendProtocolInfo {
+  id: string;
+  name: string;
+  badgeLabel: string;
 }
 
 /** Body for POST /api/backends */
@@ -15,7 +21,7 @@ export interface BackendCreateBody {
   baseUrl: string;
   prefix: string;
   apiKey?: string;
-  apiType?: "openai" | "ollama";
+  apiType?: string;
 }
 
 /** Body for PUT /api/backends/:id */
@@ -24,7 +30,7 @@ export interface BackendUpdateBody {
   baseUrl: string;
   prefix: string;
   apiKey?: string;
-  apiType?: "openai" | "ollama";
+  apiType?: string;
 }
 
 export interface ModelInfo {

@@ -3,22 +3,18 @@
   import { X, Plus, Pencil, Trash2, Check, ChevronDown } from "@lucide/svelte";
   import {
     fetchBackends,
+    fetchBackendProtocols,
     createBackend,
     updateBackend,
     deleteBackend,
   } from "../../api";
   import type { BackendInfo } from "../../types";
   import { flip } from "svelte/animate";
-  import { slide, fade } from "svelte/transition";
+  import { slide } from "svelte/transition";
   import { quintOut } from "svelte/easing";
   import ToggleSwitch from "../ui/ToggleSwitch.svelte";
   import Button from "../ui/Button.svelte";
   import Dropdown from "../ui/Dropdown.svelte";
-
-  const apiTypeOptions = [
-    { label: "OpenAI Compatible", value: "openai" },
-    { label: "Ollama Native", value: "ollama" },
-  ];
 
   const queryClient = useQueryClient();
 
@@ -26,6 +22,22 @@
     queryKey: ["backends"],
     queryFn: fetchBackends,
   }));
+
+  const protocolsQuery = createQuery(() => ({
+    queryKey: ["backendProtocols"],
+    queryFn: fetchBackendProtocols,
+  }));
+
+  let apiTypeOptions = $derived(
+    protocolsQuery.data?.map((p) => ({ label: p.name, value: p.id })) ?? [
+      { label: "OpenAI Compatible", value: "openai" },
+      { label: "Ollama Native", value: "ollama" },
+    ]
+  );
+
+  let protocolMap = $derived(
+    new Map((protocolsQuery.data ?? []).map((p) => [p.id, p]))
+  );
 
   type FormMode = "idle" | "add" | "edit";
   let formMode = $state<FormMode>("idle");
@@ -36,7 +48,7 @@
   let formBaseUrl = $state("");
   let formPrefix = $state("");
   let formApiKey = $state("");
-  let formApiType = $state<"openai" | "ollama">("openai");
+  let formApiType = $state<string>("openai");
   let formClearKey = $state(false);
 
   let formError = $state<string | null>(null);
@@ -176,11 +188,11 @@
               </p>
             </div>
             {#key b.apiType}
+              {@const proto = protocolMap.get(b.apiType ?? "openai")}
               <span
-                transition:fade={{ duration: 200 }}
                 class="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 font-sans text-[10px] text-accent font-medium"
               >
-                {b.apiType === "ollama" ? "Ollama" : "OpenAI"}
+                {proto?.badgeLabel || b.apiType || "OpenAI"}
               </span>
             {/key}
             <span
@@ -280,7 +292,9 @@
         </div>
 
         <div class="flex flex-col gap-1">
-          <label for="be-apitype" class="text-xs text-fg-muted">API Protocol</label>
+          <label for="be-apitype" class="text-xs text-fg-muted"
+            >API Protocol</label
+          >
           <Dropdown
             id="be-apitype"
             bind:value={formApiType}

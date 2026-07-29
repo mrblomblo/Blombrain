@@ -6,6 +6,7 @@ import { backendRegistry } from "../registry.js";
 import { persistChatTurn } from "./conversations.js";
 import db from "../db.js";
 import type { AttachmentRow, ModelSettingRow } from "../types.js";
+import { getAdapter } from "../adapters/index.js";
 
 interface ChatCompletionBody {
   model: string;
@@ -158,46 +159,19 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
-    const isOllama = backend.apiType === "ollama";
-    let upstreamUrl: string;
-    let upstreamBody: any;
-
-    if (isOllama) {
-      upstreamUrl = `${backend.baseUrl}/api/chat`;
-      const options: Record<string, any> = { ...extraParams };
-      if (finalTemperature !== undefined) options.temperature = finalTemperature;
-      if (extraParams.max_tokens !== undefined) {
-        options.num_predict = extraParams.max_tokens;
-      }
-
-      upstreamBody = {
-        model: rawModelId,
-        messages: outgoingMessages,
-        options,
-        stream: true,
-      };
-    } else {
-      upstreamUrl = `${backend.baseUrl}/v1/chat/completions`;
-      upstreamBody = {
-        ...rest,
-        ...extraParams,
-        model: rawModelId,
-        messages: outgoingMessages,
-        ...(finalTemperature !== undefined ? { temperature: finalTemperature } : {}),
-        stream: true,
-        stream_options: { include_usage: true },
-      };
-    }
+    const adapter = getAdapter(backend.apiType);
+    const { url: upstreamUrl, init: requestInit } = adapter.buildRequest({
+      backend,
+      modelId: rawModelId,
+      messages: outgoingMessages,
+      extraParams,
+      temperature: finalTemperature,
+    });
 
     let upstream: Response;
     try {
       upstream = await fetch(upstreamUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(backend.apiKey ? { Authorization: `Bearer ${backend.apiKey}` } : {}),
-        },
-        body: JSON.stringify(upstreamBody),
+        ...requestInit,
         signal: abortController.signal,
       });
     } catch (err) {
@@ -256,8 +230,6 @@ export async function chatRoutes(app: FastifyInstance) {
     let hasPersisted = false;
 
     const nodeStream = Readable.fromWeb(upstream.body as import("stream/web").ReadableStream);
-    const decoder = new TextDecoder();
-    let buffer = "";
     let reasoningMode: "oob" | "inband" | null = null;
     let thinkingStartMs = 0;
 
@@ -361,25 +333,28 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     };
 
+    const parser = adapter.createStreamParser();
+
     await new Promise<void>((resolve) => {
       nodeStream.on("data", (chunk: Buffer) => {
-        const text = typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
-        buffer += text;
+        const events = parser(chunk);
+        for (const ev of events) {
+          if (ev.error) streamError = ev.error;
 
-        if (isOllama) {
-          let lineIndex: number;
-          while ((lineIndex = buffer.indexOf("\n")) !== -1) {
-            const rawLine = buffer.slice(0, lineIndex).trim();
-            buffer = buffer.slice(lineIndex + 1);
-            if (!rawLine) continue;
+          processContentDelta(ev.delta, ev.reasoning, ev.error);
 
-            try {
-              const parsed = JSON.parse(rawLine);
-              const delta: string | undefined = parsed?.message?.content;
-              const reasoning: string | undefined = parsed?.message?.thinking;
+          if (ev.usage) {
+            if (!usageStats) usageStats = {};
+            usageStats.promptTokens = ev.usage.promptTokens ?? usageStats.promptTokens;
+            usageStats.completionTokens = ev.usage.completionTokens ?? usageStats.completionTokens;
+            usageStats.totalTokens = ev.usage.totalTokens ?? usageStats.totalTokens;
+            usageStats.durationMs = Date.now() - startTime;
+          }
 
+          if (!reply.raw.writableEnded) {
+            if (ev.delta || ev.reasoning || ev.error) {
               const ssePayload = {
-                id: `chatcmpl-ollama-${Date.now()}`,
+                id: `chatcmpl-${userMessageId}`,
                 object: "chat.completion.chunk",
                 created: Math.floor(Date.now() / 1000),
                 model: rawModelId,
@@ -387,77 +362,27 @@ export async function chatRoutes(app: FastifyInstance) {
                   {
                     index: 0,
                     delta: {
-                      ...(delta ? { content: delta } : {}),
-                      ...(reasoning ? { reasoning_content: reasoning } : {}),
+                      ...(ev.delta ? { content: ev.delta } : {}),
+                      ...(ev.reasoning ? { reasoning_content: ev.reasoning } : {}),
                     },
-                    finish_reason: parsed?.done ? (parsed?.done_reason ?? "stop") : null,
+                    finish_reason: ev.isDone ? "stop" : null,
                   },
                 ],
-                ...(parsed?.done ? {
-                  usage: {
-                    prompt_tokens: parsed?.prompt_eval_count,
-                    completion_tokens: parsed?.eval_count,
-                    total_tokens: (parsed?.prompt_eval_count ?? 0) + (parsed?.eval_count ?? 0),
-                  }
-                } : {}),
+                ...(ev.usage
+                  ? {
+                      usage: {
+                        prompt_tokens: ev.usage.promptTokens,
+                        completion_tokens: ev.usage.completionTokens,
+                        total_tokens: ev.usage.totalTokens,
+                      },
+                    }
+                  : {}),
               };
-
-              if (!reply.raw.writableEnded) {
-                reply.raw.write(`data: ${JSON.stringify(ssePayload)}\n\n`);
-                if (parsed?.done) {
-                  reply.raw.write("data: [DONE]\n\n");
-                }
-              }
-
-              processContentDelta(delta, reasoning, parsed?.error);
-
-              if (parsed?.done) {
-                if (!usageStats) usageStats = {};
-                usageStats.promptTokens = parsed?.prompt_eval_count ?? usageStats.promptTokens;
-                usageStats.completionTokens = parsed?.eval_count ?? usageStats.completionTokens;
-                usageStats.totalTokens = (parsed?.prompt_eval_count ?? 0) + (parsed?.eval_count ?? 0);
-                usageStats.durationMs = Date.now() - startTime;
-              }
-            } catch {
-              // Partial line
+              reply.raw.write(`data: ${JSON.stringify(ssePayload)}\n\n`);
             }
-          }
-        } else {
-          if (!reply.raw.writableEnded) {
-            reply.raw.write(chunk);
-          }
 
-          let sepIndex: number;
-          while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
-            const rawEvent = buffer.slice(0, sepIndex);
-            buffer = buffer.slice(sepIndex + 2);
-            for (const line of rawEvent.split("\n")) {
-              const trimmed = line.trim();
-              if (!trimmed.startsWith("data:")) continue;
-              const payload = trimmed.slice(5).trim();
-              if (payload === "[DONE]") continue;
-              try {
-                const parsed = JSON.parse(payload);
-                const delta: string | undefined = parsed?.choices?.[0]?.delta?.content;
-                const reasoning: string | undefined =
-                  parsed?.choices?.[0]?.delta?.reasoning_content ||
-                  parsed?.choices?.[0]?.delta?.reasoning ||
-                  parsed?.choices?.[0]?.delta?.thinking_content ||
-                  parsed?.choices?.[0]?.delta?.thinking;
-
-                processContentDelta(delta, reasoning, parsed?.error?.message);
-
-                const usage = parsed?.usage || parsed?.x_groq?.usage;
-                if (usage) {
-                  if (!usageStats) usageStats = {};
-                  usageStats.promptTokens = usage.prompt_tokens ?? usageStats.promptTokens;
-                  usageStats.completionTokens = usage.completion_tokens ?? usageStats.completionTokens;
-                  usageStats.totalTokens = usage.total_tokens ?? usageStats.totalTokens;
-                  usageStats.durationMs = Date.now() - startTime;
-                }
-              } catch {
-                // Partial chunk
-              }
+            if (ev.isDone) {
+              reply.raw.write("data: [DONE]\n\n");
             }
           }
         }
