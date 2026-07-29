@@ -4,6 +4,7 @@
   import { cubicOut } from "svelte/easing";
   import morphdom from "morphdom";
   import { artifactStore } from "../stores/artifact.svelte";
+  import { decodeBase64 } from "../markdown";
 
   interface Props {
     content: string;
@@ -162,7 +163,8 @@
         card.setAttribute("data-artifact-id", id);
       }
 
-      const code = card.getAttribute("data-artifact-code") || "";
+      const b64Code = card.getAttribute("data-artifact-code") || "";
+      const code = b64Code ? decodeBase64(b64Code) : "";
       const lang = card.getAttribute("data-artifact-lang") || "html";
       const title = card.getAttribute("data-artifact-title") || "Artifact";
 
@@ -185,7 +187,8 @@
     if (artifactCard) {
       e.preventDefault();
       const id = artifactCard.getAttribute("data-artifact-id") || "";
-      const code = artifactCard.getAttribute("data-artifact-code") || "";
+      const b64Code = artifactCard.getAttribute("data-artifact-code") || "";
+      const code = b64Code ? decodeBase64(b64Code) : "";
       const lang = artifactCard.getAttribute("data-artifact-lang") || "html";
       const title = artifactCard.getAttribute("data-artifact-title") || "Artifact";
 

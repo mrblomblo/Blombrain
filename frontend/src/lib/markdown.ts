@@ -1,6 +1,25 @@
 import { Marked } from "marked";
 import { markedHighlight } from "marked-highlight";
 import hljs from "highlight.js";
+import DOMPurify from "dompurify";
+
+export function encodeBase64(str: string): string {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(str, "utf8").toString("base64");
+  }
+  const bytes = new TextEncoder().encode(str);
+  const binString = Array.from(bytes, (byte) => String.fromCodePoint(byte)).join("");
+  return btoa(binString);
+}
+
+export function decodeBase64(b64: string): string {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(b64, "base64").toString("utf8");
+  }
+  const binString = atob(b64);
+  const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0)!);
+  return new TextDecoder().decode(bytes);
+}
 
 function escapeHtml(str: string): string {
   return str
@@ -70,12 +89,46 @@ const ALERT_CONFIGS: Record<
   },
 };
 
+function isSafeUrl(url: string, isImage: boolean = false): boolean {
+  if (!url) return false;
+  const trimmed = url.trim().toLowerCase();
+
+  if (trimmed.startsWith("javascript:") || trimmed.startsWith("vbscript:") || trimmed.startsWith("file:")) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url, "http://dummy-base.local");
+    const allowedProtocols = isImage
+      ? ["http:", "https:", "data:"]
+      : ["http:", "https:", "mailto:"];
+    return allowedProtocols.includes(parsed.protocol);
+  } catch {
+    return !trimmed.includes(":");
+  }
+}
+
 marked.use({
   gfm: true,
   breaks: true,
   renderer: {
     html({ text }: { text: string }) {
       return escapeHtml(text);
+    },
+    link(this: any, { href, title, tokens }: { href: string; title?: string | null; tokens: any[] }) {
+      const text = this.parser.parseInline(tokens);
+      if (!isSafeUrl(href, false)) {
+        return `<span class="text-danger font-semibold select-none" title="Blocked unsafe link">[blocked unsafe link]</span>`;
+      }
+      const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+      return `<a href="${escapeHtml(href)}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`;
+    },
+    image({ href, title, text }: { href: string; title?: string | null; text: string }) {
+      if (!isSafeUrl(href, true)) {
+        return `<span class="text-danger font-semibold select-none" title="Blocked unsafe image">[blocked unsafe image]</span>`;
+      }
+      const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+      return `<img src="${escapeHtml(href)}" alt="${escapeHtml(text)}"${titleAttr} class="max-w-full rounded-md my-2" />`;
     },
     code({ text, lang }: { text: string; lang?: string }) {
       const rawLang = (lang || "").trim().split(/\s+/)[0].toLowerCase();
@@ -93,7 +146,7 @@ marked.use({
           iconSvg = `<svg class="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>`;
         }
 
-        return `<div class="artifact-card relative my-4 rounded-xl border border-line bg-bg-elevated p-3 sm:p-3.5 shadow-sm transition-all hover:border-accent group cursor-pointer flex flex-col gap-2.5" data-artifact-lang="${rawLang}" data-artifact-title="Artifact" data-artifact-code="${escapeHtml(text)}">
+        return `<div class="artifact-card relative my-4 rounded-xl border border-line bg-bg-elevated p-3 sm:p-3.5 shadow-sm transition-all hover:border-accent group cursor-pointer flex flex-col gap-2.5" data-artifact-lang="${rawLang}" data-artifact-title="Artifact" data-artifact-code="${encodeBase64(text)}">
   <div class="flex items-center justify-between w-full gap-3">
     <div class="flex items-center gap-3 min-w-0">
       <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/10 border border-accent/20">
@@ -189,41 +242,59 @@ function fixNestedMarkdownCodeBlocks(src: string): string {
   const lines = src.split("\n");
   const result: string[] = [];
 
-  let inMarkdownArtifact = false;
-  let artifactBacktickCount = 4;
-  let nestedDepth = 0;
+  const stack: Array<{
+    char: string;
+    length: number;
+    isArtifact: boolean;
+    indent: string;
+  }> = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const match = line.match(/^(\s*)(`{3,}|~{3,})(\S+)?\s*$/);
+    const fenceMatch = line.match(/^( {0,3})(`{3,}|~{3,})(.*)$/);
 
-    if (match) {
-      const indent = match[1];
-      const ticks = match[2];
-      const rawLang = match[3]?.toLowerCase();
+    if (fenceMatch) {
+      const indent = fenceMatch[1];
+      const fenceStr = fenceMatch[2];
+      const fenceChar = fenceStr[0];
+      const fenceLength = fenceStr.length;
+      const rest = fenceMatch[3].trim();
+      const rawLang = rest.split(/\s+/)[0].toLowerCase();
 
-      if (!inMarkdownArtifact) {
-        if (rawLang === "markdown" || rawLang === "md") {
-          inMarkdownArtifact = true;
-          nestedDepth = 1;
-          artifactBacktickCount = Math.max(ticks.length + 1, 4);
-          const newTicks = "`".repeat(artifactBacktickCount);
-          result.push(`${indent}${newTicks}${rawLang}`);
-          continue;
-        }
-      } else {
-        if (rawLang) {
-          nestedDepth++;
-        } else {
-          if (nestedDepth > 1) {
-            nestedDepth--;
-          } else {
-            inMarkdownArtifact = false;
-            nestedDepth = 0;
-            const newTicks = "`".repeat(artifactBacktickCount);
-            result.push(`${indent}${newTicks}`);
+      if (stack.length > 0) {
+        const top = stack[stack.length - 1];
+
+        if (fenceChar === top.char && fenceLength >= top.length && !rawLang) {
+          stack.pop();
+          if (top.isArtifact) {
+            result.push(`${indent}${"`".repeat(20)}`);
             continue;
           }
+        } else if (rawLang) {
+          stack.push({
+            char: fenceChar,
+            length: fenceLength,
+            isArtifact: false,
+            indent,
+          });
+        }
+      } else {
+        if (rawLang === "markdown" || rawLang === "md") {
+          stack.push({
+            char: fenceChar,
+            length: fenceLength,
+            isArtifact: true,
+            indent,
+          });
+          result.push(`${indent}${"`".repeat(20)}${rawLang}`);
+          continue;
+        } else {
+          stack.push({
+            char: fenceChar,
+            length: fenceLength,
+            isArtifact: false,
+            indent,
+          });
         }
       }
     }
@@ -231,8 +302,11 @@ function fixNestedMarkdownCodeBlocks(src: string): string {
     result.push(line);
   }
 
-  if (inMarkdownArtifact) {
-    result.push("`".repeat(artifactBacktickCount));
+  while (stack.length > 0) {
+    const top = stack.pop()!;
+    if (top.isArtifact) {
+      result.push(`${top.indent}${"`".repeat(20)}`);
+    }
   }
 
   return result.join("\n");
@@ -242,9 +316,17 @@ export function renderMarkdown(content: string): string {
   if (!content) return "";
   try {
     const processedContent = fixNestedMarkdownCodeBlocks(content);
-    return marked.parse(processedContent) as string;
+    const rawHtml = marked.parse(processedContent) as string;
+    
+    if (typeof window === "undefined") {
+      return rawHtml;
+    }
+    
+    return DOMPurify.sanitize(rawHtml, {
+      ADD_ATTR: ["target", "rel"],
+    });
   } catch (err) {
     console.error("[markdown] parse error:", err);
-    return content;
+    return escapeHtml(content);
   }
 }
