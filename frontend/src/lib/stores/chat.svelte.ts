@@ -336,6 +336,7 @@ class ChatStore {
     const userParentMsg = this.messages.find((m) => m.id === asstMsg.parentId);
     if (!userParentMsg) return;
 
+    artifactStore.close();
     const attachmentIds = userParentMsg.attachments?.map((a) => a.id);
     await this.triggerAssistantResponse(userParentMsg, attachmentIds);
   }
