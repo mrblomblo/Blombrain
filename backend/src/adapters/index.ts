@@ -1,10 +1,12 @@
 import type { ApiAdapter } from "./types.js";
 import { openAIAdapter } from "./openai.js";
 import { ollamaAdapter } from "./ollama.js";
+import { lmStudioAdapter } from "./lmstudio.js";
 
 const adapters: Record<string, ApiAdapter> = {
   [openAIAdapter.id]: openAIAdapter,
   [ollamaAdapter.id]: ollamaAdapter,
+  [lmStudioAdapter.id]: lmStudioAdapter,
 };
 
 export function getAdapter(id?: string): ApiAdapter {
