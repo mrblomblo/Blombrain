@@ -62,7 +62,6 @@ export async function modelsRoutes(app: FastifyInstance) {
         icon: setting.icon ?? undefined,
         seed: setting.seed ?? undefined,
         reasoningEffort: setting.reasoning_effort ?? undefined,
-        thinking: Boolean(setting.thinking),
         maxTokens: setting.max_tokens ?? undefined,
         topK: setting.top_k ?? undefined,
         topP: setting.top_p ?? undefined,
@@ -97,7 +96,6 @@ export async function modelsRoutes(app: FastifyInstance) {
         icon: p.icon ?? undefined,
         seed: p.seed ?? undefined,
         reasoningEffort: p.reasoning_effort ?? undefined,
-        thinking: Boolean(p.thinking),
         maxTokens: p.max_tokens ?? undefined,
         topK: p.top_k ?? undefined,
         topP: p.top_p ?? undefined,
@@ -121,7 +119,7 @@ export async function modelsRoutes(app: FastifyInstance) {
   app.post<{ Body: ModelSettingWriteBody }>("/api/models", async (req, reply) => {
     const {
       name, baseModelId, systemPrompt, canImage, canAudio, canVideo, temperature,
-      icon, seed, reasoningEffort, thinking, maxTokens, topK, topP, minP,
+      icon, seed, reasoningEffort, maxTokens, topK, topP, minP,
       presencePenalty, frequencyPenalty, repeatPenalty, ctxLength, isHidden, sortOrder, isDefault
     } = req.body;
     if (!name || !baseModelId) {
@@ -136,11 +134,11 @@ export async function modelsRoutes(app: FastifyInstance) {
     db.prepare(`
       INSERT INTO model_settings (
         id, is_preset, name, base_model_id, system_prompt, can_image, can_audio, can_video, temperature,
-        icon, seed, reasoning_effort, thinking, max_tokens, top_k, top_p, min_p,
+        icon, seed, reasoning_effort, max_tokens, top_k, top_p, min_p,
         presence_penalty, frequency_penalty, repeat_penalty, ctx_length,
         is_hidden, sort_order, is_default
       )
-      VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       name,
@@ -153,7 +151,6 @@ export async function modelsRoutes(app: FastifyInstance) {
       icon ?? null,
       seed ?? null,
       reasoningEffort ?? null,
-      thinking ? 1 : 0,
       maxTokens ?? null,
       topK ?? null,
       topP ?? null,
@@ -180,7 +177,6 @@ export async function modelsRoutes(app: FastifyInstance) {
       icon,
       seed,
       reasoningEffort,
-      thinking: Boolean(thinking),
       maxTokens,
       topK,
       topP,
@@ -233,7 +229,7 @@ export async function modelsRoutes(app: FastifyInstance) {
 
     const {
       name, baseModelId, systemPrompt, canImage, canAudio, canVideo, temperature, isPreset,
-      icon, seed, reasoningEffort, thinking, maxTokens, topK, topP, minP,
+      icon, seed, reasoningEffort, maxTokens, topK, topP, minP,
       presencePenalty, frequencyPenalty, repeatPenalty, ctxLength,
       isHidden, sortOrder, isDefault
     } = req.body;
@@ -261,7 +257,7 @@ export async function modelsRoutes(app: FastifyInstance) {
       db.prepare(`
         UPDATE model_settings
         SET name = ?, base_model_id = ?, system_prompt = ?, can_image = ?, can_audio = ?, can_video = ?, temperature = ?,
-            icon = ?, seed = ?, reasoning_effort = ?, thinking = ?, max_tokens = ?, top_k = ?, top_p = ?, min_p = ?,
+            icon = ?, seed = ?, reasoning_effort = ?, max_tokens = ?, top_k = ?, top_p = ?, min_p = ?,
             presence_penalty = ?, frequency_penalty = ?, repeat_penalty = ?, ctx_length = ?,
             is_hidden = ?, sort_order = ?, is_default = ?
         WHERE id = ?
@@ -276,7 +272,6 @@ export async function modelsRoutes(app: FastifyInstance) {
         icon !== undefined ? icon : existing.icon,
         seed !== undefined ? seed : existing.seed,
         reasoningEffort !== undefined ? reasoningEffort : existing.reasoning_effort,
-        thinking !== undefined ? (thinking ? 1 : 0) : existing.thinking,
         maxTokens !== undefined ? maxTokens : existing.max_tokens,
         topK !== undefined ? topK : existing.top_k,
         topP !== undefined ? topP : existing.top_p,
@@ -294,11 +289,11 @@ export async function modelsRoutes(app: FastifyInstance) {
       db.prepare(`
         INSERT INTO model_settings (
           id, is_preset, name, base_model_id, system_prompt, can_image, can_audio, can_video, temperature,
-          icon, seed, reasoning_effort, thinking, max_tokens, top_k, top_p, min_p,
+          icon, seed, reasoning_effort, max_tokens, top_k, top_p, min_p,
           presence_penalty, frequency_penalty, repeat_penalty, ctx_length,
           is_hidden, sort_order, is_default
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         modelId,
         isPreset ? 1 : 0,
@@ -312,7 +307,6 @@ export async function modelsRoutes(app: FastifyInstance) {
         icon ?? null,
         seed ?? null,
         reasoningEffort ?? null,
-        thinking ? 1 : 0,
         maxTokens ?? null,
         topK ?? null,
         topP ?? null,

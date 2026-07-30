@@ -69,12 +69,40 @@ export const lmStudioAdapter: ApiAdapter = {
     };
 
     // Map caller-supplied extra parameters to the native API field names.
+    if (extraParams.num_ctx !== undefined) {
+      body.context_length = extraParams.num_ctx;
+    }
+
+    // Per the docs, the native API's only reasoning-related field is
+    // `reasoning`, an enum of "off" | "low" | "medium" | "high" | "on".
+    // There is no `reasoning_effort` field in this API — accept either
+    // `extraParams.reasoning` (already in the docs' vocabulary) or the more
+    // conventional `extraParams.reasoning_effort` (used by other adapters)
+    // and normalize both onto the field LM Studio actually expects.
+    const reasoningParam = extraParams.reasoning ?? extraParams.reasoning_effort;
+    if (reasoningParam !== undefined && reasoningParam !== null) {
+      const eff = String(reasoningParam).toLowerCase();
+      if (eff === "yes" || eff === "true") {
+        body.reasoning = "on";
+      } else if (eff === "no" || eff === "false" || eff === "none") {
+        body.reasoning = "off";
+      } else if (eff === "off" || eff === "low" || eff === "medium" || eff === "high" || eff === "on") {
+        body.reasoning = eff;
+      }
+      // Any other value is left unset so LM Studio falls back to its
+      // automatically-chosen default for the model, per the docs.
+    }
     if (extraParams.top_p !== undefined) body.top_p = extraParams.top_p;
     if (extraParams.top_k !== undefined) body.top_k = extraParams.top_k;
     if (extraParams.min_p !== undefined) body.min_p = extraParams.min_p;
     if (extraParams.repeat_penalty !== undefined) body.repeat_penalty = extraParams.repeat_penalty;
     if (extraParams.max_tokens !== undefined) body.max_output_tokens = extraParams.max_tokens;
-    if (extraParams.reasoning_effort !== undefined) body.reasoning = extraParams.reasoning_effort;
+
+    // `integrations`: plugins (e.g. pre-installed MCP servers referenced by
+    // id) and/or ephemeral MCP servers defined inline for this request.
+    if (Array.isArray(extraParams.integrations) && extraParams.integrations.length > 0) {
+      body.integrations = extraParams.integrations;
+    }
 
     return {
       url: `${baseUrl}/api/v1/chat`,
@@ -158,11 +186,50 @@ export const lmStudioAdapter: ApiAdapter = {
             if (content) {
               events.push({ reasoning: content });
             }
+          } else if (type === "tool_call") {
+            // Documented output item type for MCP/plugin tool calls made
+            // via `integrations`. Not previously handled by the parser.
+            const toolName = parsed.tool;
+            if (toolName) {
+              const providerInfo = parsed.provider_info;
+              events.push({
+                toolCalls: [
+                  {
+                    function: {
+                      name: toolName,
+                      arguments: parsed.arguments,
+                    },
+                    ...(parsed.output !== undefined ? { output: parsed.output } : {}),
+                    ...(providerInfo
+                      ? {
+                        providerInfo: {
+                          type: providerInfo.type,
+                          ...(providerInfo.plugin_id !== undefined ? { pluginId: providerInfo.plugin_id } : {}),
+                          ...(providerInfo.server_label !== undefined
+                            ? { serverLabel: providerInfo.server_label }
+                            : {}),
+                        },
+                      }
+                      : {}),
+                  },
+                ],
+              });
+            }
+          } else if (type === "invalid_tool_call") {
+            // Documented output item type for a tool call the model made
+            // with an invalid name or invalid arguments.
+            const toolName = parsed.metadata?.tool_name;
+            const reason = parsed.reason || `Invalid tool call${toolName ? ` (${toolName})` : ""}`;
+            events.push({ error: reason });
           } else if (type === "chat.end") {
             const stats = parsed.result?.stats;
             if (stats) {
               const promptTokens = stats.input_tokens;
               const completionTokens = stats.total_output_tokens;
+              const reasoningTokens = stats.reasoning_output_tokens;
+              const tokensPerSecond = stats.tokens_per_second;
+              const timeToFirstTokenSeconds = stats.time_to_first_token_seconds;
+              const modelLoadTimeSeconds = stats.model_load_time_seconds;
               events.push({
                 usage: {
                   ...(promptTokens !== undefined ? { promptTokens } : {}),
@@ -170,6 +237,10 @@ export const lmStudioAdapter: ApiAdapter = {
                   ...(promptTokens !== undefined && completionTokens !== undefined
                     ? { totalTokens: promptTokens + completionTokens }
                     : {}),
+                  ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+                  ...(tokensPerSecond !== undefined ? { tokensPerSecond } : {}),
+                  ...(timeToFirstTokenSeconds !== undefined ? { timeToFirstTokenSeconds } : {}),
+                  ...(modelLoadTimeSeconds !== undefined ? { modelLoadTimeSeconds } : {}),
                 },
                 isDone: true,
               });

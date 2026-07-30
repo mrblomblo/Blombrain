@@ -1,4 +1,14 @@
-import type { ApiAdapter, BuildRequestParams, RequestConfig, StreamEvent } from "./types.js";
+import type {
+  ApiAdapter,
+  BuildRequestParams,
+  Logprob,
+  RequestConfig,
+  StreamEvent,
+  ToolCall,
+} from "./types.js";
+
+/** Reasoning-effort values accepted by the `reasoning_effort` field per the OpenAI docs. */
+const VALID_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 export const openAIAdapter: ApiAdapter = {
   id: "openai",
@@ -6,14 +16,39 @@ export const openAIAdapter: ApiAdapter = {
   badgeLabel: "OpenAI",
 
   buildRequest({ backend, modelId, messages, extraParams, temperature }: BuildRequestParams): RequestConfig {
-    const body = {
+    const body: Record<string, any> = {
       ...extraParams,
       model: modelId,
       messages,
       ...(temperature !== undefined ? { temperature } : {}),
       stream: true,
-      stream_options: { include_usage: true },
+      // Preserve any stream_options the caller already set (e.g. include_obfuscation)
+      // and just make sure include_usage is always on so we get a final usage chunk.
+      stream_options: { include_usage: true, ...(extraParams.stream_options ?? {}) },
     };
+
+    // `max_tokens` is deprecated in favor of `max_completion_tokens`, and is flatly
+    // incompatible with reasoning models (o-series, gpt-5.x). Translate it
+    // automatically so callers configured with the legacy field still work
+    // against reasoning models, unless the new field was already supplied.
+    if (body.max_tokens !== undefined && body.max_completion_tokens === undefined) {
+      body.max_completion_tokens = body.max_tokens;
+      delete body.max_tokens;
+    }
+
+    if (extraParams.reasoning_effort) {
+      const eff = String(extraParams.reasoning_effort).toLowerCase();
+      if (eff === "yes") {
+        body.reasoning_effort = "medium";
+      } else if (eff === "no") {
+        body.reasoning_effort = "none";
+      } else if (VALID_REASONING_EFFORTS.has(eff)) {
+        body.reasoning_effort = eff;
+      } else {
+        // Not a value the API accepts - drop it rather than risk a 400.
+        delete body.reasoning_effort;
+      }
+    }
 
     return {
       url: `${backend.baseUrl}/v1/chat/completions`,
@@ -31,6 +66,11 @@ export const openAIAdapter: ApiAdapter = {
   createStreamParser() {
     const decoder = new TextDecoder();
     let buffer = "";
+
+    // Tool-call arguments stream in as raw JSON text fragments across many chunks
+    // (name/id usually arrive once, up front). Buffer per tool-call index and only
+    // hand back parsed `arguments` once the accumulated text is valid JSON.
+    const toolCallAcc = new Map<number, { id?: string; name?: string; argsText: string }>();
 
     return (chunk: Buffer | string): StreamEvent[] => {
       const text = typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
@@ -54,29 +94,94 @@ export const openAIAdapter: ApiAdapter = {
 
           try {
             const parsed = JSON.parse(payload);
-            const delta: string | undefined = parsed?.choices?.[0]?.delta?.content;
+            // The final usage-only chunk (when stream_options.include_usage is set)
+            // has an empty `choices` array, so `choice` may legitimately be undefined.
+            const choice = parsed?.choices?.[0];
+            const delta = choice?.delta;
+
+            const deltaText: string | undefined = delta?.content;
+            // reasoning(_content)/thinking(_content) aren't OpenAI fields, but
+            // several "OpenAI compatible" backends (vLLM, DeepSeek, etc.) reuse this
+            // adapter and emit reasoning under one of these keys.
             const reasoning: string | undefined =
-              parsed?.choices?.[0]?.delta?.reasoning_content ||
-              parsed?.choices?.[0]?.delta?.reasoning ||
-              parsed?.choices?.[0]?.delta?.thinking_content ||
-              parsed?.choices?.[0]?.delta?.thinking;
+              delta?.reasoning_content || delta?.reasoning || delta?.thinking_content || delta?.thinking;
             const errMsg: string | undefined = parsed?.error?.message;
             const usage = parsed?.usage || parsed?.x_groq?.usage;
+            const finishReason: string | undefined = choice?.finish_reason;
+
+            let toolCalls: ToolCall[] | undefined;
+            if (Array.isArray(delta?.tool_calls)) {
+              for (const tc of delta.tool_calls) {
+                const idx: number = tc.index ?? 0;
+                const entry = toolCallAcc.get(idx) ?? { argsText: "" };
+                if (tc.id) entry.id = tc.id;
+                if (tc.function?.name) entry.name = tc.function.name;
+                if (tc.function?.arguments) entry.argsText += tc.function.arguments;
+                toolCallAcc.set(idx, entry);
+              }
+
+              toolCalls = [...toolCallAcc.entries()]
+                .sort(([a], [b]) => a - b)
+                .map(([, entry]) => {
+                  let args: Record<string, any> | undefined;
+                  try {
+                    args = entry.argsText ? JSON.parse(entry.argsText) : undefined;
+                  } catch {
+                    // Arguments haven't fully arrived yet; leave undefined for now.
+                  }
+                  return {
+                    function: {
+                      name: entry.name ?? "",
+                      ...(args !== undefined ? { arguments: args } : {}),
+                    },
+                  } satisfies ToolCall;
+                });
+            }
+
+            let logprobs: Logprob[] | undefined;
+            const rawLogprobs = choice?.logprobs?.content;
+            if (Array.isArray(rawLogprobs)) {
+              logprobs = rawLogprobs.map(
+                (lp: any): Logprob => ({
+                  token: lp.token,
+                  logprob: lp.logprob,
+                  ...(lp.bytes ? { bytes: lp.bytes } : {}),
+                  ...(Array.isArray(lp.top_logprobs)
+                    ? {
+                      topLogprobs: lp.top_logprobs.map((tlp: any) => ({
+                        token: tlp.token,
+                        logprob: tlp.logprob,
+                        ...(tlp.bytes ? { bytes: tlp.bytes } : {}),
+                      })),
+                    }
+                    : {}),
+                }),
+              );
+            }
 
             events.push({
-              ...(delta ? { delta } : {}),
+              ...(deltaText ? { delta: deltaText } : {}),
               ...(reasoning ? { reasoning } : {}),
               ...(errMsg ? { error: errMsg } : {}),
+              ...(delta?.role ? { role: delta.role } : {}),
+              ...(parsed?.model ? { model: parsed.model } : {}),
+              ...(parsed?.created ? { createdAt: new Date(parsed.created * 1000).toISOString() } : {}),
+              ...(parsed?.id ? { id: parsed.id } : {}),
+              ...(toolCalls && toolCalls.length ? { toolCalls } : {}),
+              ...(logprobs ? { logprobs } : {}),
               ...(usage
                 ? {
-                    usage: {
-                      promptTokens: usage.prompt_tokens,
-                      completionTokens: usage.completion_tokens,
-                      totalTokens: usage.total_tokens,
-                    },
-                  }
+                  usage: {
+                    promptTokens: usage.prompt_tokens,
+                    completionTokens: usage.completion_tokens,
+                    totalTokens: usage.total_tokens,
+                    ...(usage.completion_tokens_details?.reasoning_tokens !== undefined
+                      ? { reasoningTokens: usage.completion_tokens_details.reasoning_tokens }
+                      : {}),
+                  },
+                }
                 : {}),
-              ...(parsed?.choices?.[0]?.finish_reason ? { isDone: true } : {}),
+              ...(finishReason ? { isDone: true, doneReason: finishReason } : {}),
             });
           } catch {
             // Partial snippet, continue buffering

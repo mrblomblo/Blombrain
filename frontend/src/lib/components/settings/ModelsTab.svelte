@@ -56,7 +56,6 @@
   // Advanced Sampling & Generation Fields
   let formSeed = $state<number | undefined>(undefined);
   let formReasoningEffort = $state<string | undefined>(undefined);
-  let formThinking = $state(false);
   let formMaxTokens = $state<number | undefined>(undefined);
   let formTopK = $state<number | undefined>(undefined);
   let formTopP = $state<number | undefined>(undefined);
@@ -82,7 +81,6 @@
     formIcon = undefined;
     formSeed = undefined;
     formReasoningEffort = undefined;
-    formThinking = false;
     formMaxTokens = undefined;
     formTopK = undefined;
     formTopP = undefined;
@@ -108,7 +106,6 @@
     formIcon = baseModel.icon;
     formSeed = baseModel.seed;
     formReasoningEffort = baseModel.reasoningEffort;
-    formThinking = Boolean(baseModel.thinking);
     formMaxTokens = baseModel.maxTokens;
     formTopK = baseModel.topK;
     formTopP = baseModel.topP;
@@ -147,7 +144,6 @@
     formIcon = model.icon;
     formSeed = model.seed;
     formReasoningEffort = model.reasoningEffort;
-    formThinking = Boolean(model.thinking);
     formMaxTokens = model.maxTokens;
     formTopK = model.topK;
     formTopP = model.topP;
@@ -212,7 +208,6 @@
         icon: model.icon,
         seed: model.seed,
         reasoningEffort: model.reasoningEffort,
-        thinking: model.thinking,
         maxTokens: model.maxTokens,
         topK: model.topK,
         topP: model.topP,
@@ -268,41 +263,40 @@
 
     const payload: ModelSettingWriteBody = {
       name: formName.trim() || undefined,
-      systemPrompt: formSystemPrompt.trim() || undefined,
+      systemPrompt: formSystemPrompt.trim() || null,
       temperature:
         formTemperature !== undefined && !isNaN(formTemperature)
           ? formTemperature
-          : undefined,
+          : null,
       canImage: formCanImage,
       canAudio: formCanAudio,
       canVideo: formCanVideo,
-      icon: formIcon || undefined,
-      seed: formSeed !== undefined && !isNaN(formSeed) ? formSeed : undefined,
-      reasoningEffort: formReasoningEffort || undefined,
-      thinking: formThinking,
+      icon: formIcon || null,
+      seed: formSeed !== undefined && !isNaN(formSeed) ? formSeed : null,
+      reasoningEffort: formReasoningEffort || null,
       maxTokens:
         formMaxTokens !== undefined && !isNaN(formMaxTokens)
           ? formMaxTokens
-          : undefined,
-      topK: formTopK !== undefined && !isNaN(formTopK) ? formTopK : undefined,
-      topP: formTopP !== undefined && !isNaN(formTopP) ? formTopP : undefined,
-      minP: formMinP !== undefined && !isNaN(formMinP) ? formMinP : undefined,
+          : null,
+      topK: formTopK !== undefined && !isNaN(formTopK) ? formTopK : null,
+      topP: formTopP !== undefined && !isNaN(formTopP) ? formTopP : null,
+      minP: formMinP !== undefined && !isNaN(formMinP) ? formMinP : null,
       presencePenalty:
         formPresencePenalty !== undefined && !isNaN(formPresencePenalty)
           ? formPresencePenalty
-          : undefined,
+          : null,
       frequencyPenalty:
         formFrequencyPenalty !== undefined && !isNaN(formFrequencyPenalty)
           ? formFrequencyPenalty
-          : undefined,
+          : null,
       repeatPenalty:
         formRepeatPenalty !== undefined && !isNaN(formRepeatPenalty)
           ? formRepeatPenalty
-          : undefined,
+          : null,
       ctxLength:
         formCtxLength !== undefined && !isNaN(formCtxLength)
           ? formCtxLength
-          : undefined,
+          : null,
     };
 
     try {
@@ -975,18 +969,20 @@
                   />
                 </div>
 
-                <!-- Reasoning Effort -->
+                <!-- Reasoning -->
                 <div class="flex flex-col gap-1">
                   <label
                     for="me-reaseff"
                     class="text-[11px] font-medium text-fg-muted"
-                    >Reasoning Effort</label
+                    >Reasoning</label
                   >
                   <Dropdown
                     id="me-reaseff"
                     bind:value={formReasoningEffort}
                     options={[
                       { label: "Default", value: "" },
+                      { label: "Yes", value: "yes" },
+                      { label: "No", value: "no" },
                       { label: "Low", value: "low" },
                       { label: "Medium", value: "medium" },
                       { label: "High", value: "high" },
@@ -994,19 +990,6 @@
                     placeholder="Default"
                     buttonClass="h-7 bg-bg-elevated px-2"
                   />
-                </div>
-
-                <!-- Thinking Mode Toggle -->
-                <div class="flex flex-col justify-end gap-1 pb-1">
-                  <div class="flex items-center gap-2">
-                    <ToggleSwitch id="me-think" bind:checked={formThinking} />
-                    <label
-                      for="me-think"
-                      class="text-xs text-fg font-medium cursor-pointer"
-                    >
-                      Extended Reasoning / Thinking Mode
-                    </label>
-                  </div>
                 </div>
               </div>
             {/if}
