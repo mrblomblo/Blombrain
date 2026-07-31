@@ -14,13 +14,35 @@ import { uploadsRoutes } from "./routes/uploads.js";
 import { settingsRoutes } from "./routes/settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// --- Configuration (env-overridable; sane defaults for local dev) ---------
+
 const PORT = Number(process.env.PORT ?? 4300);
+if (!Number.isFinite(PORT) || PORT <= 0) {
+  throw new Error(`Invalid PORT: ${process.env.PORT}`);
+}
+
+// Defaults to localhost-only. Set HOST=0.0.0.0 (or a specific LAN/tailscale address)
+const HOST = process.env.HOST ?? "127.0.0.1";
+
+// Comma-separated list of allowed origins, or "*"/unset for any origin
+const CORS_ORIGIN = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN === "*"
+    ? true
+    : process.env.CORS_ORIGIN.split(",").map((o) => o.trim())
+  : true;
+
+const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB ?? 100);
+
+const LOG_LEVEL = process.env.LOG_LEVEL ?? "info";
 
 async function main() {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ logger: { level: LOG_LEVEL } });
 
-  await app.register(cors, { origin: true });
-  await app.register(fastifyMultipart, { limits: { fileSize: 100 * 1024 * 1024 } }); // 100MB max
+  await app.register(cors, { origin: CORS_ORIGIN });
+  await app.register(fastifyMultipart, {
+    limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 },
+  });
 
   await app.register(backendsRoutes);
   await app.register(modelsRoutes);
@@ -33,7 +55,9 @@ async function main() {
   // whole app can run as a single process. During `npm run dev` this
   // directory won't exist yet -- Vite's dev server handles the frontend
   // instead and proxies /api to us (see frontend/vite.config.ts).
-  const frontendDist = path.join(__dirname, "..", "..", "frontend", "dist");
+  const frontendDist =
+    process.env.FRONTEND_DIST ??
+    path.join(__dirname, "..", "..", "frontend", "dist");
   if (existsSync(frontendDist)) {
     await app.register(fastifyStatic, { root: frontendDist });
     app.setNotFoundHandler((req, reply) => {
@@ -50,7 +74,7 @@ async function main() {
     );
   }
 
-  await app.listen({ port: PORT, host: "0.0.0.0" });
+  await app.listen({ port: PORT, host: HOST });
 }
 
 main().catch((err) => {
