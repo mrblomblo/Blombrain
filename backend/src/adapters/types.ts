@@ -109,6 +109,7 @@ export interface BuildRequestParams {
   messages: any[];
   extraParams: Record<string, any>;
   temperature?: number;
+  onConfigFix?: (fixes: Record<string, any>) => void;
 }
 
 export interface RequestConfig {
@@ -121,11 +122,11 @@ export interface ApiAdapter {
   name: string;      // Full display name (e.g. "OpenAI Compatible")
   badgeLabel: string;// Short badge name (e.g. "OpenAI", "Ollama")
 
-  buildRequest(params: BuildRequestParams): RequestConfig;
+  buildRequest(params: BuildRequestParams): RequestConfig | Promise<RequestConfig>;
 
   /**
    * Returns a stateful parser function that consumes raw incoming stream chunks
    * (string or Buffer) and returns zero or more parsed StreamEvents.
    */
-  createStreamParser(): (chunk: Buffer | string) => StreamEvent[];
+  createStreamParser(params?: BuildRequestParams): (chunk: Buffer | string) => StreamEvent[];
 }

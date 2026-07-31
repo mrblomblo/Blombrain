@@ -160,13 +160,29 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     const adapter = getAdapter(backend.apiType);
-    const { url: upstreamUrl, init: requestInit } = adapter.buildRequest({
+    const buildParams = {
       backend,
       modelId: rawModelId,
       messages: outgoingMessages,
       extraParams,
       temperature: finalTemperature,
-    });
+      onConfigFix: (fixes: Record<string, any>) => {
+        try {
+          if (fixes.ctx_length !== undefined) {
+            const existing = db.prepare("SELECT id FROM model_settings WHERE id = ?").get(body.model);
+            if (existing) {
+              db.prepare("UPDATE model_settings SET ctx_length = ? WHERE id = ?").run(fixes.ctx_length, body.model);
+            } else {
+              db.prepare("INSERT INTO model_settings (id, is_preset, ctx_length) VALUES (?, 0, ?)").run(body.model, fixes.ctx_length);
+            }
+            console.log(`[blombrain] Auto-corrected ctx_length for model ${body.model} to ${fixes.ctx_length}`);
+          }
+        } catch (err) {
+          console.error("[blombrain] Failed to auto-correct model config:", err);
+        }
+      },
+    };
+    const { url: upstreamUrl, init: requestInit } = await adapter.buildRequest(buildParams);
 
     let upstream: Response;
     try {
@@ -333,7 +349,7 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     };
 
-    const parser = adapter.createStreamParser();
+    const parser = adapter.createStreamParser(buildParams);
 
     await new Promise<void>((resolve) => {
       nodeStream.on("data", (chunk: Buffer) => {
@@ -370,12 +386,12 @@ export async function chatRoutes(app: FastifyInstance) {
                 ],
                 ...(ev.usage
                   ? {
-                      usage: {
-                        prompt_tokens: ev.usage.promptTokens,
-                        completion_tokens: ev.usage.completionTokens,
-                        total_tokens: ev.usage.totalTokens,
-                      },
-                    }
+                    usage: {
+                      prompt_tokens: ev.usage.promptTokens,
+                      completion_tokens: ev.usage.completionTokens,
+                      total_tokens: ev.usage.totalTokens,
+                    },
+                  }
                   : {}),
               };
               reply.raw.write(`data: ${JSON.stringify(ssePayload)}\n\n`);

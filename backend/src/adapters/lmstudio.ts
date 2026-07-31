@@ -1,12 +1,73 @@
 import type { ApiAdapter, BuildRequestParams, RequestConfig, StreamEvent } from "./types.js";
 
+interface JitCacheEntry {
+  requestedCtx: number;
+  timestamp: number;
+}
+
+const jitModelCache = new Map<string, JitCacheEntry>();
+
+function buildJitCacheKey(baseUrl: string, rawModelId: string): string {
+  const normalizedBase = baseUrl.replace(/\/$/, "");
+  const normalizedModel = rawModelId.replace(/:\d+$/, "").toLowerCase();
+  return `${normalizedBase}::${normalizedModel}`;
+}
+
 export const lmStudioAdapter: ApiAdapter = {
   id: "lmstudio",
   name: "LM Studio Native",
   badgeLabel: "LM Studio",
 
-  buildRequest({ backend, modelId, messages, extraParams, temperature }: BuildRequestParams): RequestConfig {
+  async buildRequest({ backend, modelId, messages, extraParams, temperature, onConfigFix }: BuildRequestParams): Promise<RequestConfig> {
     const baseUrl = backend.baseUrl.replace(/\/$/, "");
+
+    const cleanModelId = modelId.replace(/:\d+$/, "");
+    let actualCtxLength = extraParams.num_ctx;
+
+    const jitCacheKey = buildJitCacheKey(baseUrl, modelId);
+    const cachedJit = jitModelCache.get(jitCacheKey);
+    const userEditedCtx =
+      extraParams.num_ctx !== undefined &&
+      cachedJit !== undefined &&
+      cachedJit.requestedCtx !== extraParams.num_ctx;
+
+    if (userEditedCtx) {
+      jitModelCache.set(jitCacheKey, { requestedCtx: extraParams.num_ctx as number, timestamp: Date.now() });
+    } else {
+      try {
+        const checkRes = await fetch(`${baseUrl}/api/v1/models`, {
+          signal: AbortSignal.timeout(1000),
+          headers: backend.apiKey ? { Authorization: `Bearer ${backend.apiKey}` } : undefined,
+        });
+        if (checkRes.ok) {
+          const data = (await checkRes.json()) as any;
+          const rawModels: any[] = Array.isArray(data?.models) ? data.models : [];
+          if (rawModels.length > 0) {
+            const lowerTarget = cleanModelId.toLowerCase();
+            const matchingModel =
+              rawModels.find((m) => typeof m?.key === "string" && m.key.toLowerCase().includes(lowerTarget)) ||
+              (rawModels.length === 1 ? rawModels[0] : null);
+
+            if (matchingModel && Array.isArray(matchingModel.loaded_instances) && matchingModel.loaded_instances.length > 0) {
+              const instance = matchingModel.loaded_instances[0];
+              const nCtx = instance?.config?.context_length;
+              if (typeof nCtx === "number" && extraParams.num_ctx !== undefined) {
+                if (nCtx !== extraParams.num_ctx) {
+                  console.log(`[blombrain] Auto-detected LM Studio loaded n_ctx=${nCtx} (requested ${extraParams.num_ctx})`);
+                  actualCtxLength = nCtx;
+                  if (onConfigFix) onConfigFix({ ctx_length: nCtx });
+                  jitModelCache.set(jitCacheKey, { requestedCtx: nCtx, timestamp: Date.now() });
+                } else {
+                  jitModelCache.set(jitCacheKey, { requestedCtx: extraParams.num_ctx, timestamp: Date.now() });
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        // Proceed with cleanModelId if fetch times out
+      }
+    }
 
     // Extract system prompt from system-role messages.
     const systemMessages = messages.filter(m => m.role === 'system');
@@ -58,7 +119,7 @@ export const lmStudioAdapter: ApiAdapter = {
     }
 
     const body: Record<string, any> = {
-      model: modelId,
+      model: cleanModelId,
       input,
       // We serialize the full history ourselves, so disable server-side
       // conversation storage (defaults to `true` per the docs).
@@ -69,8 +130,8 @@ export const lmStudioAdapter: ApiAdapter = {
     };
 
     // Map caller-supplied extra parameters to the native API field names.
-    if (extraParams.num_ctx !== undefined) {
-      body.context_length = extraParams.num_ctx;
+    if (actualCtxLength !== undefined) {
+      body.context_length = actualCtxLength;
     }
 
     // Per the docs, the native API's only reasoning-related field is
@@ -117,9 +178,10 @@ export const lmStudioAdapter: ApiAdapter = {
     };
   },
 
-  createStreamParser() {
+  createStreamParser(buildParams?: BuildRequestParams) {
     const decoder = new TextDecoder();
     let buffer = "";
+    let capturedJit = false;
 
     return (chunk: Buffer | string): StreamEvent[] => {
       const text = typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
@@ -172,6 +234,51 @@ export const lmStudioAdapter: ApiAdapter = {
 
         try {
           const parsed = JSON.parse(dataStr);
+
+          if (!capturedJit) {
+            capturedJit = true;
+            if (buildParams && buildParams.extraParams.num_ctx !== undefined && buildParams.onConfigFix) {
+              setTimeout(() => {
+                const baseUrl = buildParams.backend.baseUrl.replace(/\/$/, "");
+                fetch(`${baseUrl}/api/v1/models`, {
+                  headers: buildParams.backend.apiKey ? { Authorization: `Bearer ${buildParams.backend.apiKey}` } : undefined,
+                })
+                  .then((res) => (res.ok ? res.json() : null))
+                  .then((data: any) => {
+                    if (!data) return;
+                    const rawModels: any[] = Array.isArray(data?.models) ? data.models : [];
+                    if (rawModels.length === 0) return;
+                    const targetId = (buildParams.modelId || "").toLowerCase();
+                    const cleanTargetId = targetId.replace(/:\d+$/, "");
+
+                    const matchingModel =
+                      rawModels.find((m) => typeof m?.key === "string" && m.key.toLowerCase().includes(cleanTargetId)) ||
+                      rawModels[0];
+
+                    if (matchingModel && Array.isArray(matchingModel.loaded_instances) && matchingModel.loaded_instances.length > 0) {
+                      const instance = matchingModel.loaded_instances[0];
+                      const actualCtx = instance?.config?.context_length;
+                      if (typeof actualCtx === "number") {
+                        if (buildParams.extraParams.num_ctx !== undefined && actualCtx !== buildParams.extraParams.num_ctx) {
+                          console.log(`[blombrain] Stream context length check: requested ${buildParams.extraParams.num_ctx}, actual loaded ${actualCtx}`);
+                          buildParams.onConfigFix!({ ctx_length: actualCtx });
+                        }
+                        // Confirm what's actually loaded now so the next buildRequest call can
+                        // correctly tell whether the user edits ctx length again.
+                        jitModelCache.set(buildJitCacheKey(buildParams.backend.baseUrl, buildParams.modelId || ""), {
+                          requestedCtx: actualCtx,
+                          timestamp: Date.now(),
+                        });
+                      }
+                    }
+                  })
+                  .catch((err) => {
+                    console.error("[blombrain] Failed to fetch /api/v1/models for context length fix:", err);
+                  });
+              }, 500);
+            }
+          }
+
           // Prefer the SSE `event:` header (authoritative per the docs),
           // falling back to the JSON `type` field if the header is absent.
           const type = eventType || parsed.type;

@@ -16,6 +16,12 @@ async function fetchModelsForBackend(backend: ResolvedBackend): Promise<ModelInf
 
     return rawModels
       .filter((m) => typeof m?.id === "string")
+      .filter((m) => {
+        if (backend.apiType === "lmstudio" && /:\d+$/.test(m.id)) {
+          return false;
+        }
+        return true;
+      })
       .map((m) => ({
         id: `${backend.prefix}:${m.id}`,
         rawId: m.id,
