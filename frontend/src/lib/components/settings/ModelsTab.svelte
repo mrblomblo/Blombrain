@@ -13,9 +13,12 @@
     Star,
     Copy,
     ArrowUpDown,
+    RefreshCw,
+    WifiOff,
   } from "@lucide/svelte";
   import {
     fetchModels,
+    forceSyncModels,
     createPreset,
     updateModelSettings,
     deleteModelSettings,
@@ -42,6 +45,19 @@
   let formMode = $state<FormMode>("idle");
   let selectedModelId = $state<string | null>(null);
   let reorderModalOpen = $state(false);
+  let resyncing = $state(false);
+
+  async function handleResync() {
+    resyncing = true;
+    try {
+      await forceSyncModels();
+      await queryClient.invalidateQueries({ queryKey: ["models"] });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to resync models.");
+    } finally {
+      resyncing = false;
+    }
+  }
 
   // Core Form Fields
   let formName = $state("");
@@ -387,6 +403,15 @@
             <Button
               variant="default"
               size="sm"
+              onclick={handleResync}
+              disabled={resyncing}
+              title="Force sync models with backends"
+            >
+              <RefreshCw size={13} class={resyncing ? "animate-spin" : ""} />
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
               onclick={() => (reorderModalOpen = true)}
               title="Reorder models & presets"
             >
@@ -439,7 +464,13 @@
                           class="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] font-mono text-accent"
                           >Preset</span
                         >
-                        {#if model.isOrphaned}
+                        {#if model.isOffline}
+                          <span
+                            transition:slide={{ axis: "x", duration: 250 }}
+                            class="rounded bg-danger/20 text-danger px-1.5 py-0.5 text-[10px] font-semibold inline-block whitespace-nowrap"
+                            >Offline</span
+                          >
+                        {:else if model.isOrphaned}
                           <span
                             transition:slide={{ axis: "x", duration: 250 }}
                             class="rounded bg-danger/20 text-danger px-1.5 py-0.5 text-[10px] font-semibold inline-block whitespace-nowrap"
@@ -557,6 +588,13 @@
                       >
                         {model.backendName}
                       </span>
+                      {#if model.isOffline}
+                        <span
+                          transition:slide={{ axis: "x", duration: 250 }}
+                          class="rounded bg-danger/20 text-danger px-1.5 py-0.5 text-[10px] font-semibold inline-block whitespace-nowrap"
+                          >Offline</span
+                        >
+                      {/if}
                       {#if model.isDefault}
                         <span
                           transition:slide={{ axis: "x", duration: 250 }}
@@ -606,12 +644,15 @@
                   <button
                     type="button"
                     onclick={() => handleToggleHide(model)}
+                    disabled={model.isOffline}
                     class="flex h-7 w-7 items-center justify-center rounded-md transition-colors cursor-pointer {model.isHidden
                       ? 'text-accent'
-                      : 'text-fg-muted hover:bg-bg hover:text-fg'}"
-                    title={model.isHidden
-                      ? "Unhide model"
-                      : "Hide model from picker"}
+                      : 'text-fg-muted hover:bg-bg hover:text-fg'} disabled:opacity-30 disabled:pointer-events-none"
+                    title={model.isOffline
+                      ? "Backend unavailable (forced hidden)"
+                      : model.isHidden
+                        ? "Unhide model"
+                        : "Hide model from picker"}
                   >
                     {#if model.isHidden}
                       <EyeOff size={13} />

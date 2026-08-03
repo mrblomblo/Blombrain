@@ -68,9 +68,18 @@ export interface ModelInfo {
   repeatPenalty?: number;
   ctxLength?: number;
   isHidden?: boolean;
+  isOffline?: boolean;
   sortOrder?: number;
   isDefault?: boolean;
   isOrphaned?: boolean;
+}
+
+export interface CachedModelRow {
+  id: string;
+  backend_id: string;
+  raw_id: string;
+  is_online: number;
+  last_synced: number;
 }
 
 // ---------------------------------------------------------------------------

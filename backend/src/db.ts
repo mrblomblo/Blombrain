@@ -87,6 +87,15 @@ db.exec(`
     is_default        INTEGER NOT NULL DEFAULT 0
   );
 
+  -- Cached models from external backends
+  CREATE TABLE IF NOT EXISTS cached_models (
+    id          TEXT PRIMARY KEY,
+    backend_id  TEXT NOT NULL REFERENCES backends(id) ON DELETE CASCADE,
+    raw_id      TEXT NOT NULL,
+    is_online   INTEGER NOT NULL DEFAULT 1,
+    last_synced INTEGER NOT NULL
+  );
+
   -- Global App / User Settings
   CREATE TABLE IF NOT EXISTS global_settings (
     id           TEXT PRIMARY KEY,

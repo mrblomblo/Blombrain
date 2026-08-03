@@ -1,43 +1,31 @@
 import type { FastifyInstance } from "fastify";
 import { backendRegistry } from "../registry.js";
-import type { ModelInfo, ResolvedBackend, ModelSettingRow, ModelSettingWriteBody } from "../types.js";
+import type { ModelInfo, ModelSettingRow, ModelSettingWriteBody, CachedModelRow } from "../types.js";
 import db from "../db.js";
-
-async function fetchModelsForBackend(backend: ResolvedBackend): Promise<ModelInfo[]> {
-  try {
-    const res = await fetch(`${backend.baseUrl}/v1/models`, {
-      signal: AbortSignal.timeout(3000),
-      headers: backend.apiKey ? { Authorization: `Bearer ${backend.apiKey}` } : undefined,
-    });
-    if (!res.ok) return [];
-
-    const body = (await res.json()) as { data?: Array<{ id: string }> } | Array<{ id: string }>;
-    const rawModels: Array<{ id: string }> = Array.isArray(body) ? body : (body?.data ?? []);
-
-    return rawModels
-      .filter((m) => typeof m?.id === "string")
-      .filter((m) => {
-        if (backend.apiType === "lmstudio" && /:\d+$/.test(m.id)) {
-          return false;
-        }
-        return true;
-      })
-      .map((m) => ({
-        id: `${backend.prefix}:${m.id}`,
-        rawId: m.id,
-        backendId: backend.id,
-        backendName: backend.name,
-        isPreset: false,
-      }));
-  } catch {
-    return [];
-  }
-}
+import { forceSync } from "../services/modelSync.js";
 
 export async function modelsRoutes(app: FastifyInstance) {
+  // POST /api/models/sync - Force immediate background sync of cached models
+  app.post("/api/models/sync", async () => {
+    await forceSync();
+    return { success: true };
+  });
+
   // GET /api/models - Unified list of Base Models (with settings) & Presets
   app.get("/api/models", async () => {
-    const baseModels = (await Promise.all(backendRegistry.getAll().map(fetchModelsForBackend))).flat();
+    const cachedRows = db.prepare("SELECT * FROM cached_models").all() as CachedModelRow[];
+    
+    const baseModels: ModelInfo[] = cachedRows.map((row) => {
+      const backend = backendRegistry.getById(row.backend_id);
+      return {
+        id: row.id,
+        rawId: row.raw_id,
+        backendId: row.backend_id,
+        backendName: backend ? backend.name : row.backend_id,
+        isPreset: false,
+        isOffline: row.is_online === 0,
+      };
+    });
 
     // Fetch all model_settings from SQLite
     const settingsRows = db.prepare("SELECT * FROM model_settings").all() as ModelSettingRow[];
@@ -55,7 +43,13 @@ export async function modelsRoutes(app: FastifyInstance) {
     // Augment Base Models with their settings
     const augmentedBaseModels: ModelInfo[] = baseModels.map((bm) => {
       const setting = settingsMap.get(bm.id);
-      if (!setting) return bm;
+      const isOffline = Boolean(bm.isOffline);
+      if (!setting) {
+        return {
+          ...bm,
+          isHidden: isOffline ? true : false,
+        };
+      }
 
       return {
         ...bm,
@@ -76,7 +70,7 @@ export async function modelsRoutes(app: FastifyInstance) {
         frequencyPenalty: setting.frequency_penalty ?? undefined,
         repeatPenalty: setting.repeat_penalty ?? undefined,
         ctxLength: setting.ctx_length ?? undefined,
-        isHidden: Boolean(setting.is_hidden),
+        isHidden: isOffline ? true : Boolean(setting.is_hidden),
         sortOrder: setting.sort_order ?? 0,
         isDefault: Boolean(setting.is_default),
       };
@@ -85,6 +79,7 @@ export async function modelsRoutes(app: FastifyInstance) {
     // Build Preset ModelInfo entries
     const presetModels: ModelInfo[] = presetRows.map((p) => {
       const parent = augmentedBaseModels.find((bm) => bm.id === p.base_model_id);
+      const isOffline = parent ? Boolean(parent.isOffline) : false;
       return {
         id: p.id,
         rawId: parent ? parent.rawId : (p.base_model_id ?? p.id),
@@ -92,6 +87,7 @@ export async function modelsRoutes(app: FastifyInstance) {
         backendName: parent ? parent.backendName : "Preset",
         isPreset: true,
         isOrphaned: !parent,
+        isOffline,
         baseModelId: p.base_model_id ?? undefined,
         name: p.name ?? p.id,
         systemPrompt: p.system_prompt ?? undefined,
@@ -110,7 +106,7 @@ export async function modelsRoutes(app: FastifyInstance) {
         frequencyPenalty: p.frequency_penalty ?? undefined,
         repeatPenalty: p.repeat_penalty ?? undefined,
         ctxLength: p.ctx_length ?? undefined,
-        isHidden: Boolean(p.is_hidden),
+        isHidden: isOffline ? true : Boolean(p.is_hidden),
         sortOrder: p.sort_order ?? 0,
         isDefault: Boolean(p.is_default),
       };

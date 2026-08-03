@@ -59,6 +59,7 @@ export interface ModelInfo {
   repeatPenalty?: number;
   ctxLength?: number;
   isHidden?: boolean;
+  isOffline?: boolean;
   sortOrder?: number;
   isDefault?: boolean;
   isOrphaned?: boolean;

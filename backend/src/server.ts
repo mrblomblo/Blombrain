@@ -12,6 +12,7 @@ import { chatRoutes } from "./routes/chat.js";
 import { conversationsRoutes } from "./routes/conversations.js";
 import { uploadsRoutes } from "./routes/uploads.js";
 import { settingsRoutes } from "./routes/settings.js";
+import { initModelSync } from "./services/modelSync.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -50,6 +51,8 @@ async function main() {
   await app.register(conversationsRoutes);
   await app.register(uploadsRoutes);
   await app.register(settingsRoutes);
+
+  initModelSync();
 
   // If the frontend has been built (frontend/dist), serve it directly so the
   // whole app can run as a single process. During `npm run dev` this

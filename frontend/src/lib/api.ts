@@ -67,6 +67,11 @@ export async function fetchModels(): Promise<ModelInfo[]> {
   return jsonOrThrow<ModelInfo[]>(res);
 }
 
+export async function forceSyncModels(): Promise<void> {
+  const res = await fetch("/api/models/sync", { method: "POST" });
+  await jsonOrThrow<{ success: boolean }>(res);
+}
+
 // ---------------------------------------------------------------------------
 // Model Settings & Presets
 // ---------------------------------------------------------------------------
