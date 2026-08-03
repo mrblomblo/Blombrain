@@ -39,30 +39,51 @@
   let srcDoc = $derived.by(() => {
     const code = debouncedCode;
     const CSP_META = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https:; font-src data: https:; connect-src 'none'; base-uri 'none'; form-action 'none';">`;
+    const INTERCEPTOR_SCRIPT = `<script>
+document.addEventListener('click', function(e) {
+  const a = e.target.closest('a');
+  if (!a) return;
+  const href = a.getAttribute('href');
+  if (!href) return;
+  e.preventDefault();
+  if (href.startsWith('#')) {
+    const id = href.substring(1);
+    if (!id) return;
+    const target = document.getElementById(id) || document.getElementsByName(id)[0];
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth' });
+    }
+  }
+});
+document.addEventListener('submit', function(e) {
+  e.preventDefault();
+});
+<\/script>`;
+    const HEAD_INJECTIONS = `${CSP_META}\n${INTERCEPTOR_SCRIPT}`;
 
     if (artifactStore.language === "svg") {
-      return `<!DOCTYPE html><html><head><meta charset="utf-8"/>${CSP_META}<style>body{margin:0;padding:24px;display:flex;align-items:center;justify-content:center;min-height:100vh;background-color:#0d0f12;color:#e1e7ec;box-sizing:border-box;}svg{max-width:100%;height:auto;}</style></head><body>${code}</body></html>`;
+      return `<!DOCTYPE html><html><head><meta charset="utf-8"/>${HEAD_INJECTIONS}<style>body{margin:0;padding:24px;display:flex;align-items:center;justify-content:center;min-height:100vh;background-color:#0d0f12;color:#e1e7ec;box-sizing:border-box;}svg{max-width:100%;height:auto;}</style></head><body>${code}</body></html>`;
     }
 
     if (/<head[^>]*>/i.test(code)) {
-      return code.replace(/(<head[^>]*>)/i, `$1\n${CSP_META}\n`);
+      return code.replace(/(<head[^>]*>)/i, `$1\n${HEAD_INJECTIONS}\n`);
     }
 
     if (/<html[^>]*>/i.test(code)) {
       return code.replace(
         /(<html[^>]*>)/i,
-        `$1\n<head>\n${CSP_META}\n</head>\n`,
+        `$1\n<head>\n${HEAD_INJECTIONS}\n</head>\n`,
       );
     }
 
     if (/<!doctype[^>]*>/i.test(code)) {
       return code.replace(
         /(<!doctype[^>]*>)/i,
-        `$1\n<head>\n${CSP_META}\n</head>\n`,
+        `$1\n<head>\n${HEAD_INJECTIONS}\n</head>\n`,
       );
     }
 
-    return `<!DOCTYPE html>\n<html>\n<head>\n${CSP_META}\n</head>\n<body>\n${code}\n</body>\n</html>`;
+    return `<!DOCTYPE html>\n<html>\n<head>\n${HEAD_INJECTIONS}\n</head>\n<body>\n${code}\n</body>\n</html>`;
   });
 
   let highlightedCode = $derived.by(() => {
