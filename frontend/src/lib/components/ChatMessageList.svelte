@@ -30,6 +30,45 @@
 
   let activeMessages = $derived(chatStore.activePath);
   let lastConversationId = $state<string | null>(null);
+  let userHasScrolledUp = $state(false);
+  let lastScrollTop = 0;
+  let touchStartY = 0;
+
+  function handleWheel(e: WheelEvent) {
+    if (e.deltaY < 0) {
+      userHasScrolledUp = true;
+    }
+  }
+
+  function handleTouchStart(e: TouchEvent) {
+    if (e.touches.length > 0) {
+      touchStartY = e.touches[0].clientY;
+    }
+  }
+
+  function handleTouchMove(e: TouchEvent) {
+    if (e.touches.length > 0) {
+      const touchY = e.touches[0].clientY;
+      // Swiping finger downward (touchY > touchStartY) scrolls container UP
+      if (touchY - touchStartY > 3) {
+        userHasScrolledUp = true;
+      }
+    }
+  }
+
+  function handleScroll() {
+    if (!scrollEl) return;
+    const currentScrollTop = scrollEl.scrollTop;
+    const distance = scrollEl.scrollHeight - currentScrollTop - scrollEl.clientHeight;
+
+    if (currentScrollTop < lastScrollTop - 2) {
+      userHasScrolledUp = true;
+    } else if (distance <= 15) {
+      userHasScrolledUp = false;
+    }
+
+    lastScrollTop = currentScrollTop;
+  }
 
   $effect(() => {
     const currentId = chatStore.activeConversationId;
@@ -47,20 +86,21 @@
     requestAnimationFrame(() => {
       if (!scrollEl) return;
       if (isNewConversationLoaded) {
+        userHasScrolledUp = false;
         scrollEl.scrollTop = scrollEl.scrollHeight;
+        lastScrollTop = scrollEl.scrollTop;
         setTimeout(() => {
-          if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
+          if (scrollEl) {
+            scrollEl.scrollTop = scrollEl.scrollHeight;
+            lastScrollTop = scrollEl.scrollTop;
+          }
         }, 50);
-      } else {
-        const isAtBottom =
-          scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight <
-          bottomPadding + 100;
-        if (isAtBottom || chatStore.isStreaming) {
-          scrollEl.scrollTo({
-            top: scrollEl.scrollHeight,
-            behavior: chatStore.isStreaming ? "auto" : "smooth",
-          });
-        }
+      } else if (!userHasScrolledUp) {
+        scrollEl.scrollTo({
+          top: scrollEl.scrollHeight,
+          behavior: chatStore.isStreaming ? "auto" : "smooth",
+        });
+        lastScrollTop = scrollEl.scrollTop;
       }
     });
   });
@@ -68,6 +108,12 @@
 
 <div
   bind:this={scrollEl}
+  role="region"
+  aria-label="Chat message history"
+  onscroll={handleScroll}
+  onwheel={handleWheel}
+  ontouchstart={handleTouchStart}
+  ontouchmove={handleTouchMove}
   class="relative flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-2 sm:px-6 pb-4 pt-0"
 >
   {#if activeMessages.length === 0}
