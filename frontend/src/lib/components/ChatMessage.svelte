@@ -10,7 +10,6 @@
   import BranchNavigator from "./BranchNavigator.svelte";
   import MessageActions from "./MessageActions.svelte";
   import Markdown from "./Markdown.svelte";
-  import MarkdownInput from "./MarkdownInput.svelte";
   import Button from "./ui/Button.svelte";
   import { fly, fade } from "svelte/transition";
   import type { AttachmentOut } from "../types";
@@ -55,9 +54,17 @@
   let editDraft = $state("");
   let editAttachments = $state<AttachmentOut[]>([]);
   let editFileInput: HTMLInputElement | undefined = $state();
+  let editTextarea: HTMLTextAreaElement | undefined = $state();
   let isUploadingEdit = $state(false);
   let isSaving = $state(false);
   let showStats = $state(false);
+
+  $effect(() => {
+    if (isEditing && editTextarea) {
+      editTextarea.focus();
+      editTextarea.selectionStart = editTextarea.selectionEnd = editTextarea.value.length;
+    }
+  });
 
   function startEdit() {
     editDraft = message.content;
@@ -381,14 +388,26 @@
           class="hidden"
         />
 
-        <MarkdownInput
+        <textarea
+          bind:this={editTextarea}
           bind:value={editDraft}
-          onSubmit={() =>
-            message.role === "user" ? handleSendBranch() : handleSaveOnly()}
+          onkeydown={(e) => {
+            if (e.key === "Escape") {
+              cancelEdit();
+            } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              if (message.role === "user") {
+                handleSendBranch();
+              } else {
+                handleSaveOnly();
+              }
+            }
+          }}
           disabled={isSaving || isUploadingEdit}
           placeholder="Edit message…"
-          class="rounded-md bg-bg-elevated"
-        />
+          rows={4}
+          class="w-full rounded-md bg-bg-elevated border border-line p-2.5 text-sm text-fg font-mono focus:outline-hidden focus:border-accent resize-y min-h-24 leading-relaxed"
+        ></textarea>
         <div class="flex items-center justify-between text-xs text-fg-subtle">
           <div class="flex items-center gap-2">
             {#if message.role === "user"}
