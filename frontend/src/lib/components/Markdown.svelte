@@ -247,10 +247,19 @@
     const copyBtn = target.closest<HTMLButtonElement>(".copy-code-btn");
     if (copyBtn) {
       e.preventDefault();
-      const wrapper = copyBtn.closest(".code-block-wrapper");
-      const codeEl = wrapper?.querySelector("pre code");
-      if (codeEl && codeEl.textContent) {
-        navigator.clipboard.writeText(codeEl.textContent).then(() => {
+      const wrapper = copyBtn.closest<HTMLElement>(".code-block-wrapper");
+      let codeToCopy = "";
+      if (wrapper?.dataset.code) {
+        codeToCopy = decodeBase64(wrapper.dataset.code);
+      } else {
+        const codeEl = wrapper?.querySelector("pre code");
+        if (codeEl) {
+          codeToCopy = codeEl.textContent || "";
+        }
+      }
+
+      if (codeToCopy) {
+        navigator.clipboard.writeText(codeToCopy).then(() => {
           const copyIcon = copyBtn.querySelector(".copy-icon");
           const checkIcon = copyBtn.querySelector(".check-icon");
           const btnText = copyBtn.querySelector(".btn-text");

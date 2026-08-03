@@ -1,5 +1,4 @@
 import { Marked } from "marked";
-import { markedHighlight } from "marked-highlight";
 import hljs from "highlight.js";
 import DOMPurify from "dompurify";
 
@@ -90,23 +89,7 @@ function formatCodeLines(highlightedHtml: string): string {
     .join("\n");
 }
 
-const marked = new Marked(
-  markedHighlight({
-    emptyLangClass: "hljs",
-    langPrefix: "hljs language-",
-    highlight(code, lang) {
-      const rawLang = (lang || "").trim().split(/\s+/)[0].toLowerCase();
-      if (rawLang === "html" || rawLang === "svg" || rawLang === "markdown" || rawLang === "md") {
-        return code;
-      }
-      const language = hljs.getLanguage(rawLang) ? rawLang : "";
-      if (language) {
-        return hljs.highlight(code, { language }).value;
-      }
-      return hljs.highlightAuto(code).value;
-    },
-  })
-);
+const marked = new Marked();
 
 const ALERT_CONFIGS: Record<
   string,
@@ -196,7 +179,15 @@ marked.use({
       const validLang = hljs.getLanguage(rawLang) ? rawLang : "";
       const displayLang = validLang || rawLang || "code";
 
-      if (!isArtifactPreview && (rawLang === "html" || rawLang === "svg" || rawLang === "markdown" || rawLang === "md")) {
+      const lineCount = text.split("\n").length;
+      const charCount = text.length;
+      const isSvg = rawLang === "svg";
+      const isArtifactCandidate = rawLang === "html" || rawLang === "markdown" || rawLang === "md";
+      const isArtifact =
+        !isArtifactPreview &&
+        (isSvg || (isArtifactCandidate && (lineCount >= 20 || charCount >= 700)));
+
+      if (isArtifact) {
         let cardTitle = "HTML Web Content";
         let iconSvg = `<svg class="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`;
         if (rawLang === "svg") {
@@ -239,9 +230,24 @@ marked.use({
 </div>`;
       }
 
-      const formattedLines = formatCodeLines(text);
+      let highlightedCode = escapeHtml(text);
+      if (validLang) {
+        try {
+          highlightedCode = hljs.highlight(text, { language: validLang }).value;
+        } catch {
+          highlightedCode = escapeHtml(text);
+        }
+      } else if (text) {
+        try {
+          highlightedCode = hljs.highlightAuto(text).value;
+        } catch {
+          highlightedCode = escapeHtml(text);
+        }
+      }
 
-      return `<div class="code-block-wrapper relative my-4 rounded-md border border-line shadow-sm group">
+      const formattedLines = formatCodeLines(highlightedCode);
+
+      return `<div class="code-block-wrapper relative my-4 rounded-md border border-line shadow-sm group" data-code="${encodeBase64(text)}">
   <div style="position:absolute;inset:0 0 4.5rem 0;z-index:10;pointer-events:none;">
     <div class="code-sticky-sentinel" aria-hidden="true" style="height:1px;margin-bottom:-1px;pointer-events:none;visibility:hidden;"></div>
     <div class="code-block-header sticky top-0 pl-4 pr-1.5 py-1.5 rounded-t-md border-b border-line/50 bg-bg text-[11px] font-mono text-fg-muted flex items-center justify-between" style="pointer-events:auto;">
