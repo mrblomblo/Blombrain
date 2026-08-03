@@ -36,25 +36,39 @@
     return { x, duration: 300, opacity: 0 };
   }
 
-  function handleBackdropClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) onClose();
-  }
+  let modalEl: HTMLDivElement | undefined = $state();
+
+  $effect(() => {
+    if (open) {
+      const prevActive = document.activeElement as HTMLElement | null;
+      setTimeout(() => {
+        modalEl?.focus();
+      }, 0);
+
+      return () => {
+        prevActive?.focus();
+      };
+    }
+  });
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") onClose();
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      onClose();
+    }
   }
 </script>
 
 {#if open}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
+    bind:this={modalEl}
     role="dialog"
     aria-modal="true"
     aria-label="Settings"
     tabindex="-1"
     transition:fade={{ duration: 150 }}
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-    onclick={handleBackdropClick}
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm focus:outline-hidden"
     onkeydown={handleKeydown}
   >
     <div

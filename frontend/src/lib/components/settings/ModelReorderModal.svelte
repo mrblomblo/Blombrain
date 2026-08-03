@@ -95,16 +95,25 @@
     }
   }
 
-  function handleBackdropClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) {
-      e.stopPropagation();
-      onClose();
+  let modalEl: HTMLDivElement | undefined = $state();
+
+  $effect(() => {
+    if (open) {
+      const prevActive = document.activeElement as HTMLElement | null;
+      setTimeout(() => {
+        modalEl?.focus();
+      }, 0);
+
+      return () => {
+        prevActive?.focus();
+      };
     }
-  }
+  });
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
       e.stopPropagation();
+      e.stopImmediatePropagation();
       onClose();
     }
   }
@@ -113,13 +122,13 @@
 {#if open}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
+    bind:this={modalEl}
     role="dialog"
     aria-modal="true"
     aria-label="Reorder Models"
     tabindex="-1"
     transition:fade={{ duration: 150 }}
-    class="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs"
-    onclick={handleBackdropClick}
+    class="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs focus:outline-hidden"
     onkeydown={handleKeydown}
   >
     <div
