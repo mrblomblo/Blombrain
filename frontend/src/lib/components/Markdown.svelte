@@ -72,6 +72,11 @@
       onBeforeElUpdated: (fromEl, toEl) => {
         if (!streaming) return true;
 
+        // Skip custom inline-fade text diffing inside code blocks and artifacts
+        if (fromEl.closest(".code-block-wrapper, .artifact-card")) {
+          return true;
+        }
+
         // Filter out our temporary inline-fade wrapper spans when comparing structure
         const fromRealChildren = Array.from(fromEl.children).filter(
           (c) => !c.classList.contains("inline-fade"),

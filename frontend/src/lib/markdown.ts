@@ -32,6 +32,64 @@ function escapeHtml(str: string): string {
     .replace(/'/g, "&#39;");
 }
 
+function preserveLeadingIndent(htmlLine: string): string {
+  let result = "";
+  let i = 0;
+  let inTag = false;
+
+  while (i < htmlLine.length) {
+    const char = htmlLine[i];
+    if (char === "<") {
+      inTag = true;
+      result += char;
+      i++;
+    } else if (char === ">") {
+      inTag = false;
+      result += char;
+      i++;
+    } else if (inTag) {
+      result += char;
+      i++;
+    } else if (char === " ") {
+      result += "&nbsp;";
+      i++;
+    } else if (char === "\t") {
+      result += "&nbsp;&nbsp;&nbsp;&nbsp;";
+      i++;
+    } else {
+      result += htmlLine.slice(i);
+      break;
+    }
+  }
+
+  return result;
+}
+
+function formatCodeLines(highlightedHtml: string): string {
+  const lines = highlightedHtml.split("\n");
+  const openTags: string[] = [];
+
+  return lines
+    .map((line, i) => {
+      const prepended = openTags.join("");
+      const tagRegex = /<\/?span[^>]*>/g;
+      let match: RegExpExecArray | null;
+      while ((match = tagRegex.exec(line)) !== null) {
+        if (match[0].startsWith("</")) {
+          openTags.pop();
+        } else {
+          openTags.push(match[0]);
+        }
+      }
+      const appended = openTags.map(() => "</span>").join("");
+      const lineWithTags = `${prepended}${line}${appended}`;
+      const indented = preserveLeadingIndent(lineWithTags);
+
+      return `<div class="flex w-full min-w-full hover:bg-bg-hover/50"><span class="shrink-0 text-right pr-2 mr-3.5 border-r border-line/50 text-fg-muted/40 select-none w-10 font-mono text-[11px] py-0.5">${i + 1}</span><span class="flex-1 min-w-0 whitespace-pre-wrap wrap-anywhere pr-4 text-fg font-mono py-0.5">${indented || " "}</span></div>`;
+    })
+    .join("\n");
+}
+
 const marked = new Marked(
   markedHighlight({
     emptyLangClass: "hljs",
@@ -181,6 +239,8 @@ marked.use({
 </div>`;
       }
 
+      const formattedLines = formatCodeLines(text);
+
       return `<div class="code-block-wrapper relative my-4 rounded-md border border-line shadow-sm group">
   <div style="position:absolute;inset:0 0 4.5rem 0;z-index:10;pointer-events:none;">
     <div class="code-sticky-sentinel" aria-hidden="true" style="height:1px;margin-bottom:-1px;pointer-events:none;visibility:hidden;"></div>
@@ -202,8 +262,8 @@ marked.use({
       </button>
     </div>
   </div>
-  <div class="overflow-x-auto rounded-md bg-bg-elevated" style="padding-top:34px;">
-    <pre class="text-xs font-mono leading-relaxed text-fg bg-transparent"><code class="hljs ${validLang ? `language-${validLang}` : ""} block">${text}</code></pre>
+  <div class="overflow-x-auto rounded-md bg-bg-elevated font-mono text-xs leading-relaxed" style="padding-top:38px;">
+    ${formattedLines}
   </div>
 </div>`;
     },
