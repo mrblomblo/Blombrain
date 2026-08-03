@@ -59,7 +59,8 @@
   function handleScroll() {
     if (!scrollEl) return;
     const currentScrollTop = scrollEl.scrollTop;
-    const distance = scrollEl.scrollHeight - currentScrollTop - scrollEl.clientHeight;
+    const distance =
+      scrollEl.scrollHeight - currentScrollTop - scrollEl.clientHeight;
 
     if (currentScrollTop < lastScrollTop - 2) {
       userHasScrolledUp = true;
@@ -114,7 +115,7 @@
   onwheel={handleWheel}
   ontouchstart={handleTouchStart}
   ontouchmove={handleTouchMove}
-  class="relative flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-2 sm:px-6 pb-4 pt-0"
+  class="relative flex-1 overflow-y-auto scrollbar-gutter-both px-2 sm:px-6 pb-4 pt-0"
 >
   {#if activeMessages.length === 0}
     <div
