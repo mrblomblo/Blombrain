@@ -51,18 +51,20 @@
   let showBackends = $state(false);
 
   function handleSelectConv(conv: ConversationSummary) {
+    if (chatStore.isStreaming) return;
     chatStore.loadConversation(conv);
     onCloseMobile?.();
   }
 
   function handleNewChat() {
+    if (chatStore.isStreaming) return;
     chatStore.newConversation();
     onCloseMobile?.();
   }
 
   async function handleDelete(e: MouseEvent, conv: ConversationSummary) {
     e.stopPropagation();
-    if (deletingId) return;
+    if (deletingId || chatStore.isStreaming) return;
     const confirmed = await confirmStore.confirm({
       title: "Delete Conversation",
       message: `Are you sure you want to delete "${conv.title}"?`,
@@ -208,18 +210,23 @@
         <ul class="flex flex-col gap-0.5">
           {#each convsQuery.data ?? [] as conv (conv.id)}
             {@const isActive = chatStore.activeConversationId === conv.id}
+            {@const isDisabled = chatStore.isStreaming && !isActive}
             <li class="list-none">
               <div
-                class="group relative flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition-colors"
+                class="group relative flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition-all duration-200"
+                class:cursor-pointer={!isDisabled}
+                class:cursor-not-allowed={isDisabled}
+                class:opacity-40={isDisabled}
+                class:pointer-events-none={isDisabled}
                 class:bg-bg-elevated={isActive}
                 class:text-fg={isActive}
                 class:font-medium={isActive}
-                class:text-fg-muted={!isActive}
-                class:hover:bg-bg-elevated={!isActive}
-                onclick={() => handleSelectConv(conv)}
-                tabindex="0"
+                class:text-fg-muted={!isActive && !isDisabled}
+                class:hover:bg-bg-elevated={!isActive && !isDisabled}
+                onclick={() => !isDisabled && handleSelectConv(conv)}
+                tabindex={isDisabled ? -1 : 0}
                 role="button"
-                onkeydown={(e) => e.key === "Enter" && handleSelectConv(conv)}
+                onkeydown={(e) => !isDisabled && e.key === "Enter" && handleSelectConv(conv)}
               >
                 <span class="min-w-0 flex-1 truncate">{conv.title}</span>
                 <span
@@ -229,7 +236,7 @@
                 </span>
                 <button
                   onclick={(e) => handleDelete(e, conv)}
-                  disabled={deletingId === conv.id}
+                  disabled={deletingId === conv.id || chatStore.isStreaming}
                   aria-label="Delete conversation"
                   class="shrink-0 rounded p-0.5 text-fg-subtle opacity-0 transition-all cursor-pointer hover:text-danger group-hover:opacity-100 disabled:pointer-events-none"
                 >
