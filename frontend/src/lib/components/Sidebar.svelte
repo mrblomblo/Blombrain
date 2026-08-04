@@ -250,11 +250,10 @@
         class="flex w-full items-center justify-between py-1 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle cursor-pointer hover:text-fg transition-colors duration-200"
       >
         <span>Backends ({backendsQuery.data?.length ?? 0})</span>
-        {#if showBackends}
-          <ChevronDown size={12} />
-        {:else}
-          <ChevronUp size={12} />
-        {/if}
+        <ChevronUp
+          size={12}
+          class="shrink-0 transition-transform duration-200 {showBackends ? 'rotate-180' : ''}"
+        />
       </button>
 
       {#if showBackends}

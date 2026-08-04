@@ -116,11 +116,10 @@
         <Star size={11} class="text-amber-400 fill-amber-400 shrink-0" />
       {/if}
 
-      {#if isOpen}
-        <ChevronUp size={13} class="text-fg-subtle shrink-0 ml-0.5" />
-      {:else}
-        <ChevronDown size={13} class="text-fg-subtle shrink-0 ml-0.5" />
-      {/if}
+      <ChevronDown
+        size={13}
+        class="text-fg-subtle shrink-0 ml-0.5 transition-transform duration-200 {isOpen ? 'rotate-180' : ''}"
+      />
     </button>
 
     <!-- Popover Dropdown -->

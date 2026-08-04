@@ -268,11 +268,10 @@ document.addEventListener('submit', function(e) {
           title="More options"
           class="flex items-center justify-center h-full px-1.5 text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors rounded-r-lg"
         >
-          {#if showDownloadMenu}
-            <ChevronUp size={14} />
-          {:else}
-            <ChevronDown size={14} />
-          {/if}
+          <ChevronDown
+            size={14}
+            class="shrink-0 transition-transform duration-200 {showDownloadMenu ? 'rotate-180' : ''}"
+          />
         </button>
 
         {#if showDownloadMenu}

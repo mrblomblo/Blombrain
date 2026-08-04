@@ -827,11 +827,10 @@
               onclick={() => (showAdvanced = !showAdvanced)}
               class="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-accent hover:underline"
             >
-              {#if showAdvanced}
-                <ChevronDown size={14} />
-              {:else}
-                <ChevronRight size={14} />
-              {/if}
+              <ChevronRight
+                size={14}
+                class="shrink-0 transition-transform duration-200 {showAdvanced ? 'rotate-90' : ''}"
+              />
               <span>Advanced Generation & Sampling Options</span>
             </button>
 

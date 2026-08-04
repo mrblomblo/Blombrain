@@ -49,11 +49,10 @@
       onclick={() => (isOpen = !isOpen)}
       class="flex w-full items-center gap-1 text-fg-muted transition-colors hover:text-fg font-medium"
     >
-      {#if isOpen}
-        <ChevronDown size={14} class="shrink-0" />
-      {:else}
-        <ChevronRight size={14} class="shrink-0" />
-      {/if}
+      <ChevronRight
+        size={14}
+        class="shrink-0 transition-transform duration-200 {isOpen ? 'rotate-90' : ''}"
+      />
       <div class="flex items-center gap-1.5">
         <Brain
           size={13}
