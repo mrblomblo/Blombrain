@@ -368,6 +368,14 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
   }
 }
 
+export async function stopChatCompletion(conversationId: string): Promise<void> {
+  await fetch("/api/chat/stop", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conversationId }),
+  });
+}
+
 export async function autoNameConversation(
   conversationId: string,
   userContent: string,

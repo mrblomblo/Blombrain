@@ -154,4 +154,5 @@ export interface MessageOut {
   model?: string;
   createdAt: number;
   attachments?: AttachmentOut[];
+  streaming?: boolean;
 }

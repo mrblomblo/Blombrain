@@ -4,6 +4,7 @@ import path from "node:path";
 import db, { DATA_DIR } from "../db.js";
 import { backendRegistry } from "../registry.js";
 import { getAdapter } from "../adapters/index.js";
+import { activeStreams } from "./chat.js";
 import type {
   ConversationRow,
   MessageRow,
@@ -99,7 +100,14 @@ const insertMessage = db.prepare(
 export async function conversationsRoutes(app: FastifyInstance) {
   /** GET /api/conversations -- list all, most-recently-updated first. */
   app.get("/api/conversations", async () => {
-    return listConversations.all().map(rowToSummary);
+    return listConversations.all().map((r) => {
+      const summary = rowToSummary(r);
+      const active = activeStreams.get(r.id);
+      if (active && !active.isDone) {
+        (summary as any).isGenerating = true;
+      }
+      return summary;
+    });
   });
 
   /** POST /api/conversations -- create a new conversation. */
@@ -125,6 +133,47 @@ export async function conversationsRoutes(app: FastifyInstance) {
     if (!row) return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
 
     const messages = getMessages.all(id).map(rowToMessage);
+    const active = activeStreams.get(id);
+    if (active && !active.isDone) {
+      if (!messages.some((m) => m.id === active.userMessageId)) {
+        let userAttachments;
+        if (active.attachmentIds && active.attachmentIds.length > 0) {
+          const placeholders = active.attachmentIds.map(() => "?").join(",");
+          const attachRows = db.prepare(`SELECT * FROM attachments WHERE id IN (${placeholders})`).all(...active.attachmentIds) as import("../types.js").AttachmentRow[];
+          userAttachments = attachRows.length > 0 ? attachRows.map(rowToAttachment) : undefined;
+        }
+        messages.push({
+          id: active.userMessageId,
+          conversationId: id,
+          parentId: active.userParentId,
+          role: "user",
+          content: active.originalUserContent,
+          error: null,
+          createdAt: active.startTime - 1,
+          attachments: userAttachments,
+        });
+      }
+
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg && lastMsg.id === active.assistantMessageId) {
+        lastMsg.content = active.assistantContent;
+        (lastMsg as any).streaming = true;
+      } else if (!messages.some((m) => m.id === active.assistantMessageId)) {
+        messages.push({
+          id: active.assistantMessageId,
+          conversationId: id,
+          parentId: active.userMessageId,
+          role: "assistant",
+          content: active.assistantContent,
+          error: active.streamError ?? null,
+          stats: active.usageStats,
+          model: active.model,
+          createdAt: active.startTime,
+          streaming: true,
+        });
+      }
+    }
+
     return reply.send({
       id: row.id,
       title: row.title,
@@ -132,6 +181,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       messages,
+      isGenerating: active && !active.isDone ? true : undefined,
     });
   });
 

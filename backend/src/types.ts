@@ -132,6 +132,7 @@ export interface MessageOut {
   model?: string;
   createdAt: number;
   attachments?: AttachmentOut[];
+  streaming?: boolean;
 }
 
 /** Body accepted by PATCH /api/conversations/:id */

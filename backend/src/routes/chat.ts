@@ -25,7 +25,50 @@ function sendJsonError(reply: FastifyReply, status: number, message: string) {
   reply.code(status).send({ error: { message } });
 }
 
+export interface ActiveStream {
+  conversationId: string;
+  userMessageId: string;
+  userParentId: string | null;
+  assistantMessageId: string;
+  model: string;
+  originalUserContent: string;
+  attachmentIds?: string[];
+  assistantContent: string;
+  reasoningMode: "oob" | "inband" | null;
+  thinkingStartMs: number;
+  usageStats: any;
+  streamError: string | null;
+  startTime: number;
+  isDone: boolean;
+  abortController: AbortController;
+  subscribers: Set<FastifyReply>;
+  doSaveTurn: () => void;
+}
+
+export const activeStreams = new Map<string, ActiveStream>();
+
 export async function chatRoutes(app: FastifyInstance) {
+  app.post("/api/chat/stop", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { conversationId } = req.body as { conversationId: string };
+    if (!conversationId) return sendJsonError(reply, 400, "conversationId is required");
+
+    const stream = activeStreams.get(conversationId);
+    if (stream && !stream.isDone) {
+      stream.streamError = "Operation aborted";
+      stream.abortController.abort();
+      stream.doSaveTurn();
+      for (const sub of stream.subscribers) {
+        if (!sub.raw.writableEnded) {
+          sub.raw.write("data: [DONE]\n\n");
+          sub.raw.end();
+        }
+      }
+      activeStreams.delete(conversationId);
+    }
+
+    return reply.send({ success: true });
+  });
+
   app.post("/api/chat/completions", async (req: FastifyRequest, reply: FastifyReply) => {
     const body = req.body as ChatCompletionBody;
 
@@ -33,16 +76,52 @@ export async function chatRoutes(app: FastifyInstance) {
       return sendJsonError(reply, 400, "Request body must include `model` and `messages`.");
     }
 
+    const conversationId = body.conversationId ?? crypto.randomUUID();
+
+    // 1. If an active stream is ALREADY running for this conversation, attach to it
+    const existingStream = activeStreams.get(conversationId);
+    if (existingStream && !existingStream.isDone) {
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+
+      // Send meta event
+      reply.raw.write(`data: ${JSON.stringify({
+        type: "meta",
+        conversationId,
+        title: "Chat",
+        isNew: false,
+        userMessageId: existingStream.userMessageId,
+        assistantMessageId: existingStream.assistantMessageId,
+        stats: existingStream.usageStats,
+      })}\n\n`);
+
+      // Replay accumulated content so far
+      if (existingStream.assistantContent) {
+        reply.raw.write(`data: ${JSON.stringify({
+          id: `chatcmpl-${existingStream.userMessageId}`,
+          object: "chat.completion.chunk",
+          created: Math.floor(Date.now() / 1000),
+          model: existingStream.model,
+          choices: [{ index: 0, delta: { content: existingStream.assistantContent }, finish_reason: null }],
+        })}\n\n`);
+      }
+
+      existingStream.subscribers.add(reply);
+
+      const onDisconnect = () => {
+        existingStream.subscribers.delete(reply);
+      };
+      reply.raw.on("close", onDisconnect);
+      req.raw.on("aborted", onDisconnect);
+      return;
+    }
+
+    // 2. Start new generation stream
     const abortController = new AbortController();
-    let clientDisconnected = false;
-    const handleEarlyDisconnect = () => {
-      if (clientDisconnected) return;
-      if (reply.raw.writableEnded) return;
-      clientDisconnected = true;
-      abortController.abort();
-    };
-    req.raw.on("aborted", handleEarlyDisconnect);
-    reply.raw.on("close", handleEarlyDisconnect);
 
     let targetModelId = body.model;
     const settingRow = db.prepare("SELECT * FROM model_settings WHERE id = ?").get(body.model) as ModelSettingRow | undefined;
@@ -178,43 +257,39 @@ export async function chatRoutes(app: FastifyInstance) {
             console.log(`[blombrain] Auto-corrected ctx_length for model ${body.model} to ${fixes.ctx_length}`);
           }
         } catch (err) {
-          console.error("[blombrain] Failed to auto-correct model config:", err);
+          console.error("[blombrain] Failed to persist auto-corrected model settings:", err);
         }
       },
     };
-    const { url: upstreamUrl, init: requestInit } = await adapter.buildRequest(buildParams);
+
+    let reqConfig;
+    try {
+      reqConfig = await adapter.buildRequest(buildParams);
+    } catch (err) {
+      return sendJsonError(
+        reply,
+        500,
+        `Adapter failed to build request: ${err instanceof Error ? err.message : err}`,
+      );
+    }
 
     let upstream: Response;
     try {
-      upstream = await fetch(upstreamUrl, {
-        ...requestInit,
+      upstream = await fetch(reqConfig.url, {
+        ...reqConfig.init,
         signal: abortController.signal,
       });
     } catch (err) {
-      if (clientDisconnected) {
-        // The upstream fetch was aborted because the client already left
-        // before generation started. Nothing to send, nothing to persist.
-        return;
-      }
       return sendJsonError(
         reply,
         502,
-        `Couldn't reach backend "${backend.name}" at ${backend.baseUrl}: ${err instanceof Error ? err.message : err
-        }`,
+        `Couldn't reach backend "${backend.name}" at ${backend.baseUrl}: ${err instanceof Error ? err.message : err}`,
       );
     }
 
     if (!upstream.ok || !upstream.body) {
       const text = await upstream.text().catch(() => "");
       return sendJsonError(reply, upstream.status || 502, text || upstream.statusText);
-    }
-
-    // The client may have disconnected while we were waiting on the upstream
-    // fetch to resolve. In that case there's nothing to stream and nothing
-    // to persist — the user explicitly stopped before anything was generated.
-    if (clientDisconnected) {
-      upstream.body?.cancel().catch(() => { });
-      return;
     }
 
     reply.hijack();
@@ -225,7 +300,6 @@ export async function chatRoutes(app: FastifyInstance) {
     });
 
     const isNewConversation = !body.conversationId;
-    const conversationId = body.conversationId ?? crypto.randomUUID();
 
     if (isNewConversation) {
       const earlyMetaEvent = `data: ${JSON.stringify({
@@ -240,10 +314,13 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     let assistantContent = "";
-    let streamError: string | undefined;
+    let streamError: string | null = null;
     let usageStats: { promptTokens?: number; completionTokens?: number; totalTokens?: number; durationMs?: number; thinkingTimeMs?: number } | undefined;
     const startTime = Date.now();
     let hasPersisted = false;
+
+    const subscribers = new Set<FastifyReply>();
+    subscribers.add(reply);
 
     const nodeStream = Readable.fromWeb(upstream.body as import("stream/web").ReadableStream);
     let reasoningMode: "oob" | "inband" | null = null;
@@ -274,7 +351,7 @@ export async function chatRoutes(app: FastifyInstance) {
           userContent: originalUserContent,
           assistantMessageId,
           assistantContent,
-          assistantError: streamError,
+          assistantError: streamError ?? undefined,
           assistantStats: usageStats,
         });
 
@@ -285,30 +362,52 @@ export async function chatRoutes(app: FastifyInstance) {
           }
         }
 
-        if (!reply.raw.writableEnded) {
-          const metaEvent =
-            `data: ${JSON.stringify({
-              type: "meta",
-              conversationId: savedTurn.conversationId,
-              title: savedTurn.title,
-              isNew: savedTurn.isNew,
-              userMessageId,
-              assistantMessageId,
-              stats: usageStats,
-            })}\n\n`;
-          reply.raw.write(metaEvent);
+        const metaEvent = `data: ${JSON.stringify({
+          type: "meta",
+          conversationId: savedTurn.conversationId,
+          title: savedTurn.title,
+          isNew: savedTurn.isNew,
+          userMessageId,
+          assistantMessageId,
+          stats: usageStats,
+        })}\n\n`;
+
+        for (const sub of subscribers) {
+          if (!sub.raw.writableEnded) {
+            sub.raw.write(metaEvent);
+            sub.raw.write("data: [DONE]\n\n");
+            sub.raw.end();
+          }
         }
       } catch (err) {
         console.error("[blombrain] failed to persist chat turn:", err);
       }
     }
 
+    const currentActiveStream: ActiveStream = {
+      conversationId,
+      userMessageId,
+      userParentId,
+      assistantMessageId,
+      model: body.model,
+      originalUserContent,
+      attachmentIds,
+      assistantContent: "",
+      reasoningMode: null,
+      thinkingStartMs: 0,
+      usageStats: undefined,
+      streamError: null,
+      startTime,
+      isDone: false,
+      abortController,
+      subscribers,
+      doSaveTurn,
+    };
+
+    activeStreams.set(conversationId, currentActiveStream);
+
     const onClientDisconnect = () => {
-      if (reply.raw.writableEnded) return;
-      streamError = "Operation aborted";
-      abortController.abort();
-      if (!nodeStream.destroyed) nodeStream.destroy();
-      doSaveTurn();
+      subscribers.delete(reply);
     };
 
     reply.raw.on("close", onClientDisconnect);
@@ -347,6 +446,10 @@ export async function chatRoutes(app: FastifyInstance) {
 
         assistantContent += delta;
       }
+
+      currentActiveStream.assistantContent = assistantContent;
+      currentActiveStream.streamError = streamError;
+      currentActiveStream.usageStats = usageStats;
     };
 
     const parser = adapter.createStreamParser(buildParams);
@@ -365,62 +468,60 @@ export async function chatRoutes(app: FastifyInstance) {
             usageStats.completionTokens = ev.usage.completionTokens ?? usageStats.completionTokens;
             usageStats.totalTokens = ev.usage.totalTokens ?? usageStats.totalTokens;
             usageStats.durationMs = Date.now() - startTime;
+            currentActiveStream.usageStats = usageStats;
           }
 
-          if (!reply.raw.writableEnded) {
-            if (ev.delta || ev.reasoning || ev.error) {
-              const ssePayload = {
-                id: `chatcmpl-${userMessageId}`,
-                object: "chat.completion.chunk",
-                created: Math.floor(Date.now() / 1000),
-                model: rawModelId,
-                choices: [
-                  {
-                    index: 0,
-                    delta: {
-                      ...(ev.delta ? { content: ev.delta } : {}),
-                      ...(ev.reasoning ? { reasoning_content: ev.reasoning } : {}),
-                    },
-                    finish_reason: ev.isDone ? "stop" : null,
+          if (ev.delta || ev.reasoning || ev.error) {
+            const ssePayload = {
+              id: `chatcmpl-${userMessageId}`,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: rawModelId,
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    ...(ev.delta ? { content: ev.delta } : {}),
+                    ...(ev.reasoning ? { reasoning_content: ev.reasoning } : {}),
                   },
-                ],
-                ...(ev.usage
-                  ? {
-                    usage: {
-                      prompt_tokens: ev.usage.promptTokens,
-                      completion_tokens: ev.usage.completionTokens,
-                      total_tokens: ev.usage.totalTokens,
-                    },
-                  }
-                  : {}),
-              };
-              reply.raw.write(`data: ${JSON.stringify(ssePayload)}\n\n`);
-            }
-
-            if (ev.isDone) {
-              reply.raw.write("data: [DONE]\n\n");
+                  finish_reason: ev.isDone ? "stop" : null,
+                },
+              ],
+              ...(ev.usage
+                ? {
+                  usage: {
+                    prompt_tokens: ev.usage.promptTokens,
+                    completion_tokens: ev.usage.completionTokens,
+                    total_tokens: ev.usage.totalTokens,
+                  },
+                }
+                : {}),
+            };
+            const sseChunk = `data: ${JSON.stringify(ssePayload)}\n\n`;
+            for (const sub of subscribers) {
+              if (!sub.raw.writableEnded) {
+                sub.raw.write(sseChunk);
+              }
             }
           }
         }
       });
 
-      nodeStream.on("end", () => {
+      const finishStream = () => {
+        currentActiveStream.isDone = true;
         doSaveTurn();
-        if (!reply.raw.writableEnded) reply.raw.end();
+        setTimeout(() => {
+          activeStreams.delete(conversationId);
+        }, 5000);
         resolve();
-      });
+      };
 
-      nodeStream.on("error", () => {
-        doSaveTurn();
-        if (!reply.raw.writableEnded) reply.raw.end();
-        resolve();
+      nodeStream.on("end", finishStream);
+      nodeStream.on("error", (err) => {
+        if (!streamError) streamError = String(err);
+        finishStream();
       });
-
-      nodeStream.on("close", () => {
-        doSaveTurn();
-        if (!reply.raw.writableEnded) reply.raw.end();
-        resolve();
-      });
+      nodeStream.on("close", finishStream);
     });
   });
 }

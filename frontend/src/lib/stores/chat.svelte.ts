@@ -9,6 +9,7 @@ import {
   deleteConversation,
   branchMessage as apiBranchMessage,
   autoNameConversation,
+  stopChatCompletion,
 } from "../api";
 import { encodeToWav } from "../audio";
 import type { ChatMessage, ConversationSummary, AttachmentOut, ResponseStats } from "../types";
@@ -176,6 +177,7 @@ class ChatStore {
             error: m.error,
             createdAt: m.createdAt,
             attachments: m.attachments,
+            streaming: m.streaming,
           };
         }
         return {
@@ -187,6 +189,7 @@ class ChatStore {
           model: m.model,
           createdAt: m.createdAt,
           attachments: m.attachments,
+          streaming: m.streaming,
         };
       });
       this.activeConversationId = detail.id;
@@ -195,6 +198,15 @@ class ChatStore {
       if (detail.model) this.selectedModel = detail.model;
       this.loadBranchSelections(detail.id);
       artifactStore.close();
+
+      // Check if this conversation is actively generating on the backend
+      const isGenerating = (detail as any).isGenerating || (this.messages.length > 0 && (this.messages[this.messages.length - 1] as any).streaming);
+      if (isGenerating) {
+        const lastMsg = this.messages[this.messages.length - 1];
+        if (lastMsg && lastMsg.role === "assistant") {
+          this.reconnectAssistantResponse(lastMsg);
+        }
+      }
     } catch (err) {
       console.error("[chatStore] failed to load conversation:", err);
     }
@@ -625,8 +637,78 @@ class ChatStore {
     });
   }
 
+  private async reconnectAssistantResponse(asstMsg: ChatMessage) {
+    if (!this.selectedModel || !this.activeConversationId) return;
+
+    this.isStreaming = true;
+    asstMsg.streaming = true;
+    this.abortController = new AbortController();
+
+    const historyForModel = this.activePath
+      .filter((m) => m.id !== asstMsg.id && !m.error)
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    let rawBuffer = asstMsg.content || "";
+    let insideThink = false;
+    let thinkingStartMs = 0;
+
+    await streamChatCompletion({
+      model: this.selectedModel,
+      messages: historyForModel,
+      conversationId: this.activeConversationId,
+      assistantMessageId: asstMsg.id,
+      signal: this.abortController.signal,
+
+      onToken: (delta) => {
+        const msg = this.messages.find((m) => m.id === asstMsg.id);
+        if (!msg) return;
+
+        rawBuffer += delta;
+
+        if (!insideThink && (delta.includes("<think>") || rawBuffer.includes("<think>"))) {
+          insideThink = true;
+          thinkingStartMs = Date.now();
+        }
+
+        if (insideThink && delta.includes("</think>")) {
+          insideThink = false;
+          if (thinkingStartMs > 0) {
+            msg.thinkingTimeMs = Date.now() - thinkingStartMs;
+          }
+        }
+
+        const parsed = parseThinking(rawBuffer);
+        msg.content = parsed.content;
+        msg.thinkingContent = parsed.thinkingContent;
+        msg.thinkingDone = parsed.thinkingDone;
+      },
+      onMeta: (meta) => {
+        const msg = this.messages.find((m) => m.id === asstMsg.id);
+        if (msg) msg.stats = meta.stats;
+      },
+      onDone: () => {
+        const msg = this.messages.find((m) => m.id === asstMsg.id);
+        if (msg) msg.streaming = false;
+        this.isStreaming = false;
+      },
+      onError: (message) => {
+        const msg = this.messages.find((m) => m.id === asstMsg.id);
+        if (msg) {
+          msg.streaming = false;
+          msg.error = message;
+        }
+        this.isStreaming = false;
+      },
+    });
+  }
+
   stop() {
     this.abortController?.abort();
+    this.abortController = null;
+    if (this.activeConversationId) {
+      stopChatCompletion(this.activeConversationId).catch(() => {});
+    }
+    this.isStreaming = false;
   }
 
   clear() {
