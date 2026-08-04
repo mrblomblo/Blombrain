@@ -12,8 +12,12 @@ class ArtifactStore {
   code = $state("");
   language = $state("html");
   title = $state("Artifact");
+  userClosedIds = $state(new Set<string>());
 
   openArtifact(data: ArtifactData) {
+    if (data.id) {
+      this.userClosedIds.delete(data.id);
+    }
     this.activeId = data.id;
     this.code = data.code;
     this.language = data.language;
@@ -33,8 +37,15 @@ class ArtifactStore {
   }
 
   close() {
+    if (this.activeId) {
+      this.userClosedIds.add(this.activeId);
+    }
     this.isOpen = false;
     this.isExpanded = false;
+  }
+
+  resetUserClosed() {
+    this.userClosedIds.clear();
   }
 }
 

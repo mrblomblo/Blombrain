@@ -501,6 +501,7 @@ class ChatStore {
       .map((m) => ({ role: m.role, content: m.content }));
 
     this.isStreaming = true;
+    artifactStore.resetUserClosed();
     this.abortController = new AbortController();
 
     let rawBuffer = "";

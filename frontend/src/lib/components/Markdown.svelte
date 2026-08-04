@@ -163,6 +163,8 @@
 
   const instanceId = Math.random().toString(36).substring(2, 9);
 
+  let autoOpenedIds = new Set<string>();
+
   $effect(() => {
     const _html = html;
     const activeId = artifactStore.activeId;
@@ -183,8 +185,8 @@
       const lang = card.getAttribute("data-artifact-lang") || "html";
       const title = card.getAttribute("data-artifact-title") || "Artifact";
 
-      if (streaming && !card.hasAttribute("data-auto-opened")) {
-        card.setAttribute("data-auto-opened", "true");
+      if (streaming && !autoOpenedIds.has(id) && !artifactStore.userClosedIds.has(id)) {
+        autoOpenedIds.add(id);
         if (!isOpen) {
           artifactStore.openArtifact({ id, code, language: lang, title });
         }
