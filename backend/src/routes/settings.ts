@@ -8,6 +8,8 @@ function rowToSettings(row: GlobalSettingsRow): GlobalSettingsOut {
     userName: row.user_name,
     userAvatar: row.user_avatar,
     theme: row.theme,
+    autoNameMode: (row.auto_name_mode as any) || "first_words",
+    autoNameModel: row.auto_name_model ?? null,
   };
 }
 
@@ -39,12 +41,14 @@ export async function settingsRoutes(app: FastifyInstance) {
     const userName = body.userName !== undefined ? body.userName : current.user_name;
     const userAvatar = body.userAvatar !== undefined ? body.userAvatar : current.user_avatar;
     const theme = body.theme !== undefined ? body.theme : current.theme;
+    const autoNameMode = body.autoNameMode !== undefined ? body.autoNameMode : current.auto_name_mode;
+    const autoNameModel = body.autoNameModel !== undefined ? body.autoNameModel : current.auto_name_model;
 
     db.prepare(`
       UPDATE global_settings
-      SET user_name = ?, user_avatar = ?, theme = ?
+      SET user_name = ?, user_avatar = ?, theme = ?, auto_name_mode = ?, auto_name_model = ?
       WHERE id = 'default'
-    `).run(userName, userAvatar, theme);
+    `).run(userName, userAvatar, theme, autoNameMode, autoNameModel);
 
     const updated = db
       .prepare<[string], GlobalSettingsRow>("SELECT * FROM global_settings WHERE id = ?")

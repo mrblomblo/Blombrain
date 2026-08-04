@@ -31,6 +31,7 @@
   import { slide, fade } from "svelte/transition";
   import { quintOut } from "svelte/easing";
   import Dropdown from "../ui/Dropdown.svelte";
+  import ModelDropdown from "../ui/ModelDropdown.svelte";
   import ToggleSwitch from "../ui/ToggleSwitch.svelte";
   import Button from "../ui/Button.svelte";
 
@@ -762,21 +763,17 @@
               <label for="me-base" class="text-xs font-medium text-fg-muted"
                 >Parent Base Model</label
               >
-              <Dropdown
+              <ModelDropdown
                 id="me-base"
+                filterPresets={true}
                 value={formBaseModelId}
+                models={modelsQuery.data}
                 onchange={(val) => {
                   formBaseModelId = val;
                   if (formMode === "add_preset") {
                     populateFromBaseModel(val);
                   }
                 }}
-                options={baseModels
-                  .filter((bm) => !bm.isHidden || bm.id === formBaseModelId)
-                  .map((bm) => ({
-                    label: `${bm.name || bm.id} (${bm.backendName})`,
-                    value: bm.id,
-                  }))}
                 placeholder="Select parent base model"
               />
             </div>

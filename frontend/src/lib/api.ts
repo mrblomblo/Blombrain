@@ -368,11 +368,30 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
   }
 }
 
+export async function autoNameConversation(
+  conversationId: string,
+  userContent: string,
+  targetModelId: string,
+  signal?: AbortSignal,
+): Promise<{ title: string }> {
+  const res = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/auto-name`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userContent, targetModelId }),
+    signal,
+  });
+  return jsonOrThrow<{ title: string }>(res);
+}
+
+export type AutoNameMode = "first_words" | "active_model" | "designated_model";
+
 export interface GlobalSettingsOut {
   id: string;
   userName: string;
   userAvatar: string | null;
   theme: string;
+  autoNameMode: AutoNameMode;
+  autoNameModel: string | null;
 }
 
 export async function fetchGlobalSettings(): Promise<GlobalSettingsOut> {
@@ -381,7 +400,13 @@ export async function fetchGlobalSettings(): Promise<GlobalSettingsOut> {
 }
 
 export async function updateGlobalSettings(
-  patch: Partial<{ userName: string; userAvatar: string | null; theme: string }>,
+  patch: Partial<{
+    userName: string;
+    userAvatar: string | null;
+    theme: string;
+    autoNameMode: AutoNameMode;
+    autoNameModel: string | null;
+  }>,
 ): Promise<GlobalSettingsOut> {
   const res = await fetch("/api/settings", {
     method: "PATCH",

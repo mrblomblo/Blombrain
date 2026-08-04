@@ -8,10 +8,12 @@ import {
   deleteMessage as apiDeleteMessage,
   deleteConversation,
   branchMessage as apiBranchMessage,
+  autoNameConversation,
 } from "../api";
 import { encodeToWav } from "../audio";
 import type { ChatMessage, ConversationSummary, AttachmentOut, ResponseStats } from "../types";
 import { artifactStore } from "./artifact.svelte";
+import { settingsStore } from "./settings.svelte";
 
 function makeId() {
   return crypto.randomUUID();
@@ -385,7 +387,11 @@ class ChatStore {
     this.setBranchSelection(parentId, userMessageId);
 
     // Create conversation on backend first if needed
+    let newConvId: string | null = null;
+    let isNewConv = false;
+
     if (!this.activeConversationId) {
+      isNewConv = true;
       try {
         const words = trimmed.split(/\s+/);
         let excerpt = words.slice(0, 8).join(" ");
@@ -394,6 +400,7 @@ class ChatStore {
 
         const conv = await createConversation({ title: excerpt, model: this.selectedModel ?? undefined });
         this.activeConversationId = conv.id;
+        newConvId = conv.id;
         this.activeConversationTitle = conv.title;
         _invalidateConversations?.();
       } catch (err) {
@@ -401,7 +408,68 @@ class ChatStore {
       }
     }
 
-    await this.triggerAssistantResponse(userMessage, attachmentIds);
+    // Start assistant response FIRST so the main chat completion starts streaming immediately
+    const assistantPromise = this.triggerAssistantResponse(userMessage, attachmentIds);
+
+    if (isNewConv && newConvId && this.selectedModel) {
+      this.triggerAutoNaming(newConvId, trimmed, this.selectedModel);
+    }
+
+    await assistantPromise;
+  }
+
+  private triggerAutoNaming(conversationId: string, userContent: string, activeModelId: string) {
+    const mode = settingsStore.autoNameMode;
+    if (mode === "first_words") return;
+
+    let targetModelId = activeModelId;
+    if (mode === "designated_model" && settingsStore.autoNameModel) {
+      targetModelId = settingsStore.autoNameModel;
+    }
+
+    const applyTitle = (title: string) => {
+      if (title) {
+        if (this.activeConversationId === conversationId) {
+          this.activeConversationTitle = title;
+        }
+        _invalidateConversations?.();
+      }
+    };
+
+    const performAutoName = async () => {
+      // Small 50ms delay so the main chat completion request hits the network first
+      await new Promise((r) => setTimeout(r, 50));
+
+      // 1. Try parallel attempt first
+      try {
+        const res = await autoNameConversation(conversationId, userContent, targetModelId);
+        applyTitle(res.title);
+        return;
+      } catch (err) {
+        console.info("[chatStore] Parallel auto-naming failed/rejected, will retry after response completes:", err);
+      }
+
+      // 2. If parallel failed, wait for main response stream to finish, then retry sequentially
+      if (this.isStreaming) {
+        await new Promise<void>((resolve) => {
+          const checkDone = setInterval(() => {
+            if (!this.isStreaming) {
+              clearInterval(checkDone);
+              resolve();
+            }
+          }, 250);
+        });
+      }
+
+      try {
+        const res = await autoNameConversation(conversationId, userContent, targetModelId);
+        applyTitle(res.title);
+      } catch (fallbackErr) {
+        console.error("[chatStore] Sequential auto-naming failed:", fallbackErr);
+      }
+    };
+
+    performAutoName();
   }
 
   private async triggerAssistantResponse(userMsg: { id: string; content: string; role: string; parentId?: string | null; createdAt?: number; attachments?: AttachmentOut[] }, attachmentIds?: string[]) {

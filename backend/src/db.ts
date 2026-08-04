@@ -139,6 +139,19 @@ for (const col of columnsToAdd) {
   }
 }
 
+// Migration helper for global_settings columns
+const globalSettingsCols = (db.pragma("table_info(global_settings)") as { name: string }[]).map(c => c.name);
+if (!globalSettingsCols.includes("auto_name_mode")) {
+  try {
+    db.exec(`ALTER TABLE global_settings ADD COLUMN auto_name_mode TEXT NOT NULL DEFAULT 'first_words'`);
+  } catch (e) { }
+}
+if (!globalSettingsCols.includes("auto_name_model")) {
+  try {
+    db.exec(`ALTER TABLE global_settings ADD COLUMN auto_name_model TEXT`);
+  } catch (e) { }
+}
+
 // Migration helper for backends.api_type
 const backendCols = (db.pragma("table_info(backends)") as { name: string }[]).map(c => c.name);
 if (!backendCols.includes("api_type")) {

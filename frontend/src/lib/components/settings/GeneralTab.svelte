@@ -1,9 +1,17 @@
 <script lang="ts">
   import { Upload } from "@lucide/svelte";
-  import { uploadFile, serveUploadUrl } from "../../api";
+  import { uploadFile, serveUploadUrl, type AutoNameMode } from "../../api";
   import { settingsStore } from "../../stores/settings.svelte";
   import ThemeSwitcher from "../ThemeSwitcher.svelte";
   import Button from "../ui/Button.svelte";
+  import Dropdown, { type DropdownOption } from "../ui/Dropdown.svelte";
+  import ModelDropdown from "../ui/ModelDropdown.svelte";
+
+  const modeOptions: DropdownOption[] = [
+    { label: "First Words (Extract 8 words locally)", value: "first_words" },
+    { label: "Active Model (Prompt active chat model)", value: "active_model" },
+    { label: "Designated Model (Prompt a specific model)", value: "designated_model" },
+  ];
 
   let imageUploading = $state(false);
   let formError = $state<string | null>(null);
@@ -145,5 +153,55 @@
         onchange={(t) => settingsStore.update({ theme: t })}
       />
     </div>
+  </div>
+
+  <!-- Auto Chat Naming Section -->
+  <div
+    class="rounded-lg border border-line bg-bg-elevated p-4 flex flex-col gap-4"
+  >
+    <div>
+      <h3 class="text-sm font-semibold text-fg">Auto Chat Naming</h3>
+      <p class="text-xs text-fg-subtle mt-0.5">
+        Choose how new chat conversation titles are generated.
+      </p>
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <label
+        for="auto-name-mode-select"
+        class="text-xs font-medium text-fg-muted"
+      >
+        Naming Mode
+      </label>
+      <Dropdown
+        id="auto-name-mode-select"
+        value={settingsStore.autoNameMode}
+        options={modeOptions}
+        onchange={(val) =>
+          settingsStore.update({
+            autoNameMode: val as AutoNameMode,
+          })}
+      />
+    </div>
+
+    {#if settingsStore.autoNameMode === "designated_model"}
+      <div class="flex flex-col gap-1">
+        <label
+          for="auto-name-model-select"
+          class="text-xs font-medium text-fg-muted"
+        >
+          Designated Model
+        </label>
+        <ModelDropdown
+          id="auto-name-model-select"
+          value={settingsStore.autoNameModel ?? undefined}
+          placeholder="Select a model..."
+          onchange={(val) =>
+            settingsStore.update({
+              autoNameModel: val || null,
+            })}
+        />
+      </div>
+    {/if}
   </div>
 </div>

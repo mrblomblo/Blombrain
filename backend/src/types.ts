@@ -221,11 +221,15 @@ export interface AttachmentOut {
 // Global Settings / User Profile
 // ---------------------------------------------------------------------------
 
+export type AutoNameMode = "first_words" | "active_model" | "designated_model";
+
 export interface GlobalSettingsRow {
   id: string;
   user_name: string;
   user_avatar: string | null;
   theme: string;
+  auto_name_mode: string;
+  auto_name_model: string | null;
 }
 
 export interface GlobalSettingsOut {
@@ -233,10 +237,14 @@ export interface GlobalSettingsOut {
   userName: string;
   userAvatar: string | null;
   theme: string;
+  autoNameMode: AutoNameMode;
+  autoNameModel: string | null;
 }
 
 export interface GlobalSettingsWriteBody {
   userName?: string;
   userAvatar?: string | null;
   theme?: string;
+  autoNameMode?: AutoNameMode;
+  autoNameModel?: string | null;
 }
