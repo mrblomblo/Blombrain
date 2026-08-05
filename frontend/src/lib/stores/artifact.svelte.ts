@@ -13,6 +13,7 @@ class ArtifactStore {
   language = $state("html");
   title = $state("Artifact");
   userClosedIds = $state(new Set<string>());
+  networkAccess = $state(false);
 
   openArtifact(data: ArtifactData) {
     if (data.id) {

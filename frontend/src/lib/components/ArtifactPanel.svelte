@@ -13,8 +13,10 @@
     ChevronDown,
     ChevronUp,
     Download,
+    Globe,
   } from "@lucide/svelte";
   import Markdown from "./Markdown.svelte";
+  import ToggleSwitch from "./ui/ToggleSwitch.svelte";
 
   let viewMode = $state<"preview" | "code">("preview");
   let copied = $state(false);
@@ -38,7 +40,9 @@
 
   let srcDoc = $derived.by(() => {
     const code = debouncedCode;
-    const CSP_META = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https:; font-src data: https:; connect-src 'none'; base-uri 'none'; form-action 'none';">`;
+    const CSP_META = artifactStore.networkAccess
+      ? `<meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline' data: blob:; img-src * data: blob:; font-src * data: blob:; connect-src * data: blob:; base-uri 'none'; form-action 'none';">`
+      : `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https:; font-src data: https:; connect-src 'none'; base-uri 'none'; form-action 'none';">`;
     const INTERCEPTOR_SCRIPT = `<script>
 document.addEventListener('click', function(e) {
   const a = e.target.closest('a');
@@ -270,7 +274,9 @@ document.addEventListener('submit', function(e) {
         >
           <ChevronDown
             size={14}
-            class="shrink-0 transition-transform duration-200 {showDownloadMenu ? 'rotate-180' : ''}"
+            class="shrink-0 transition-transform duration-200 {showDownloadMenu
+              ? 'rotate-180'
+              : ''}"
           />
         </button>
 
@@ -283,8 +289,33 @@ document.addEventListener('submit', function(e) {
           ></div>
           <div
             transition:fly={{ y: -6, duration: 150 }}
-            class="absolute right-0 top-full mt-1 z-50 min-w-32.5 rounded-lg border border-line bg-bg-elevated p-1 shadow-xl overflow-hidden"
+            class="absolute right-0 top-full mt-1 z-50 min-w-44 rounded-lg border border-line bg-bg-elevated p-1 shadow-xl overflow-hidden"
           >
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              onclick={() => {
+                artifactStore.networkAccess = !artifactStore.networkAccess;
+              }}
+              class="flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-fg hover:bg-bg-hover transition-colors cursor-pointer select-none"
+            >
+              <div class="flex items-center gap-2">
+                <Globe
+                  size={14}
+                  class={artifactStore.networkAccess
+                    ? "text-accent"
+                    : "text-fg-muted"}
+                />
+                <span>Network</span>
+              </div>
+              <ToggleSwitch
+                id="artifact-network-access-toggle"
+                checked={artifactStore.networkAccess}
+                class="pointer-events-none"
+                label="Toggle Network Access"
+              />
+            </div>
+            <div class="h-px bg-line my-1"></div>
             <button
               type="button"
               onclick={handleDownload}
