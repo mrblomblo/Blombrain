@@ -5,6 +5,7 @@ import {
   estimateToolDefinitionsTokens,
   partitionMessageGroups,
   applyContextOverflowPolicy,
+  filterReasoningContent,
 } from "../contextWindow.js";
 
 describe("contextWindow service", () => {
@@ -144,6 +145,33 @@ describe("contextWindow service", () => {
       });
 
       expect(result.action).toBe("impossible_fit");
+    });
+  });
+
+  describe("filterReasoningContent", () => {
+    const messages = [
+      { role: "user", content: "Query 1" },
+      { role: "assistant", content: "<think>Step 1</think>\nAnswer 1" },
+      { role: "user", content: "Query 2" },
+      { role: "assistant", content: "<think>Step 2</think>\nAnswer 2" },
+    ];
+
+    it("leaves all reasoning tags intact for 'all' mode", () => {
+      const res = filterReasoningContent(messages, "all");
+      expect(res[1].content).toContain("<think>Step 1</think>");
+      expect(res[3].content).toContain("<think>Step 2</think>");
+    });
+
+    it("strips past reasoning tags but keeps latest reasoning for 'latest' mode", () => {
+      const res = filterReasoningContent(messages, "latest");
+      expect(res[1].content).toBe("Answer 1");
+      expect(res[3].content).toContain("<think>Step 2</think>");
+    });
+
+    it("strips all reasoning tags for 'none' mode", () => {
+      const res = filterReasoningContent(messages, "none");
+      expect(res[1].content).toBe("Answer 1");
+      expect(res[3].content).toBe("Answer 2");
     });
   });
 });

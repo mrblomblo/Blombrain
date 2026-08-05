@@ -69,6 +69,8 @@ export interface ModelInfo {
   ctxLength?: number;
   ctxOverflowBehavior?: CtxOverflowBehavior | null;
   effectiveCtxOverflowBehavior?: CtxOverflowBehavior;
+  reasoningInjectionMode?: ReasoningInjectionMode | null;
+  effectiveReasoningInjectionMode?: ReasoningInjectionMode;
   isHidden?: boolean;
   isOffline?: boolean;
   sortOrder?: number;
@@ -259,6 +261,7 @@ export interface ModelSettingRow {
   repeat_penalty: number | null;
   ctx_length: number | null;
   ctx_overflow_behavior: string | null;
+  reasoning_injection_mode: string | null;
   is_hidden: number;
   sort_order: number;
   is_default: number;
@@ -286,6 +289,7 @@ export interface ModelSettingWriteBody {
   repeatPenalty?: number | null;
   ctxLength?: number | null;
   ctxOverflowBehavior?: CtxOverflowBehavior | null;
+  reasoningInjectionMode?: ReasoningInjectionMode | null;
   isHidden?: boolean;
   sortOrder?: number;
   isDefault?: boolean;
@@ -319,6 +323,7 @@ export interface AttachmentOut {
 export type AutoNameMode = "first_words" | "active_model" | "designated_model";
 export type ToolRoutingMode = "off" | "active_model" | "designated_model";
 export type CtxOverflowBehavior = "truncate_middle" | "rolling" | "stop";
+export type ReasoningInjectionMode = "all" | "latest" | "none";
 
 export interface GlobalSettingsRow {
   id: string;
@@ -330,6 +335,7 @@ export interface GlobalSettingsRow {
   tool_routing_mode: string;
   tool_routing_model: string | null;
   ctx_overflow_behavior: string;
+  reasoning_injection_mode: string;
 }
 
 export interface GlobalSettingsOut {
@@ -342,6 +348,7 @@ export interface GlobalSettingsOut {
   toolRoutingMode: ToolRoutingMode;
   toolRoutingModel: string | null;
   ctxOverflowBehavior: CtxOverflowBehavior;
+  reasoningInjectionMode: ReasoningInjectionMode;
 }
 
 export interface GlobalSettingsWriteBody {
@@ -353,4 +360,5 @@ export interface GlobalSettingsWriteBody {
   toolRoutingMode?: ToolRoutingMode;
   toolRoutingModel?: string | null;
   ctxOverflowBehavior?: CtxOverflowBehavior;
+  reasoningInjectionMode?: ReasoningInjectionMode;
 }

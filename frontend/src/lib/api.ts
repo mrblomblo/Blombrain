@@ -17,8 +17,9 @@ import type {
   ResponseStats,
   ToolExecutionEvent,
   CtxOverflowBehavior,
+  ReasoningInjectionMode,
 } from "./types";
-export type { CtxOverflowBehavior };
+export type { CtxOverflowBehavior, ReasoningInjectionMode };
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -489,6 +490,7 @@ export interface GlobalSettingsOut {
   toolRoutingMode: ToolRoutingMode;
   toolRoutingModel: string | null;
   ctxOverflowBehavior: CtxOverflowBehavior;
+  reasoningInjectionMode: ReasoningInjectionMode;
 }
 
 export async function fetchGlobalSettings(): Promise<GlobalSettingsOut> {
@@ -505,6 +507,7 @@ export async function updateGlobalSettings(
     toolRoutingMode: ToolRoutingMode;
     toolRoutingModel: string | null;
     ctxOverflowBehavior: CtxOverflowBehavior;
+    reasoningInjectionMode: ReasoningInjectionMode;
   }>,
 ): Promise<GlobalSettingsOut> {
   const res = await fetch("/api/settings", {

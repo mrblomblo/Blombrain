@@ -551,6 +551,13 @@ export async function chatRoutes(app: FastifyInstance) {
     // -----------------------------------------------------------------------
     let outgoingMessages = reconstructToolCalls([...body.messages]);
 
+    const globalSettingsRow = db.prepare("SELECT ctx_overflow_behavior, reasoning_injection_mode FROM global_settings LIMIT 1").get() as any;
+    const defaultReasoningMode = globalSettingsRow?.reasoning_injection_mode || "all";
+    const effectiveReasoningMode = settingRow?.reasoning_injection_mode || defaultReasoningMode;
+
+    const { filterReasoningContent } = await import("../services/contextWindow.js");
+    outgoingMessages = filterReasoningContent(outgoingMessages, effectiveReasoningMode as any);
+
     if (settingRow?.system_prompt) {
       if (outgoingMessages.length > 0 && outgoingMessages[0].role === "system") {
         outgoingMessages[0] = { ...outgoingMessages[0], content: settingRow.system_prompt };
@@ -854,7 +861,6 @@ export async function chatRoutes(app: FastifyInstance) {
     req.raw.on("aborted", onClientDisconnect);
 
     // Fetch context overflow behavior settings
-    const globalSettingsRow = db.prepare("SELECT ctx_overflow_behavior FROM global_settings LIMIT 1").get() as any;
     const defaultBehavior = globalSettingsRow?.ctx_overflow_behavior || "truncate_middle";
     const effectiveOverflowBehavior = settingRow?.ctx_overflow_behavior || defaultBehavior;
     const contextLimit = settingRow?.ctx_length ?? null;

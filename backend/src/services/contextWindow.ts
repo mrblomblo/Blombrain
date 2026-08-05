@@ -1,4 +1,4 @@
-import type { CtxOverflowBehavior } from "../types.js";
+import type { CtxOverflowBehavior, ReasoningInjectionMode } from "../types.js";
 
 export interface TokenEstimateBreakdown {
   messagesTokens: number;
@@ -429,4 +429,57 @@ export function applyContextOverflowPolicy(
     droppedMessageCount,
     droppedGroupCount,
   };
+}
+
+/**
+ * Filters reasoning tags (<think>...</think> and <thought>...</thought>) from assistant messages based on mode:
+ * - 'all': Retains reasoning tags in all messages.
+ * - 'latest': Retains reasoning tags in ONLY the most recent assistant message, stripping from prior history.
+ * - 'none': Strips reasoning tags from all assistant messages in history.
+ */
+export function filterReasoningContent(
+  messages: any[],
+  mode: ReasoningInjectionMode = "all"
+): any[] {
+  if (mode === "all" || !Array.isArray(messages) || messages.length === 0) {
+    return messages;
+  }
+
+  let lastAsstIdx = -1;
+  if (mode === "latest") {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") {
+        lastAsstIdx = i;
+        break;
+      }
+    }
+  }
+
+  const stripTags = (str: string): string => {
+    return str
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .replace(/<thought>[\s\S]*?<\/thought>/gi, "")
+      .trim();
+  };
+
+  return messages.map((msg, idx) => {
+    if (msg.role !== "assistant") return msg;
+    if (mode === "latest" && idx === lastAsstIdx) return msg;
+
+    if (typeof msg.content === "string") {
+      return { ...msg, content: stripTags(msg.content) };
+    }
+
+    if (Array.isArray(msg.content)) {
+      const newParts = msg.content.map((part: any) => {
+        if (part.type === "text" && typeof part.text === "string") {
+          return { ...part, text: stripTags(part.text) };
+        }
+        return part;
+      });
+      return { ...msg, content: newParts };
+    }
+
+    return msg;
+  });
 }

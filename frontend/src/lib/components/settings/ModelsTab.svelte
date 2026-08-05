@@ -82,6 +82,7 @@
   let formRepeatPenalty = $state<number | undefined>(undefined);
   let formCtxLength = $state<number | undefined>(undefined);
   let formCtxOverflowBehavior = $state<string | undefined>(undefined);
+  let formReasoningInjectionMode = $state<string | undefined>(undefined);
 
   let showAdvanced = $state(false);
   let formBusy = $state(false);
@@ -108,6 +109,7 @@
     formRepeatPenalty = undefined;
     formCtxLength = undefined;
     formCtxOverflowBehavior = undefined;
+    formReasoningInjectionMode = undefined;
     showAdvanced = false;
     formError = null;
   }
@@ -172,6 +174,7 @@
     formRepeatPenalty = model.repeatPenalty;
     formCtxLength = model.ctxLength;
     formCtxOverflowBehavior = model.ctxOverflowBehavior ?? undefined;
+    formReasoningInjectionMode = model.reasoningInjectionMode ?? undefined;
   }
 
   function cancelForm() {
@@ -318,6 +321,7 @@
           ? formCtxLength
           : null,
       ctxOverflowBehavior: (formCtxOverflowBehavior as any) || null,
+      reasoningInjectionMode: (formReasoningInjectionMode as any) || null,
     };
 
     try {
@@ -923,6 +927,27 @@
                       { label: "Keep first message + recent history", value: "truncate_middle" },
                       { label: "Sliding window", value: "rolling" },
                       { label: "Stop generation", value: "stop" },
+                    ]}
+                    placeholder="Use global default"
+                    buttonClass="h-7 bg-bg-elevated px-2"
+                  />
+                </div>
+
+                <!-- Reasoning Context Injection -->
+                <div class="flex flex-col gap-1">
+                  <label
+                    for="me-reasoning-inj"
+                    class="text-[11px] font-medium text-fg-muted"
+                    >Reasoning Context</label
+                  >
+                  <Dropdown
+                    id="me-reasoning-inj"
+                    bind:value={formReasoningInjectionMode}
+                    options={[
+                      { label: "Use global default", value: "" },
+                      { label: "Inject all reasoning", value: "all" },
+                      { label: "Inject latest reasoning only", value: "latest" },
+                      { label: "Do not inject reasoning", value: "none" },
                     ]}
                     placeholder="Use global default"
                     buttonClass="h-7 bg-bg-elevated px-2"

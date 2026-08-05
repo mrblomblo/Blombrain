@@ -60,6 +60,8 @@ export interface ModelInfo {
   ctxLength?: number;
   ctxOverflowBehavior?: CtxOverflowBehavior | null;
   effectiveCtxOverflowBehavior?: CtxOverflowBehavior;
+  reasoningInjectionMode?: ReasoningInjectionMode | null;
+  effectiveReasoningInjectionMode?: ReasoningInjectionMode;
   isHidden?: boolean;
   isOffline?: boolean;
   sortOrder?: number;
@@ -89,12 +91,14 @@ export interface ModelSettingWriteBody {
   repeatPenalty?: number | null;
   ctxLength?: number | null;
   ctxOverflowBehavior?: CtxOverflowBehavior | null;
+  reasoningInjectionMode?: ReasoningInjectionMode | null;
   isHidden?: boolean;
   sortOrder?: number;
   isDefault?: boolean;
 }
 
 export type CtxOverflowBehavior = "truncate_middle" | "rolling" | "stop";
+export type ReasoningInjectionMode = "all" | "latest" | "none";
 export type ChatRole = "system" | "user" | "assistant" | "tool";
 
 export interface ResponseStats {

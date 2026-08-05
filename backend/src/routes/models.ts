@@ -40,9 +40,10 @@ export async function modelsRoutes(app: FastifyInstance) {
       }
     }
 
-    // Fetch global default overflow behavior
-    const globalSettingsRow = db.prepare("SELECT ctx_overflow_behavior FROM global_settings LIMIT 1").get() as any;
+    // Fetch global default overflow behavior and reasoning injection mode
+    const globalSettingsRow = db.prepare("SELECT ctx_overflow_behavior, reasoning_injection_mode FROM global_settings LIMIT 1").get() as any;
     const globalDefaultBehavior = globalSettingsRow?.ctx_overflow_behavior || "truncate_middle";
+    const globalDefaultReasoningMode = globalSettingsRow?.reasoning_injection_mode || "all";
 
     // Augment Base Models with their settings
     const augmentedBaseModels: ModelInfo[] = baseModels.map((bm) => {
@@ -54,10 +55,13 @@ export async function modelsRoutes(app: FastifyInstance) {
           isHidden: isOffline ? true : false,
           ctxOverflowBehavior: null,
           effectiveCtxOverflowBehavior: globalDefaultBehavior as any,
+          reasoningInjectionMode: null,
+          effectiveReasoningInjectionMode: globalDefaultReasoningMode as any,
         };
       }
 
       const behavior = setting.ctx_overflow_behavior as any;
+      const rMode = setting.reasoning_injection_mode as any;
       return {
         ...bm,
         name: setting.name ?? undefined,
@@ -79,6 +83,8 @@ export async function modelsRoutes(app: FastifyInstance) {
         ctxLength: setting.ctx_length ?? undefined,
         ctxOverflowBehavior: behavior ?? null,
         effectiveCtxOverflowBehavior: behavior || globalDefaultBehavior,
+        reasoningInjectionMode: rMode ?? null,
+        effectiveReasoningInjectionMode: rMode || globalDefaultReasoningMode,
         isHidden: isOffline ? true : Boolean(setting.is_hidden),
         sortOrder: setting.sort_order ?? 0,
         isDefault: Boolean(setting.is_default),
@@ -90,6 +96,7 @@ export async function modelsRoutes(app: FastifyInstance) {
       const parent = augmentedBaseModels.find((bm) => bm.id === p.base_model_id);
       const isOffline = parent ? Boolean(parent.isOffline) : false;
       const behavior = p.ctx_overflow_behavior as any;
+      const rMode = p.reasoning_injection_mode as any;
       return {
         id: p.id,
         rawId: parent ? parent.rawId : (p.base_model_id ?? p.id),
@@ -118,6 +125,8 @@ export async function modelsRoutes(app: FastifyInstance) {
         ctxLength: p.ctx_length ?? undefined,
         ctxOverflowBehavior: behavior ?? null,
         effectiveCtxOverflowBehavior: behavior || globalDefaultBehavior,
+        reasoningInjectionMode: rMode ?? null,
+        effectiveReasoningInjectionMode: rMode || globalDefaultReasoningMode,
         isHidden: isOffline ? true : Boolean(p.is_hidden),
         sortOrder: p.sort_order ?? 0,
         isDefault: Boolean(p.is_default),
@@ -134,7 +143,7 @@ export async function modelsRoutes(app: FastifyInstance) {
     const {
       name, baseModelId, systemPrompt, canImage, canAudio, canVideo, temperature,
       icon, seed, reasoningEffort, maxTokens, topK, topP, minP,
-      presencePenalty, frequencyPenalty, repeatPenalty, ctxLength, ctxOverflowBehavior, isHidden, sortOrder, isDefault
+      presencePenalty, frequencyPenalty, repeatPenalty, ctxLength, ctxOverflowBehavior, reasoningInjectionMode, isHidden, sortOrder, isDefault
     } = req.body;
     if (!name || !baseModelId) {
       return reply.code(400).send({ error: "name and baseModelId are required for creating a preset" });
@@ -149,10 +158,10 @@ export async function modelsRoutes(app: FastifyInstance) {
       INSERT INTO model_settings (
         id, is_preset, name, base_model_id, system_prompt, can_image, can_audio, can_video, temperature,
         icon, seed, reasoning_effort, max_tokens, top_k, top_p, min_p,
-        presence_penalty, frequency_penalty, repeat_penalty, ctx_length, ctx_overflow_behavior,
+        presence_penalty, frequency_penalty, repeat_penalty, ctx_length, ctx_overflow_behavior, reasoning_injection_mode,
         is_hidden, sort_order, is_default
       )
-      VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       name,
@@ -174,6 +183,7 @@ export async function modelsRoutes(app: FastifyInstance) {
       repeatPenalty ?? null,
       ctxLength ?? null,
       ctxOverflowBehavior ?? null,
+      reasoningInjectionMode ?? null,
       isHidden ? 1 : 0,
       sortOrder ?? 0,
       isDefault ? 1 : 0
@@ -201,6 +211,7 @@ export async function modelsRoutes(app: FastifyInstance) {
       repeatPenalty,
       ctxLength,
       ctxOverflowBehavior: ctxOverflowBehavior ?? null,
+      reasoningInjectionMode: reasoningInjectionMode ?? null,
       isHidden: Boolean(isHidden),
       sortOrder: sortOrder ?? 0,
       isDefault: Boolean(isDefault),
@@ -246,7 +257,7 @@ export async function modelsRoutes(app: FastifyInstance) {
     const {
       name, baseModelId, systemPrompt, canImage, canAudio, canVideo, temperature, isPreset,
       icon, seed, reasoningEffort, maxTokens, topK, topP, minP,
-      presencePenalty, frequencyPenalty, repeatPenalty, ctxLength, ctxOverflowBehavior,
+      presencePenalty, frequencyPenalty, repeatPenalty, ctxLength, ctxOverflowBehavior, reasoningInjectionMode,
       isHidden, sortOrder, isDefault
     } = req.body;
 
@@ -274,7 +285,7 @@ export async function modelsRoutes(app: FastifyInstance) {
         UPDATE model_settings
         SET name = ?, base_model_id = ?, system_prompt = ?, can_image = ?, can_audio = ?, can_video = ?, temperature = ?,
             icon = ?, seed = ?, reasoning_effort = ?, max_tokens = ?, top_k = ?, top_p = ?, min_p = ?,
-            presence_penalty = ?, frequency_penalty = ?, repeat_penalty = ?, ctx_length = ?, ctx_overflow_behavior = ?,
+            presence_penalty = ?, frequency_penalty = ?, repeat_penalty = ?, ctx_length = ?, ctx_overflow_behavior = ?, reasoning_injection_mode = ?,
             is_hidden = ?, sort_order = ?, is_default = ?
         WHERE id = ?
       `).run(
@@ -297,6 +308,7 @@ export async function modelsRoutes(app: FastifyInstance) {
         repeatPenalty !== undefined ? repeatPenalty : existing.repeat_penalty,
         ctxLength !== undefined ? ctxLength : existing.ctx_length,
         ctxOverflowBehavior !== undefined ? ctxOverflowBehavior : existing.ctx_overflow_behavior,
+        reasoningInjectionMode !== undefined ? reasoningInjectionMode : existing.reasoning_injection_mode,
         isHidden !== undefined ? (isHidden ? 1 : 0) : existing.is_hidden,
         sortOrder !== undefined ? sortOrder : existing.sort_order,
         nextIsDefault,
@@ -307,10 +319,10 @@ export async function modelsRoutes(app: FastifyInstance) {
         INSERT INTO model_settings (
           id, is_preset, name, base_model_id, system_prompt, can_image, can_audio, can_video, temperature,
           icon, seed, reasoning_effort, max_tokens, top_k, top_p, min_p,
-          presence_penalty, frequency_penalty, repeat_penalty, ctx_length, ctx_overflow_behavior,
+          presence_penalty, frequency_penalty, repeat_penalty, ctx_length, ctx_overflow_behavior, reasoning_injection_mode,
           is_hidden, sort_order, is_default
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         modelId,
         isPreset ? 1 : 0,
@@ -333,6 +345,7 @@ export async function modelsRoutes(app: FastifyInstance) {
         repeatPenalty ?? null,
         ctxLength ?? null,
         ctxOverflowBehavior ?? null,
+        reasoningInjectionMode ?? null,
         isHidden ? 1 : 0,
         sortOrder ?? 0,
         nextIsDefault

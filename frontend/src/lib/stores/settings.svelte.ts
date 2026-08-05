@@ -1,4 +1,4 @@
-import { fetchGlobalSettings, updateGlobalSettings, type AutoNameMode, type ToolRoutingMode, type CtxOverflowBehavior } from "../api";
+import { fetchGlobalSettings, updateGlobalSettings, type AutoNameMode, type ToolRoutingMode, type CtxOverflowBehavior, type ReasoningInjectionMode } from "../api";
 import { themeStore, type ThemeName } from "../theme.svelte";
 
 class SettingsStore {
@@ -10,6 +10,7 @@ class SettingsStore {
   toolRoutingMode = $state<ToolRoutingMode>("off");
   toolRoutingModel = $state<string | null>(null);
   ctxOverflowBehavior = $state<CtxOverflowBehavior>("truncate_middle");
+  reasoningInjectionMode = $state<ReasoningInjectionMode>("all");
   loaded = $state(false);
 
   async init() {
@@ -23,6 +24,7 @@ class SettingsStore {
       this.toolRoutingMode = data.toolRoutingMode ?? "off";
       this.toolRoutingModel = data.toolRoutingModel ?? null;
       this.ctxOverflowBehavior = data.ctxOverflowBehavior ?? "truncate_middle";
+      this.reasoningInjectionMode = data.reasoningInjectionMode ?? "all";
       themeStore.set(this.theme);
       this.loaded = true;
     } catch (err) {
@@ -40,6 +42,7 @@ class SettingsStore {
       toolRoutingMode: ToolRoutingMode;
       toolRoutingModel: string | null;
       ctxOverflowBehavior: CtxOverflowBehavior;
+      reasoningInjectionMode: ReasoningInjectionMode;
     }>,
   ) {
     if (patch.userName !== undefined) this.userName = patch.userName;
@@ -53,6 +56,7 @@ class SettingsStore {
     if (patch.toolRoutingMode !== undefined) this.toolRoutingMode = patch.toolRoutingMode;
     if (patch.toolRoutingModel !== undefined) this.toolRoutingModel = patch.toolRoutingModel;
     if (patch.ctxOverflowBehavior !== undefined) this.ctxOverflowBehavior = patch.ctxOverflowBehavior;
+    if (patch.reasoningInjectionMode !== undefined) this.reasoningInjectionMode = patch.reasoningInjectionMode;
 
     try {
       await updateGlobalSettings({
@@ -64,6 +68,7 @@ class SettingsStore {
         toolRoutingMode: patch.toolRoutingMode,
         toolRoutingModel: patch.toolRoutingModel,
         ctxOverflowBehavior: patch.ctxOverflowBehavior,
+        reasoningInjectionMode: patch.reasoningInjectionMode,
       });
     } catch (err) {
       console.error("Failed to persist settings to server:", err);

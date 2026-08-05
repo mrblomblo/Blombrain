@@ -13,6 +13,7 @@ function rowToSettings(row: GlobalSettingsRow): GlobalSettingsOut {
     toolRoutingMode: (row.tool_routing_mode as any) || "off",
     toolRoutingModel: row.tool_routing_model ?? null,
     ctxOverflowBehavior: (row.ctx_overflow_behavior as any) || "truncate_middle",
+    reasoningInjectionMode: (row.reasoning_injection_mode as any) || "all",
   };
 }
 
@@ -49,12 +50,13 @@ export async function settingsRoutes(app: FastifyInstance) {
     const toolRoutingMode = body.toolRoutingMode !== undefined ? body.toolRoutingMode : (current.tool_routing_mode || "off");
     const toolRoutingModel = body.toolRoutingModel !== undefined ? body.toolRoutingModel : current.tool_routing_model;
     const ctxOverflowBehavior = body.ctxOverflowBehavior !== undefined ? body.ctxOverflowBehavior : (current.ctx_overflow_behavior || "truncate_middle");
+    const reasoningInjectionMode = body.reasoningInjectionMode !== undefined ? body.reasoningInjectionMode : (current.reasoning_injection_mode || "all");
 
     db.prepare(`
       UPDATE global_settings
-      SET user_name = ?, user_avatar = ?, theme = ?, auto_name_mode = ?, auto_name_model = ?, tool_routing_mode = ?, tool_routing_model = ?, ctx_overflow_behavior = ?
+      SET user_name = ?, user_avatar = ?, theme = ?, auto_name_mode = ?, auto_name_model = ?, tool_routing_mode = ?, tool_routing_model = ?, ctx_overflow_behavior = ?, reasoning_injection_mode = ?
       WHERE id = 'default'
-    `).run(userName, userAvatar, theme, autoNameMode, autoNameModel, toolRoutingMode, toolRoutingModel, ctxOverflowBehavior);
+    `).run(userName, userAvatar, theme, autoNameMode, autoNameModel, toolRoutingMode, toolRoutingModel, ctxOverflowBehavior, reasoningInjectionMode);
 
     const updated = db
       .prepare<[string], GlobalSettingsRow>("SELECT * FROM global_settings WHERE id = ?")

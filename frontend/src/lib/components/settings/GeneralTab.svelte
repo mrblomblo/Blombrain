@@ -6,6 +6,7 @@
     type AutoNameMode,
     type ToolRoutingMode,
     type CtxOverflowBehavior,
+    type ReasoningInjectionMode,
   } from "../../api";
   import { settingsStore } from "../../stores/settings.svelte";
   import ThemeSwitcher from "../ThemeSwitcher.svelte";
@@ -46,6 +47,21 @@
     {
       label: "Stop generation and show error",
       value: "stop",
+    },
+  ];
+
+  const reasoningInjectionOptions: DropdownOption[] = [
+    {
+      label: "Inject all reasoning (Full history)",
+      value: "all",
+    },
+    {
+      label: "Inject latest reasoning only (Compact)",
+      value: "latest",
+    },
+    {
+      label: "Do not inject reasoning (Minimal)",
+      value: "none",
     },
   ];
 
@@ -317,6 +333,36 @@
         onchange={(val) =>
           settingsStore.update({
             ctxOverflowBehavior: val as CtxOverflowBehavior,
+          })}
+      />
+    </div>
+  </div>
+
+  <!-- Reasoning Context Injection Section -->
+  <div
+    class="rounded-lg border border-line bg-bg-elevated p-4 flex flex-col gap-4"
+  >
+    <div>
+      <h3 class="text-sm font-semibold text-fg">Reasoning Context Injection</h3>
+      <p class="text-xs text-fg-subtle mt-0.5">
+        Control how reasoning blocks (&lt;think&gt;...&lt;/think&gt;) from past assistant turns are included in prompt history.
+      </p>
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <label
+        for="reasoning-injection-mode-select"
+        class="text-xs font-medium text-fg-muted"
+      >
+        Reasoning Injection Strategy
+      </label>
+      <Dropdown
+        id="reasoning-injection-mode-select"
+        value={settingsStore.reasoningInjectionMode}
+        options={reasoningInjectionOptions}
+        onchange={(val) =>
+          settingsStore.update({
+            reasoningInjectionMode: val as ReasoningInjectionMode,
           })}
       />
     </div>
