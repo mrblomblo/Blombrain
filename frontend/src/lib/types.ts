@@ -166,6 +166,7 @@ export interface ConversationSummary {
   model: string | null;
   createdAt: number;
   updatedAt: number;
+  toolsEnabled?: boolean;
 }
 
 /** A full conversation with its messages. */

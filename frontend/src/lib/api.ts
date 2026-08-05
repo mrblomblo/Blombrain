@@ -227,7 +227,7 @@ export async function updateConversation(id: string, patch: { title?: string; mo
 }
 export async function patchConversationTools(
   id: string,
-  patch: { excludedMcps?: string[]; excludedSkills?: string[] },
+  patch: { excludedMcps?: string[]; excludedSkills?: string[]; toolsEnabled?: boolean },
 ): Promise<void> {
   const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`, {
     method: "PATCH",
@@ -281,6 +281,7 @@ export interface StreamChatOptions {
   userParentId?: string | null;
   assistantMessageId?: string;
   attachmentIds?: string[];
+  toolsEnabled?: boolean;
   signal?: AbortSignal;
   onToken: (delta: string) => void;
   onMeta: (meta: {
@@ -332,6 +333,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
         userParentId,
         assistantMessageId,
         attachments: attachmentIds,
+        toolsEnabled: opts.toolsEnabled,
         stream: true,
       }),
       signal,

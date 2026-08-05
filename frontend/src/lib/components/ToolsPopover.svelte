@@ -4,6 +4,7 @@
   import { chatStore } from "../stores/chat.svelte";
   import { Server, BookOpen, Wrench, CheckSquare, Square } from "@lucide/svelte";
   import { slide } from "svelte/transition";
+  import ToggleSwitch from "./ui/ToggleSwitch.svelte";
 
   let isOpen = $state(false);
   let wrapperEl: HTMLDivElement | undefined = $state();
@@ -77,15 +78,9 @@
     >
       <Wrench size={15} />
     </button>
-    {#if totalCount > 0}
+    {#if chatStore.conversationToolsEnabled && activeCount > 0}
       <span
-        class="pointer-events-none absolute -top-1.5 -right-1.5 min-w-[16px] rounded-full px-1 text-[9px] font-bold leading-none text-center flex items-center justify-center h-4 transition-colors duration-200 border"
-        class:bg-accent={activeCount > 0}
-        class:text-accent-fg={activeCount > 0}
-        class:border-accent={activeCount > 0}
-        class:bg-bg-elevated={activeCount === 0}
-        class:text-fg-subtle={activeCount === 0}
-        class:border-line={activeCount === 0}
+        class="pointer-events-none absolute -top-1.5 -right-1.5 min-w-[16px] rounded-full px-1 text-[9px] font-bold leading-none text-center flex items-center justify-center h-4 transition-colors duration-200 border bg-accent text-accent-fg border-accent"
       >{activeCount}</span>
     {/if}
   </div>
@@ -98,11 +93,30 @@
       class="absolute bottom-full mb-2 left-0 z-50 w-72 rounded-xl border border-line bg-bg-elevated shadow-lg overflow-hidden"
     >
       <div class="px-3 py-2.5 border-b border-line flex items-center justify-between">
-        <span class="text-xs font-semibold text-fg">Tools &amp; Skills</span>
-        <span class="text-[10px] text-fg-subtle">{activeCount} / {totalCount} active</span>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-semibold text-fg">Tools &amp; Skills</span>
+          <ToggleSwitch
+            id="tools-skills-enable-toggle"
+            checked={chatStore.conversationToolsEnabled}
+            onchange={() => chatStore.toggleToolsEnabled()}
+            label="Toggle tools and skills for this conversation"
+          />
+        </div>
+        <span class="text-[10px] text-fg-subtle">
+          {#if !chatStore.conversationToolsEnabled}
+            Off
+          {:else}
+            {activeCount} / {totalCount} active
+          {/if}
+        </span>
       </div>
 
       <div class="max-h-64 overflow-y-auto p-2 space-y-1">
+        {#if !chatStore.conversationToolsEnabled}
+          <div class="px-2 py-1.5 mb-1 rounded bg-bg text-[11px] text-fg-subtle italic border border-line/50 text-center">
+            Tools &amp; skills disabled for this chat. Preferences preserved below.
+          </div>
+        {/if}
         {#if enabledMcps.length > 0}
           <p class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
             MCP Servers

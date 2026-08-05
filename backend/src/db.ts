@@ -178,6 +178,11 @@ if (!convCols.includes("excluded_skills")) {
     db.exec(`ALTER TABLE conversations ADD COLUMN excluded_skills TEXT NOT NULL DEFAULT '[]'`);
   } catch (e) { }
 }
+if (!convCols.includes("tools_enabled")) {
+  try {
+    db.exec(`ALTER TABLE conversations ADD COLUMN tools_enabled INTEGER NOT NULL DEFAULT 1`);
+  } catch (e) { }
+}
 
 // Migration helper for mcp_servers columns (headers)
 const mcpCols = (db.pragma("table_info(mcp_servers)") as { name: string }[]).map(c => c.name);

@@ -96,6 +96,7 @@ export interface ConversationRow {
   model: string | null;
   created_at: number;
   updated_at: number;
+  tools_enabled?: number;
 }
 
 export interface MessageRow {
@@ -119,6 +120,7 @@ export interface ConversationSummary {
   model: string | null;
   createdAt: number;
   updatedAt: number;
+  toolsEnabled?: boolean;
 }
 
 /** Full conversation with messages, sent on GET /api/conversations/:id */
@@ -160,6 +162,7 @@ export interface ConversationPatchBody {
   model?: string;
   excludedMcps?: string[];
   excludedSkills?: string[];
+  toolsEnabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------

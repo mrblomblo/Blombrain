@@ -93,6 +93,8 @@ class ChatStore {
   conversationExcludedMcps = $state<string[]>([]);
   /** Skill IDs currently excluded for this conversation. */
   conversationExcludedSkills = $state<string[]>([]);
+  /** Whether tool/skill injection is enabled for this conversation. */
+  conversationToolsEnabled = $state<boolean>(true);
 
   /** Maps parentId ("ROOT" for root messages) to the selected child message ID */
   branchSelections = $state<Record<string, string>>({});
@@ -228,6 +230,7 @@ class ChatStore {
       this.pendingAttachments = [];
       this.conversationExcludedMcps = detail.excludedMcps ?? [];
       this.conversationExcludedSkills = detail.excludedSkills ?? [];
+      this.conversationToolsEnabled = detail.toolsEnabled !== undefined ? detail.toolsEnabled : true;
       if (detail.model) this.selectedModel = detail.model;
       this.loadBranchSelections(detail.id);
       artifactStore.close();
@@ -257,9 +260,25 @@ class ChatStore {
     this.selectedModel = null;
     this.conversationExcludedMcps = [];
     this.conversationExcludedSkills = [];
+    this.conversationToolsEnabled = true;
     this.streamingConvId = null;
     this.streamingAssistantId = null;
     artifactStore.close();
+  }
+
+  /**
+   * Toggle tool & skill injection on/off for this conversation.
+   * Preserves specific MCP and skill exclusions when toggled.
+   */
+  async toggleToolsEnabled() {
+    this.conversationToolsEnabled = !this.conversationToolsEnabled;
+    if (this.activeConversationId) {
+      try {
+        await patchConversationTools(this.activeConversationId, { toolsEnabled: this.conversationToolsEnabled });
+      } catch (err) {
+        console.warn("[chatStore] failed to persist toolsEnabled:", err);
+      }
+    }
   }
 
   /**
@@ -606,6 +625,7 @@ class ChatStore {
       userParentId: userMsg.parentId ?? null,
       assistantMessageId: currentAsstId,
       attachmentIds,
+      toolsEnabled: this.conversationToolsEnabled,
       signal: this.abortController.signal,
       onToken: (delta) => {
         const msg = this.messages.find((m) => m.id === currentAsstId);

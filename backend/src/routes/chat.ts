@@ -454,15 +454,19 @@ export async function chatRoutes(app: FastifyInstance) {
     const { backend, rawModelId } = resolved;
 
     // -----------------------------------------------------------------------
-    // 3. Fetch per-conversation excluded MCP/Skill IDs from the DB
+    // 3. Fetch per-conversation excluded MCP/Skill IDs and tools_enabled from DB
     // -----------------------------------------------------------------------
     let excludedMcps: string[] = [];
     let excludedSkills: string[] = [];
+    let toolsEnabled = (body as any).toolsEnabled !== undefined ? Boolean((body as any).toolsEnabled) : true;
     if (body.conversationId) {
-      const convRow = db.prepare("SELECT excluded_mcps, excluded_skills FROM conversations WHERE id = ?").get(body.conversationId) as any;
+      const convRow = db.prepare("SELECT excluded_mcps, excluded_skills, tools_enabled FROM conversations WHERE id = ?").get(body.conversationId) as any;
       if (convRow) {
         try { excludedMcps = JSON.parse(convRow.excluded_mcps || "[]"); } catch { }
         try { excludedSkills = JSON.parse(convRow.excluded_skills || "[]"); } catch { }
+        if (convRow.tools_enabled !== undefined && convRow.tools_enabled !== null) {
+          toolsEnabled = Boolean(convRow.tools_enabled);
+        }
       }
     }
 
@@ -523,21 +527,25 @@ export async function chatRoutes(app: FastifyInstance) {
     let routerRawText = "";
     const userQuery = originalUserContent;
 
-    const { routeToolsAndSkills } = await import("../services/toolRouter.js");
-    const routingResult = await routeToolsAndSkills(
-      userQuery,
-      excludedMcps,
-      excludedSkills,
-      forcedTools,
-      body.model,
-      (text: string) => {
-        routerRawText += text;
-        broadcastChunk(JSON.stringify({ type: "router_token", text }));
-      },
-    );
+    let mcpTools: any[] = [];
+    let activeSkills: any[] = [];
 
-    const mcpTools = routingResult.mcpTools ?? [];
-    const activeSkills = routingResult.selectedSkills ?? [];
+    if (toolsEnabled) {
+      const { routeToolsAndSkills } = await import("../services/toolRouter.js");
+      const routingResult = await routeToolsAndSkills(
+        userQuery,
+        excludedMcps,
+        excludedSkills,
+        forcedTools,
+        body.model,
+        (text: string) => {
+          routerRawText += text;
+          broadcastChunk(JSON.stringify({ type: "router_token", text }));
+        },
+      );
+      mcpTools = routingResult.mcpTools ?? [];
+      activeSkills = routingResult.selectedSkills ?? [];
+    }
 
     if (routerRawText.trim()) {
       assistantContent = `<router_execution>${routerRawText.trim()}</router_execution>\n` + assistantContent;
@@ -804,6 +812,7 @@ export async function chatRoutes(app: FastifyInstance) {
           assistantContent,
           assistantError: streamError ?? undefined,
           assistantStats: usageStats,
+          toolsEnabled,
         });
 
         if (attachmentIds && Array.isArray(attachmentIds)) {

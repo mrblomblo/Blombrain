@@ -26,6 +26,7 @@ function rowToSummary(row: ConversationRow): ConversationSummary {
     model: row.model,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    toolsEnabled: (row as any).tools_enabled !== undefined && (row as any).tools_enabled !== null ? Boolean((row as any).tools_enabled) : true,
   };
 }
 
@@ -74,8 +75,8 @@ const getMessages = db.prepare<[string], MessageRow>(
 );
 
 const insertConversation = db.prepare(
-  `INSERT INTO conversations (id, title, model, created_at, updated_at)
-   VALUES (@id, @title, @model, @createdAt, @updatedAt)`,
+  `INSERT INTO conversations (id, title, model, created_at, updated_at, tools_enabled)
+   VALUES (@id, @title, @model, @createdAt, @updatedAt, @toolsEnabled)`,
 );
 
 const updateConversationMeta = db.prepare(
@@ -192,6 +193,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
       model: row.model,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      toolsEnabled: (row as any).tools_enabled !== undefined && (row as any).tools_enabled !== null ? Boolean((row as any).tools_enabled) : true,
       excludedMcps: (row as any).excluded_mcps ? JSON.parse((row as any).excluded_mcps) : [],
       excludedSkills: (row as any).excluded_skills ? JSON.parse((row as any).excluded_skills) : [],
       messages,
@@ -199,7 +201,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
     });
   });
 
-  /** PATCH /api/conversations/:id -- update title, model, excludedMcps, excludedSkills. */
+  /** PATCH /api/conversations/:id -- update title, model, excludedMcps, excludedSkills, toolsEnabled. */
   app.patch("/api/conversations/:id", async (req: FastifyRequest, reply: FastifyReply) => {
     const { id } = req.params as { id: string };
     const row = getConversation.get(id);
@@ -223,6 +225,10 @@ export async function conversationsRoutes(app: FastifyInstance) {
 
     if (body.excludedSkills !== undefined) {
       db.prepare("UPDATE conversations SET excluded_skills = ? WHERE id = ?").run(JSON.stringify(body.excludedSkills), id);
+    }
+
+    if (body.toolsEnabled !== undefined) {
+      db.prepare("UPDATE conversations SET tools_enabled = ? WHERE id = ?").run(body.toolsEnabled ? 1 : 0, id);
     }
 
     return rowToSummary(getConversation.get(id)!);
@@ -615,6 +621,7 @@ export function persistChatTurn(opts: {
   assistantContent: string;
   assistantError?: string;
   assistantStats?: any;
+  toolsEnabled?: boolean;
 }): { conversationId: string; title: string; isNew: boolean } {
   const {
     conversationId: incomingId,
@@ -626,6 +633,7 @@ export function persistChatTurn(opts: {
     assistantContent,
     assistantError,
     assistantStats,
+    toolsEnabled = true,
   } = opts;
 
   const conversationId = incomingId ?? crypto.randomUUID();
@@ -643,6 +651,7 @@ export function persistChatTurn(opts: {
         model,
         createdAt: now,
         updatedAt: now,
+        toolsEnabled: toolsEnabled ? 1 : 0,
       });
     } else {
       updateConversationMeta.run({ id: conversationId, title: null, model, updatedAt: now });
