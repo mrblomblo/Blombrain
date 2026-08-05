@@ -58,6 +58,8 @@ export interface ModelInfo {
   frequencyPenalty?: number;
   repeatPenalty?: number;
   ctxLength?: number;
+  ctxOverflowBehavior?: CtxOverflowBehavior | null;
+  effectiveCtxOverflowBehavior?: CtxOverflowBehavior;
   isHidden?: boolean;
   isOffline?: boolean;
   sortOrder?: number;
@@ -86,11 +88,13 @@ export interface ModelSettingWriteBody {
   frequencyPenalty?: number | null;
   repeatPenalty?: number | null;
   ctxLength?: number | null;
+  ctxOverflowBehavior?: CtxOverflowBehavior | null;
   isHidden?: boolean;
   sortOrder?: number;
   isDefault?: boolean;
 }
 
+export type CtxOverflowBehavior = "truncate_middle" | "rolling" | "stop";
 export type ChatRole = "system" | "user" | "assistant" | "tool";
 
 export interface ResponseStats {

@@ -12,6 +12,7 @@ function rowToSettings(row: GlobalSettingsRow): GlobalSettingsOut {
     autoNameModel: row.auto_name_model ?? null,
     toolRoutingMode: (row.tool_routing_mode as any) || "off",
     toolRoutingModel: row.tool_routing_model ?? null,
+    ctxOverflowBehavior: (row.ctx_overflow_behavior as any) || "truncate_middle",
   };
 }
 
@@ -47,12 +48,13 @@ export async function settingsRoutes(app: FastifyInstance) {
     const autoNameModel = body.autoNameModel !== undefined ? body.autoNameModel : current.auto_name_model;
     const toolRoutingMode = body.toolRoutingMode !== undefined ? body.toolRoutingMode : (current.tool_routing_mode || "off");
     const toolRoutingModel = body.toolRoutingModel !== undefined ? body.toolRoutingModel : current.tool_routing_model;
+    const ctxOverflowBehavior = body.ctxOverflowBehavior !== undefined ? body.ctxOverflowBehavior : (current.ctx_overflow_behavior || "truncate_middle");
 
     db.prepare(`
       UPDATE global_settings
-      SET user_name = ?, user_avatar = ?, theme = ?, auto_name_mode = ?, auto_name_model = ?, tool_routing_mode = ?, tool_routing_model = ?
+      SET user_name = ?, user_avatar = ?, theme = ?, auto_name_mode = ?, auto_name_model = ?, tool_routing_mode = ?, tool_routing_model = ?, ctx_overflow_behavior = ?
       WHERE id = 'default'
-    `).run(userName, userAvatar, theme, autoNameMode, autoNameModel, toolRoutingMode, toolRoutingModel);
+    `).run(userName, userAvatar, theme, autoNameMode, autoNameModel, toolRoutingMode, toolRoutingModel, ctxOverflowBehavior);
 
     const updated = db
       .prepare<[string], GlobalSettingsRow>("SELECT * FROM global_settings WHERE id = ?")

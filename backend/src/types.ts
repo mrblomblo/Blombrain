@@ -67,6 +67,8 @@ export interface ModelInfo {
   frequencyPenalty?: number;
   repeatPenalty?: number;
   ctxLength?: number;
+  ctxOverflowBehavior?: CtxOverflowBehavior | null;
+  effectiveCtxOverflowBehavior?: CtxOverflowBehavior;
   isHidden?: boolean;
   isOffline?: boolean;
   sortOrder?: number;
@@ -256,6 +258,7 @@ export interface ModelSettingRow {
   frequency_penalty: number | null;
   repeat_penalty: number | null;
   ctx_length: number | null;
+  ctx_overflow_behavior: string | null;
   is_hidden: number;
   sort_order: number;
   is_default: number;
@@ -282,6 +285,7 @@ export interface ModelSettingWriteBody {
   frequencyPenalty?: number | null;
   repeatPenalty?: number | null;
   ctxLength?: number | null;
+  ctxOverflowBehavior?: CtxOverflowBehavior | null;
   isHidden?: boolean;
   sortOrder?: number;
   isDefault?: boolean;
@@ -314,6 +318,7 @@ export interface AttachmentOut {
 
 export type AutoNameMode = "first_words" | "active_model" | "designated_model";
 export type ToolRoutingMode = "off" | "active_model" | "designated_model";
+export type CtxOverflowBehavior = "truncate_middle" | "rolling" | "stop";
 
 export interface GlobalSettingsRow {
   id: string;
@@ -324,6 +329,7 @@ export interface GlobalSettingsRow {
   auto_name_model: string | null;
   tool_routing_mode: string;
   tool_routing_model: string | null;
+  ctx_overflow_behavior: string;
 }
 
 export interface GlobalSettingsOut {
@@ -335,6 +341,7 @@ export interface GlobalSettingsOut {
   autoNameModel: string | null;
   toolRoutingMode: ToolRoutingMode;
   toolRoutingModel: string | null;
+  ctxOverflowBehavior: CtxOverflowBehavior;
 }
 
 export interface GlobalSettingsWriteBody {
@@ -345,4 +352,5 @@ export interface GlobalSettingsWriteBody {
   autoNameModel?: string | null;
   toolRoutingMode?: ToolRoutingMode;
   toolRoutingModel?: string | null;
+  ctxOverflowBehavior?: CtxOverflowBehavior;
 }

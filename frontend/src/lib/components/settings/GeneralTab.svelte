@@ -5,6 +5,7 @@
     serveUploadUrl,
     type AutoNameMode,
     type ToolRoutingMode,
+    type CtxOverflowBehavior,
   } from "../../api";
   import { settingsStore } from "../../stores/settings.svelte";
   import ThemeSwitcher from "../ThemeSwitcher.svelte";
@@ -30,6 +31,21 @@
     {
       label: "Designated Model (Pre-pass with specific model)",
       value: "designated_model",
+    },
+  ];
+
+  const overflowBehaviorOptions: DropdownOption[] = [
+    {
+      label: "Keep first message + recent history (Recommended)",
+      value: "truncate_middle",
+    },
+    {
+      label: "Sliding window (Drop oldest history)",
+      value: "rolling",
+    },
+    {
+      label: "Stop generation and show error",
+      value: "stop",
     },
   ];
 
@@ -274,5 +290,35 @@
         />
       </div>
     {/if}
+  </div>
+
+  <!-- Context Overflow Behavior Section -->
+  <div
+    class="rounded-lg border border-line bg-bg-elevated p-4 flex flex-col gap-4"
+  >
+    <div>
+      <h3 class="text-sm font-semibold text-fg">Context Overflow Behavior</h3>
+      <p class="text-xs text-fg-subtle mt-0.5">
+        Choose default behavior when a conversation exceeds the model's maximum context length.
+      </p>
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <label
+        for="ctx-overflow-behavior-select"
+        class="text-xs font-medium text-fg-muted"
+      >
+        Default Overflow Strategy
+      </label>
+      <Dropdown
+        id="ctx-overflow-behavior-select"
+        value={settingsStore.ctxOverflowBehavior}
+        options={overflowBehaviorOptions}
+        onchange={(val) =>
+          settingsStore.update({
+            ctxOverflowBehavior: val as CtxOverflowBehavior,
+          })}
+      />
+    </div>
   </div>
 </div>

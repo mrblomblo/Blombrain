@@ -16,7 +16,9 @@ import type {
   ModelSettingWriteBody,
   ResponseStats,
   ToolExecutionEvent,
+  CtxOverflowBehavior,
 } from "./types";
+export type { CtxOverflowBehavior };
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -293,6 +295,7 @@ export interface StreamChatOptions {
   onRouterToken?: (text: string) => void;
   onToolExecution?: (evt: ToolExecutionEvent) => void;
   onContentReplace?: (content: string) => void;
+  onContextTrimmed?: (evt: { droppedMessageCount: number; behavior: string }) => void;
   onDone: () => void;
   onError: (message: string) => void;
 }
@@ -394,6 +397,10 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
               opts.onContentReplace?.(parsed.content);
               continue;
             }
+            if (parsed?.type === "context_trimmed") {
+              opts.onContextTrimmed?.(parsed);
+              continue;
+            }
 
             const delta: string | undefined = parsed?.choices?.[0]?.delta?.content;
             const reasoning: string | undefined =
@@ -481,6 +488,7 @@ export interface GlobalSettingsOut {
   autoNameModel: string | null;
   toolRoutingMode: ToolRoutingMode;
   toolRoutingModel: string | null;
+  ctxOverflowBehavior: CtxOverflowBehavior;
 }
 
 export async function fetchGlobalSettings(): Promise<GlobalSettingsOut> {
@@ -496,6 +504,7 @@ export async function updateGlobalSettings(
     autoNameModel: string | null;
     toolRoutingMode: ToolRoutingMode;
     toolRoutingModel: string | null;
+    ctxOverflowBehavior: CtxOverflowBehavior;
   }>,
 ): Promise<GlobalSettingsOut> {
   const res = await fetch("/api/settings", {

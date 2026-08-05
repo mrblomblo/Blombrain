@@ -154,6 +154,7 @@ const columnsToAdd = [
   { name: "is_hidden", type: "INTEGER NOT NULL DEFAULT 0" },
   { name: "sort_order", type: "INTEGER NOT NULL DEFAULT 0" },
   { name: "is_default", type: "INTEGER NOT NULL DEFAULT 0" },
+  { name: "ctx_overflow_behavior", type: "TEXT" },
 ];
 const modelSettingCols = (db.pragma("table_info(model_settings)") as { name: string }[]).map(c => c.name);
 for (const col of columnsToAdd) {
@@ -205,6 +206,11 @@ if (!globalSettingsCols.includes("tool_routing_mode")) {
 if (!globalSettingsCols.includes("tool_routing_model")) {
   try {
     db.exec(`ALTER TABLE global_settings ADD COLUMN tool_routing_model TEXT`);
+  } catch (e) { }
+}
+if (!globalSettingsCols.includes("ctx_overflow_behavior")) {
+  try {
+    db.exec(`ALTER TABLE global_settings ADD COLUMN ctx_overflow_behavior TEXT NOT NULL DEFAULT 'truncate_middle'`);
   } catch (e) { }
 }
 

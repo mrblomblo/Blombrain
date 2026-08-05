@@ -1,4 +1,4 @@
-import { fetchGlobalSettings, updateGlobalSettings, type AutoNameMode, type ToolRoutingMode } from "../api";
+import { fetchGlobalSettings, updateGlobalSettings, type AutoNameMode, type ToolRoutingMode, type CtxOverflowBehavior } from "../api";
 import { themeStore, type ThemeName } from "../theme.svelte";
 
 class SettingsStore {
@@ -9,6 +9,7 @@ class SettingsStore {
   autoNameModel = $state<string | null>(null);
   toolRoutingMode = $state<ToolRoutingMode>("off");
   toolRoutingModel = $state<string | null>(null);
+  ctxOverflowBehavior = $state<CtxOverflowBehavior>("truncate_middle");
   loaded = $state(false);
 
   async init() {
@@ -21,6 +22,7 @@ class SettingsStore {
       this.autoNameModel = data.autoNameModel ?? null;
       this.toolRoutingMode = data.toolRoutingMode ?? "off";
       this.toolRoutingModel = data.toolRoutingModel ?? null;
+      this.ctxOverflowBehavior = data.ctxOverflowBehavior ?? "truncate_middle";
       themeStore.set(this.theme);
       this.loaded = true;
     } catch (err) {
@@ -37,6 +39,7 @@ class SettingsStore {
       autoNameModel: string | null;
       toolRoutingMode: ToolRoutingMode;
       toolRoutingModel: string | null;
+      ctxOverflowBehavior: CtxOverflowBehavior;
     }>,
   ) {
     if (patch.userName !== undefined) this.userName = patch.userName;
@@ -49,6 +52,7 @@ class SettingsStore {
     if (patch.autoNameModel !== undefined) this.autoNameModel = patch.autoNameModel;
     if (patch.toolRoutingMode !== undefined) this.toolRoutingMode = patch.toolRoutingMode;
     if (patch.toolRoutingModel !== undefined) this.toolRoutingModel = patch.toolRoutingModel;
+    if (patch.ctxOverflowBehavior !== undefined) this.ctxOverflowBehavior = patch.ctxOverflowBehavior;
 
     try {
       await updateGlobalSettings({
@@ -59,6 +63,7 @@ class SettingsStore {
         autoNameModel: patch.autoNameModel,
         toolRoutingMode: patch.toolRoutingMode,
         toolRoutingModel: patch.toolRoutingModel,
+        ctxOverflowBehavior: patch.ctxOverflowBehavior,
       });
     } catch (err) {
       console.error("Failed to persist settings to server:", err);

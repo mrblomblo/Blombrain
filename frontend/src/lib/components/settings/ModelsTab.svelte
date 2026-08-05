@@ -81,6 +81,7 @@
   let formFrequencyPenalty = $state<number | undefined>(undefined);
   let formRepeatPenalty = $state<number | undefined>(undefined);
   let formCtxLength = $state<number | undefined>(undefined);
+  let formCtxOverflowBehavior = $state<string | undefined>(undefined);
 
   let showAdvanced = $state(false);
   let formBusy = $state(false);
@@ -106,6 +107,7 @@
     formFrequencyPenalty = undefined;
     formRepeatPenalty = undefined;
     formCtxLength = undefined;
+    formCtxOverflowBehavior = undefined;
     showAdvanced = false;
     formError = null;
   }
@@ -169,6 +171,7 @@
     formFrequencyPenalty = model.frequencyPenalty;
     formRepeatPenalty = model.repeatPenalty;
     formCtxLength = model.ctxLength;
+    formCtxOverflowBehavior = model.ctxOverflowBehavior ?? undefined;
   }
 
   function cancelForm() {
@@ -314,6 +317,7 @@
         formCtxLength !== undefined && !isNaN(formCtxLength)
           ? formCtxLength
           : null,
+      ctxOverflowBehavior: (formCtxOverflowBehavior as any) || null,
     };
 
     try {
@@ -901,6 +905,27 @@
                     bind:value={formCtxLength}
                     placeholder="Default (e.g. 4096)"
                     class="h-7 rounded border border-line bg-bg-elevated px-2 text-xs text-fg focus-visible:border-accent transition-colors duration-200"
+                  />
+                </div>
+
+                <!-- Context Overflow Strategy -->
+                <div class="flex flex-col gap-1">
+                  <label
+                    for="me-overflow"
+                    class="text-[11px] font-medium text-fg-muted"
+                    >Overflow Strategy</label
+                  >
+                  <Dropdown
+                    id="me-overflow"
+                    bind:value={formCtxOverflowBehavior}
+                    options={[
+                      { label: "Use global default", value: "" },
+                      { label: "Keep first message + recent history", value: "truncate_middle" },
+                      { label: "Sliding window", value: "rolling" },
+                      { label: "Stop generation", value: "stop" },
+                    ]}
+                    placeholder="Use global default"
+                    buttonClass="h-7 bg-bg-elevated px-2"
                   />
                 </div>
 

@@ -853,6 +853,13 @@ export async function chatRoutes(app: FastifyInstance) {
     reply.raw.on("close", onClientDisconnect);
     req.raw.on("aborted", onClientDisconnect);
 
+    // Fetch context overflow behavior settings
+    const globalSettingsRow = db.prepare("SELECT ctx_overflow_behavior FROM global_settings LIMIT 1").get() as any;
+    const defaultBehavior = globalSettingsRow?.ctx_overflow_behavior || "truncate_middle";
+    const effectiveOverflowBehavior = settingRow?.ctx_overflow_behavior || defaultBehavior;
+    const contextLimit = settingRow?.ctx_length ?? null;
+    const completionReserve = settingRow?.max_tokens ?? 2048;
+
     // -----------------------------------------------------------------------
     // 8. Agentic tool-call loop
     // -----------------------------------------------------------------------
@@ -861,8 +868,46 @@ export async function chatRoutes(app: FastifyInstance) {
     let currentMessages = [...outgoingMessages];
     let toolRound = 0;
 
+    const { applyContextOverflowPolicy } = await import("../services/contextWindow.js");
+
     try {
       while (!abortController.signal.aborted) {
+        const trimResult = applyContextOverflowPolicy({
+          messages: currentMessages,
+          toolDefinitions,
+          contextLimit,
+          completionReserve,
+          behavior: effectiveOverflowBehavior as any,
+        });
+
+        if (trimResult.action === "impossible_fit" || trimResult.action === "stop") {
+          const errMsg = trimResult.reason || "Context length limit exceeded.";
+          streamError = errMsg;
+          broadcastChunk(JSON.stringify({
+            type: "context_overflow",
+            behavior: effectiveOverflowBehavior,
+            reason: errMsg,
+          }));
+          broadcastChunk(JSON.stringify({ type: "error", error: errMsg }));
+          break;
+        }
+
+        if (trimResult.trimmed) {
+          console.log(`[chat] Trimmed context (${effectiveOverflowBehavior}): dropped ${trimResult.droppedMessageCount} messages in ${trimResult.droppedGroupCount} groups.`);
+          broadcastChunk(JSON.stringify({
+            type: "context_trimmed",
+            behavior: effectiveOverflowBehavior,
+            droppedMessageCount: trimResult.droppedMessageCount,
+            estimatedTokensBefore: trimResult.breakdown.totalTokens,
+            estimatedTokensAfter: trimResult.breakdown.messagesTokens + trimResult.breakdown.toolSchemasTokens,
+            contextLimit,
+            promptBudget: trimResult.breakdown.promptBudget,
+          }));
+        }
+
+        // CRITICAL FIX: Reassign currentMessages to the trimmed array
+        currentMessages = trimResult.messages;
+
         const passParams = {
           ...buildParams,
           messages: currentMessages,
