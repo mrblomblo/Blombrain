@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ToolExecutionEvent } from "../types";
   import { Wrench, ChevronRight } from "@lucide/svelte";
+  import { slide } from "svelte/transition";
 
   let { execution }: { execution: ToolExecutionEvent } = $props();
   let isExpanded = $state(false);
@@ -27,7 +28,7 @@
     </button>
 
     {#if isExpanded}
-      <div class="mt-2 space-y-1.5 border-t border-line/40 pt-2 text-[11px]">
+      <div transition:slide={{ duration: 200 }} class="mt-2 space-y-1.5 border-t border-line/40 pt-2 text-[11px]">
         <div>
           <span class="font-semibold text-fg-subtle">Args:</span>
           <pre class="mt-1 max-h-28 overflow-x-auto whitespace-pre-wrap rounded bg-bg-elevated p-1.5 text-fg-muted border border-line/30">{JSON.stringify(execution.args, null, 2)}</pre>
