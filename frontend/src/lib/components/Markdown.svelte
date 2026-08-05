@@ -188,13 +188,13 @@
       if (streaming && !autoOpenedIds.has(id) && !artifactStore.userClosedIds.has(id)) {
         autoOpenedIds.add(id);
         if (!isOpen) {
-          artifactStore.openArtifact({ id, code, language: lang, title });
+          artifactStore.openArtifact({ id, code, language: lang, title }, streaming);
         }
       }
 
       const isActive = isOpen && activeId === id;
       if (isActive) {
-        artifactStore.updateCode(id, code, lang);
+        artifactStore.updateCode(id, code, lang, streaming);
       }
 
       // Update button text and labels reactively

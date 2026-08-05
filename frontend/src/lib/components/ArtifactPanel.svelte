@@ -1,7 +1,7 @@
 <script lang="ts">
   import { artifactStore } from "../stores/artifact.svelte";
   import hljs from "highlight.js";
-  import { fly } from "svelte/transition";
+  import { fly, slide } from "svelte/transition";
   import {
     X,
     Code,
@@ -25,6 +25,39 @@
 
   let debouncedCode = $state(artifactStore.code);
   let timeoutRunning = false;
+
+  let isIframeArtifact = $derived(
+    artifactStore.language !== "markdown" && artifactStore.language !== "md"
+  );
+
+  let isCurrentArtifactGenerating = $derived(
+    isIframeArtifact &&
+    artifactStore.generatingArtifactId !== null &&
+    artifactStore.generatingArtifactId === artifactStore.activeId
+  );
+
+  let showPreviewReadyBanner = $state(false);
+  let bannerTimer: ReturnType<typeof setTimeout> | null = null;
+  let wasCurrentGenerating = false;
+
+  $effect(() => {
+    const isGen = isCurrentArtifactGenerating;
+    if (isGen) {
+      if (viewMode === "preview") {
+        viewMode = "code";
+      }
+      showPreviewReadyBanner = false;
+      if (bannerTimer) clearTimeout(bannerTimer);
+    } else if (wasCurrentGenerating && !isGen) {
+      // Just completed generating current artifact
+      showPreviewReadyBanner = true;
+      if (bannerTimer) clearTimeout(bannerTimer);
+      bannerTimer = setTimeout(() => {
+        showPreviewReadyBanner = false;
+      }, 5000);
+    }
+    wasCurrentGenerating = isGen;
+  });
 
   $effect(() => {
     const currentCode = artifactStore.code;
@@ -221,11 +254,14 @@ document.addEventListener('submit', function(e) {
     >
       <button
         type="button"
+        disabled={isCurrentArtifactGenerating}
         onclick={() => (viewMode = "preview")}
-        class="flex items-center justify-center gap-1.5 h-full rounded-md px-1 sm:px-2.5 aspect-square sm:aspect-auto text-xs font-medium transition-all {viewMode ===
-        'preview'
-          ? 'bg-bg-elevated text-fg shadow-xs font-semibold'
-          : 'text-fg-muted hover:text-fg'}"
+        title={isCurrentArtifactGenerating ? "Preview is unavailable while artifact is generating" : "Switch to Preview"}
+        class="flex items-center justify-center gap-1.5 h-full rounded-md px-1 sm:px-2.5 aspect-square sm:aspect-auto text-xs font-medium transition-all {isCurrentArtifactGenerating
+          ? 'opacity-40 cursor-not-allowed text-fg-muted'
+          : viewMode === 'preview'
+            ? 'bg-bg-elevated text-fg shadow-xs font-semibold'
+            : 'text-fg-muted hover:text-fg'}"
       >
         <Eye size={13} />
         <span class="hidden sm:inline">Preview</span>
@@ -358,8 +394,42 @@ document.addEventListener('submit', function(e) {
     </div>
   </div>
 
+  <!-- Full-width Preview Banner -->
+  {#if showPreviewReadyBanner && viewMode === "code"}
+    <div
+      transition:slide={{ duration: 180 }}
+      class="w-full flex items-center justify-between border-b border-accent/30 bg-accent/10 px-4 py-2 text-xs shrink-0 select-none z-30"
+    >
+      <div class="flex items-center gap-2 min-w-0">
+        <Eye size={14} class="text-accent shrink-0" />
+        <span class="text-fg font-medium truncate">Preview is now available</span>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button
+          type="button"
+          onclick={() => {
+            viewMode = "preview";
+            showPreviewReadyBanner = false;
+          }}
+          class="rounded-md px-2.5 py-1 text-xs font-semibold bg-accent text-accent-fg hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
+        >
+          View Preview
+        </button>
+        <button
+          type="button"
+          onclick={() => (showPreviewReadyBanner = false)}
+          class="text-fg-muted hover:text-fg p-1 rounded-md hover:bg-bg-hover transition-colors cursor-pointer"
+          aria-label="Dismiss notification"
+        >
+          <X size={14} />
+        </button>
+      </div>
+    </div>
+  {/if}
+
   <!-- Content Pane -->
   <div class="relative flex-1 w-full h-full overflow-hidden bg-bg">
+
     {#if viewMode === "preview"}
       {#if artifactStore.language === "markdown" || artifactStore.language === "md"}
         <div class="h-full w-full overflow-auto bg-bg text-fg">
