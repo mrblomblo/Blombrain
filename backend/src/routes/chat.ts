@@ -62,7 +62,6 @@ function reconstructToolCalls(messages: any[]): any[] {
             function: { name: e.toolName, arguments: typeof e.args === "string" ? e.args : JSON.stringify(e.args || {}) }
           }))
         });
-
         for (const e of toolExecs) {
           let finalContent = e.result || "";
           if (e.status === "error") {
@@ -99,7 +98,7 @@ function extractTextToolCalls(text: string): { cleanContent: string; toolCalls: 
     try {
       const toolName = "execute_skill_script";
       const args: any = {};
-      const attrRegex = /([a-zA-Z0-9_-]+)=("[^"]*"|'[^']*'|\[[^\]]*\])/g;
+      const attrRegex = /([a-zA-Z0-9_-]+)=("[^"]*"|'[^']*'|[[^\]]*])/g;
       let attrMatch;
       while ((attrMatch = attrRegex.exec(attrString)) !== null) {
         const key = attrMatch[1];
@@ -242,6 +241,7 @@ async function runGenerationPass(opts: {
   let reasoningMode: "oob" | "inband" | null = null;
   let streamError: string | undefined;
   let usageStats: any;
+
   const pendingToolCalls = new Map<number, { id?: string; name?: string; argsText: string }>();
   const completedToolCalls: Array<{ id?: string; name: string; arguments: Record<string, any> }> = [];
 
@@ -293,7 +293,6 @@ async function runGenerationPass(opts: {
               const existing = pendingToolCalls.get(idx) ?? { argsText: "" };
               if (tc.id) existing.id = tc.id;
               if (tc.function?.name !== undefined) existing.name = tc.function.name;
-
               if (tc.function?.arguments !== undefined) {
                 if (typeof tc.function.arguments === "string") {
                   existing.argsText += tc.function.arguments;
@@ -340,6 +339,7 @@ async function runGenerationPass(opts: {
       if (resolved) return;
       resolved = true;
       if (err) streamError = err;
+
       // Flush any partial tool calls
       for (const [, entry] of pendingToolCalls) {
         if (entry.name) {
@@ -360,6 +360,17 @@ async function runGenerationPass(opts: {
   return { content, reasoning, toolCalls: completedToolCalls, usageStats, streamError, reasoningMode };
 }
 
+/** Helper to run a promise with a timeout, used for MCP tool calls. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
 export async function chatRoutes(app: FastifyInstance) {
   app.post("/api/chat/stop", async (req: FastifyRequest, reply: FastifyReply) => {
     const { conversationId } = req.body as { conversationId: string };
@@ -378,13 +389,11 @@ export async function chatRoutes(app: FastifyInstance) {
       }
       activeStreams.delete(conversationId);
     }
-
     return reply.send({ success: true });
   });
 
   app.post("/api/chat/completions", async (req: FastifyRequest, reply: FastifyReply) => {
     const body = req.body as ChatCompletionBody;
-
     if (!body?.model || !Array.isArray(body.messages)) {
       return sendJsonError(reply, 400, "Request body must include `model` and `messages`.");
     }
@@ -423,7 +432,6 @@ export async function chatRoutes(app: FastifyInstance) {
       }
 
       existingStream.subscribers.add(reply);
-
       const onDisconnect = () => { existingStream.subscribers.delete(reply); };
       reply.raw.on("close", onDisconnect);
       req.raw.on("aborted", onDisconnect);
@@ -435,7 +443,6 @@ export async function chatRoutes(app: FastifyInstance) {
 
     let targetModelId = body.model;
     const settingRow = db.prepare("SELECT * FROM model_settings WHERE id = ?").get(body.model) as ModelSettingRow | undefined;
-
     if (settingRow && settingRow.is_preset && settingRow.base_model_id) {
       targetModelId = settingRow.base_model_id;
     }
@@ -515,6 +522,7 @@ export async function chatRoutes(app: FastifyInstance) {
     let assistantContent = "";
     let routerRawText = "";
     const userQuery = originalUserContent;
+
     const { routeToolsAndSkills } = await import("../services/toolRouter.js");
     const routingResult = await routeToolsAndSkills(
       userQuery,
@@ -525,11 +533,11 @@ export async function chatRoutes(app: FastifyInstance) {
       (text: string) => {
         routerRawText += text;
         broadcastChunk(JSON.stringify({ type: "router_token", text }));
-      }
+      },
     );
 
-    const mcpTools = routingResult.mcpTools;
-    const activeSkills = routingResult.selectedSkills;
+    const mcpTools = routingResult.mcpTools ?? [];
+    const activeSkills = routingResult.selectedSkills ?? [];
 
     if (routerRawText.trim()) {
       assistantContent = `<router_execution>${routerRawText.trim()}</router_execution>\n` + assistantContent;
@@ -542,6 +550,7 @@ export async function chatRoutes(app: FastifyInstance) {
     // 5. Build outgoing messages
     // -----------------------------------------------------------------------
     let outgoingMessages = reconstructToolCalls([...body.messages]);
+
     if (settingRow?.system_prompt) {
       if (outgoingMessages.length > 0 && outgoingMessages[0].role === "system") {
         outgoingMessages[0] = { ...outgoingMessages[0], content: settingRow.system_prompt };
@@ -560,6 +569,7 @@ export async function chatRoutes(app: FastifyInstance) {
     //      so the model cannot lose track of the actual task across tool rounds.
     if (activeSkills.length > 0) {
       const { stripSkillExamples, getSkillScripts } = await import("../services/skills.js");
+
       const skillsBlock = activeSkills.map((s) =>
         `### Skill: ${s.name}\n${s.description}\n\nInstructions:\n${stripSkillExamples(s.instructions)}`
       ).join("\n\n---\n\n");
@@ -613,7 +623,6 @@ export async function chatRoutes(app: FastifyInstance) {
         });
       }
     }
-
 
     const { model: _incomingModel, conversationId: _incomingConvId, userMessageId: _umId, userParentId: _upId, assistantMessageId: _amId, attachments: attachmentIds, messages: _msgs, ...rest } = body;
 
@@ -770,6 +779,7 @@ export async function chatRoutes(app: FastifyInstance) {
     function doSaveTurn() {
       if (hasPersisted) return;
       hasPersisted = true;
+
       try {
         if (!usageStats) usageStats = {};
         if (!usageStats.durationMs && Date.now() - startTime > 0) {
@@ -777,7 +787,6 @@ export async function chatRoutes(app: FastifyInstance) {
         }
 
         assistantContent = closeUnclosedTags(assistantContent);
-
         const savedTurn = persistChatTurn({
           conversationId,
           model: body.model,
@@ -838,7 +847,6 @@ export async function chatRoutes(app: FastifyInstance) {
       subscribers,
       doSaveTurn,
     };
-
     activeStreams.set(conversationId, currentActiveStream);
 
     const onClientDisconnect = () => { subscribers.delete(reply); };
@@ -849,6 +857,7 @@ export async function chatRoutes(app: FastifyInstance) {
     // 8. Agentic tool-call loop
     // -----------------------------------------------------------------------
     const MAX_TOOL_ROUNDS = 10;
+    const TOOL_TIMEOUT_MS = 120_000; // 2 minute cap per individual tool call
     let currentMessages = [...outgoingMessages];
     let toolRound = 0;
 
@@ -871,6 +880,7 @@ export async function chatRoutes(app: FastifyInstance) {
           streamError = pass.streamError;
         }
         if (pass.usageStats) usageStats = pass.usageStats;
+
         if (pass.content) {
           assistantContent += pass.content;
           currentActiveStream.assistantContent = assistantContent;
@@ -942,12 +952,15 @@ export async function chatRoutes(app: FastifyInstance) {
 
         // Execute each tool call and emit tool execution events to the stream
         for (const [idx, tc] of pass.toolCalls.entries()) {
+          if (abortController.signal.aborted) break;
+
           const callId = tc.id ?? `call_${userMessageId}_${toolRound}_${idx}`;
 
           // Defensive Check: Ensure the tool was actually routed/available in mcpTools
           const isBuiltInTool = tc.name === "execute_skill_script";
           const isToolRouted = mcpTools.some((t) => t.name === tc.name);
           const isSkillRouted = activeSkills.some((s) => s.name === tc.name);
+
           let result: { content: string; isError?: boolean };
 
           if (isBuiltInTool) {
@@ -958,12 +971,21 @@ export async function chatRoutes(app: FastifyInstance) {
               args: tc.arguments,
               status: "executing",
             }));
+
             const { executeSkillScriptTool } = await import("../services/scriptExecution.js");
-            result = await executeSkillScriptTool(tc.arguments, {
-              conversationId,
-              activeSkillIds: activeSkills.map(s => s.id),
-              abortSignal: abortController.signal,
-            });
+            try {
+              result = await withTimeout(
+                executeSkillScriptTool(tc.arguments, {
+                  conversationId,
+                  activeSkillIds: activeSkills.map(s => s.id),
+                  abortSignal: abortController.signal,
+                }),
+                TOOL_TIMEOUT_MS,
+                `execute_skill_script (${tc.arguments?.script_name ?? "unknown"})`,
+              );
+            } catch (err) {
+              result = { content: err instanceof Error ? err.message : String(err), isError: true };
+            }
           } else if (isSkillRouted && !isToolRouted) {
             console.warn(`[chat] Model attempted to call skill '${tc.name}' as a tool`);
             result = {
@@ -986,7 +1008,15 @@ export async function chatRoutes(app: FastifyInstance) {
               status: "executing",
             }));
 
-            result = await mcpManager.callTool(tc.name, tc.arguments);
+            try {
+              result = await withTimeout(
+                mcpManager.callTool(tc.name, tc.arguments),
+                TOOL_TIMEOUT_MS,
+                `MCP tool '${tc.name}'`,
+              );
+            } catch (err) {
+              result = { content: err instanceof Error ? err.message : String(err), isError: true };
+            }
           }
 
           const toolExecPayload = {
@@ -1031,6 +1061,7 @@ export async function chatRoutes(app: FastifyInstance) {
     currentActiveStream.isDone = true;
     currentActiveStream.streamError = streamError;
     currentActiveStream.usageStats = usageStats;
+
     doSaveTurn();
     setTimeout(() => { activeStreams.delete(conversationId); }, 5000);
   });

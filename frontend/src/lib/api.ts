@@ -2,12 +2,20 @@ import type {
   BackendInfo,
   BackendCreateBody,
   BackendUpdateBody,
+  BackendProtocolInfo,
   ChatMessage,
   ConversationSummary,
   ConversationDetail,
   MessageOut,
   ModelInfo,
   AttachmentOut,
+  McpServerInfo,
+  McpServerWriteBody,
+  SkillInfo,
+  SkillWriteBody,
+  ModelSettingWriteBody,
+  ResponseStats,
+  ToolExecutionEvent,
 } from "./types";
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
@@ -21,17 +29,14 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 // ---------------------------------------------------------------------------
 // Backends
 // ---------------------------------------------------------------------------
-
 export async function fetchBackends(): Promise<BackendInfo[]> {
   const res = await fetch("/api/backends");
   return jsonOrThrow<BackendInfo[]>(res);
 }
-
-export async function fetchBackendProtocols(): Promise<import("./types").BackendProtocolInfo[]> {
+export async function fetchBackendProtocols(): Promise<BackendProtocolInfo[]> {
   const res = await fetch("/api/backends/protocols");
-  return jsonOrThrow<import("./types").BackendProtocolInfo[]>(res);
+  return jsonOrThrow<BackendProtocolInfo[]>(res);
 }
-
 export async function createBackend(data: BackendCreateBody): Promise<BackendInfo> {
   const res = await fetch("/api/backends", {
     method: "POST",
@@ -40,7 +45,6 @@ export async function createBackend(data: BackendCreateBody): Promise<BackendInf
   });
   return jsonOrThrow<BackendInfo>(res);
 }
-
 export async function updateBackend(id: string, data: BackendUpdateBody): Promise<BackendInfo> {
   const res = await fetch(`/api/backends/${encodeURIComponent(id)}`, {
     method: "PUT",
@@ -49,7 +53,6 @@ export async function updateBackend(id: string, data: BackendUpdateBody): Promis
   });
   return jsonOrThrow<BackendInfo>(res);
 }
-
 export async function deleteBackend(id: string): Promise<void> {
   const res = await fetch(`/api/backends/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) {
@@ -61,30 +64,26 @@ export async function deleteBackend(id: string): Promise<void> {
 // ---------------------------------------------------------------------------
 // MCP Servers
 // ---------------------------------------------------------------------------
-
-export async function fetchMcpServers(): Promise<import("./types").McpServerInfo[]> {
+export async function fetchMcpServers(): Promise<McpServerInfo[]> {
   const res = await fetch("/api/mcp");
-  return jsonOrThrow<import("./types").McpServerInfo[]>(res);
+  return jsonOrThrow<McpServerInfo[]>(res);
 }
-
-export async function createMcpServer(data: import("./types").McpServerWriteBody): Promise<import("./types").McpServerInfo> {
+export async function createMcpServer(data: McpServerWriteBody): Promise<McpServerInfo> {
   const res = await fetch("/api/mcp", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  return jsonOrThrow<import("./types").McpServerInfo>(res);
+  return jsonOrThrow<McpServerInfo>(res);
 }
-
-export async function updateMcpServer(id: string, data: import("./types").McpServerWriteBody): Promise<import("./types").McpServerInfo> {
+export async function updateMcpServer(id: string, data: McpServerWriteBody): Promise<McpServerInfo> {
   const res = await fetch(`/api/mcp/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  return jsonOrThrow<import("./types").McpServerInfo>(res);
+  return jsonOrThrow<McpServerInfo>(res);
 }
-
 export async function deleteMcpServer(id: string): Promise<void> {
   const res = await fetch(`/api/mcp/${encodeURIComponent(id)}`, { method: "DELETE" });
   await jsonOrThrow<{ success: boolean }>(res);
@@ -93,65 +92,54 @@ export async function deleteMcpServer(id: string): Promise<void> {
 // ---------------------------------------------------------------------------
 // Skills
 // ---------------------------------------------------------------------------
-
-export async function fetchSkills(): Promise<import("./types").SkillInfo[]> {
+export async function fetchSkills(): Promise<SkillInfo[]> {
   const res = await fetch("/api/skills");
-  return jsonOrThrow<import("./types").SkillInfo[]>(res);
+  return jsonOrThrow<SkillInfo[]>(res);
 }
-
-export async function createSkill(data: import("./types").SkillWriteBody): Promise<import("./types").SkillInfo> {
+export async function createSkill(data: SkillWriteBody): Promise<SkillInfo> {
   const res = await fetch("/api/skills", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  return jsonOrThrow<import("./types").SkillInfo>(res);
+  return jsonOrThrow<SkillInfo>(res);
 }
-
-export async function updateSkill(id: string, data: import("./types").SkillWriteBody): Promise<import("./types").SkillInfo> {
+export async function updateSkill(id: string, data: SkillWriteBody): Promise<SkillInfo> {
   const res = await fetch(`/api/skills/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  return jsonOrThrow<import("./types").SkillInfo>(res);
+  return jsonOrThrow<SkillInfo>(res);
 }
-
 export async function deleteSkill(id: string): Promise<void> {
   const res = await fetch(`/api/skills/${encodeURIComponent(id)}`, { method: "DELETE" });
   await jsonOrThrow<{ success: boolean }>(res);
 }
-
-export async function importSkill(dirPath: string): Promise<import("./types").SkillInfo> {
+export async function importSkill(dirPath: string): Promise<SkillInfo> {
   const res = await fetch("/api/skills/import", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dirPath }),
   });
-  return jsonOrThrow<import("./types").SkillInfo>(res);
+  return jsonOrThrow<SkillInfo>(res);
 }
-
-export async function uploadSkillFiles(items: { file: File; relativePath: string }[]): Promise<import("./types").SkillInfo> {
+export async function uploadSkillFiles(items: { file: File; relativePath: string }[]): Promise<SkillInfo> {
   const formData = new FormData();
   for (const item of items) {
     formData.append("files", item.file, item.relativePath || item.file.name);
   }
-  const res = await fetch("/api/skills/upload", {
-    method: "POST",
-    body: formData,
-  });
-  return jsonOrThrow<import("./types").SkillInfo>(res);
+  const res = await fetch("/api/skills/upload", { method: "POST", body: formData });
+  return jsonOrThrow<SkillInfo>(res);
 }
 
 // ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
-
 export async function fetchModels(): Promise<ModelInfo[]> {
   const res = await fetch("/api/models");
   return jsonOrThrow<ModelInfo[]>(res);
 }
-
 export async function forceSyncModels(): Promise<void> {
   const res = await fetch("/api/models/sync", { method: "POST" });
   await jsonOrThrow<{ success: boolean }>(res);
@@ -160,8 +148,7 @@ export async function forceSyncModels(): Promise<void> {
 // ---------------------------------------------------------------------------
 // Model Settings & Presets
 // ---------------------------------------------------------------------------
-
-export async function createPreset(data: import("./types").ModelSettingWriteBody): Promise<ModelInfo> {
+export async function createPreset(data: ModelSettingWriteBody): Promise<ModelInfo> {
   const res = await fetch("/api/models", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -169,8 +156,7 @@ export async function createPreset(data: import("./types").ModelSettingWriteBody
   });
   return jsonOrThrow<ModelInfo>(res);
 }
-
-export async function updateModelSettings(modelId: string, data: Partial<import("./types").ModelSettingWriteBody>): Promise<void> {
+export async function updateModelSettings(modelId: string, data: Partial<ModelSettingWriteBody>): Promise<void> {
   const res = await fetch(`/api/models/${encodeURIComponent(modelId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -178,12 +164,10 @@ export async function updateModelSettings(modelId: string, data: Partial<import(
   });
   await jsonOrThrow<{ ok: boolean }>(res);
 }
-
 export async function deleteModelSettings(modelId: string): Promise<void> {
   const res = await fetch(`/api/models/${encodeURIComponent(modelId)}`, { method: "DELETE" });
   await jsonOrThrow<{ ok: boolean }>(res);
 }
-
 export async function updateModelOrder(orders: Array<{ id: string; sortOrder: number; isPreset?: boolean }>): Promise<void> {
   const res = await fetch("/api/models/order", {
     method: "PUT",
@@ -196,23 +180,17 @@ export async function updateModelOrder(orders: Array<{ id: string; sortOrder: nu
 // ---------------------------------------------------------------------------
 // Uploads
 // ---------------------------------------------------------------------------
-
 export async function uploadFile(file: File, conversationId?: string | null): Promise<AttachmentOut> {
   const formData = new FormData();
   formData.append("file", file);
   const url = conversationId ? `/api/uploads?conversationId=${encodeURIComponent(conversationId)}` : "/api/uploads";
-  const res = await fetch(url, {
-    method: "POST",
-    body: formData,
-  });
+  const res = await fetch(url, { method: "POST", body: formData });
   return jsonOrThrow<AttachmentOut>(res);
 }
-
 export async function deleteUpload(id: string): Promise<void> {
   const res = await fetch(`/api/uploads/${encodeURIComponent(id)}`, { method: "DELETE" });
   await jsonOrThrow<{ success: boolean }>(res);
 }
-
 export function serveUploadUrl(id: string): string {
   return `/api/uploads/${encodeURIComponent(id)}`;
 }
@@ -220,21 +198,15 @@ export function serveUploadUrl(id: string): string {
 // ---------------------------------------------------------------------------
 // Conversations
 // ---------------------------------------------------------------------------
-
 export async function fetchConversations(): Promise<ConversationSummary[]> {
   const res = await fetch("/api/conversations");
   return jsonOrThrow<ConversationSummary[]>(res);
 }
-
 export async function fetchConversation(id: string): Promise<ConversationDetail> {
   const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`);
   return jsonOrThrow<ConversationDetail>(res);
 }
-
-export async function createConversation(opts?: {
-  title?: string;
-  model?: string;
-}): Promise<ConversationSummary> {
+export async function createConversation(opts?: { title?: string; model?: string }): Promise<ConversationSummary> {
   const res = await fetch("/api/conversations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -242,11 +214,7 @@ export async function createConversation(opts?: {
   });
   return jsonOrThrow<ConversationSummary>(res);
 }
-
-export async function updateConversation(
-  id: string,
-  patch: { title?: string; model?: string },
-): Promise<ConversationSummary> {
+export async function updateConversation(id: string, patch: { title?: string; model?: string }): Promise<ConversationSummary> {
   const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -254,7 +222,6 @@ export async function updateConversation(
   });
   return jsonOrThrow<ConversationSummary>(res);
 }
-
 export async function patchConversationTools(
   id: string,
   patch: { excludedMcps?: string[]; excludedSkills?: string[] },
@@ -266,7 +233,6 @@ export async function patchConversationTools(
   });
   await jsonOrThrow<unknown>(res);
 }
-
 export async function deleteConversation(id: string): Promise<void> {
   const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) {
@@ -274,7 +240,6 @@ export async function deleteConversation(id: string): Promise<void> {
     throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
   }
 }
-
 export async function patchMessage(convId: string, msgId: string, content: string, attachmentIds?: string[]): Promise<MessageOut> {
   const res = await fetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}`, {
     method: "PATCH",
@@ -283,7 +248,6 @@ export async function patchMessage(convId: string, msgId: string, content: strin
   });
   return jsonOrThrow<MessageOut>(res);
 }
-
 export async function deleteMessage(convId: string, msgId: string): Promise<void> {
   const res = await fetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}`, {
     method: "DELETE",
@@ -293,7 +257,6 @@ export async function deleteMessage(convId: string, msgId: string): Promise<void
     throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
   }
 }
-
 export async function branchMessage(convId: string, msgId: string, content: string, attachmentIds?: string[]): Promise<MessageOut> {
   const res = await fetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}/branch`, {
     method: "POST",
@@ -306,7 +269,6 @@ export async function branchMessage(convId: string, msgId: string, content: stri
 // ---------------------------------------------------------------------------
 // Chat streaming
 // ---------------------------------------------------------------------------
-
 export interface StreamChatOptions {
   model: string;
   messages: Pick<ChatMessage, "role" | "content">[];
@@ -325,22 +287,16 @@ export interface StreamChatOptions {
     userMessageId: string;
     assistantMessageId: string;
     isReconnect?: boolean;
-    stats?: import("./types").ResponseStats;
+    stats?: ResponseStats;
   }) => void;
   onStatus?: (status: string) => void;
   onRouterToken?: (text: string) => void;
-  onToolExecution?: (evt: import("./types").ToolExecutionEvent) => void;
+  onToolExecution?: (evt: ToolExecutionEvent) => void;
   onContentReplace?: (content: string) => void;
   onDone: () => void;
   onError: (message: string) => void;
 }
 
-/**
- * POSTs to the backend's chat-completions proxy and incrementally parses the
- * OpenAI-style SSE stream, calling onToken for every content delta.
- * After the stream, a trailing `meta` event is emitted with the persisted
- * conversationId, title, and message IDs.
- */
 export async function streamChatCompletion(opts: StreamChatOptions): Promise<void> {
   const {
     model,
@@ -383,12 +339,14 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
       return;
     }
     onError(err instanceof Error ? err.message : "Network request failed");
+    onDone();
     return;
   }
 
   if (!res.ok || !res.body) {
     const body = await res.text().catch(() => "");
     onError(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
+    onDone();
     return;
   }
 
@@ -407,17 +365,15 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
       while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
         const rawEvent = buffer.slice(0, sepIndex);
         buffer = buffer.slice(sepIndex + 2);
-
         for (const line of rawEvent.split("\n")) {
           const trimmed = line.trim();
           if (!trimmed.startsWith("data:")) continue;
           const payload = trimmed.slice(5).trim();
-          if (payload === "[DONE]") {
-            continue;
-          }
+          if (payload === "[DONE]") continue;
+
           try {
             const parsed = JSON.parse(payload);
-            // Trailing meta event from the persistence layer.
+
             if (parsed?.type === "meta") {
               onMeta(parsed);
               continue;
@@ -438,6 +394,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
               opts.onContentReplace?.(parsed.content);
               continue;
             }
+
             const delta: string | undefined = parsed?.choices?.[0]?.delta?.content;
             const reasoning: string | undefined =
               parsed?.choices?.[0]?.delta?.reasoning_content ||
@@ -465,6 +422,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
               }
               onToken(delta);
             }
+
             const errMsg: string | undefined = parsed?.error?.message;
             if (errMsg) onError(errMsg);
           } catch {
@@ -473,6 +431,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
         }
       }
     }
+
     if (reasoningMode === "oob") {
       onToken("\n</think>");
     }
@@ -483,6 +442,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
       return;
     }
     onError(err instanceof Error ? err.message : "Stream reading failed");
+    onDone();
   }
 }
 
@@ -527,7 +487,6 @@ export async function fetchGlobalSettings(): Promise<GlobalSettingsOut> {
   const res = await fetch("/api/settings");
   return jsonOrThrow<GlobalSettingsOut>(res);
 }
-
 export async function updateGlobalSettings(
   patch: Partial<{
     userName: string;

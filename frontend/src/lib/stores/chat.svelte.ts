@@ -63,7 +63,6 @@ function parseThinking(raw: string): { content: string; thinkingContent?: string
 
   const thinkingContent = thinkBlocks.length > 0 ? thinkBlocks.join("\n\n---\n\n").trim() : undefined;
   const content = contentParts.join("").trimStart();
-
   return {
     content,
     thinkingContent,
@@ -99,6 +98,9 @@ class ChatStore {
   branchSelections = $state<Record<string, string>>({});
 
   private abortController: AbortController | null = null;
+  private streamingConvId: string | null = null;
+  private streamingAssistantId: string | null = null;
+  private autoNameController: AbortController | null = null;
 
   private loadBranchSelections(convId: string) {
     try {
@@ -116,7 +118,7 @@ class ChatStore {
     try {
       localStorage.setItem(
         `blombrain_branches_${this.activeConversationId}`,
-        JSON.stringify(this.branchSelections)
+        JSON.stringify(this.branchSelections),
       );
     } catch (e) { }
   }
@@ -136,12 +138,11 @@ class ChatStore {
    */
   get activePath(): ChatMessage[] {
     if (this.messages.length === 0) return [];
-
     const result: ChatMessage[] = [];
     let currentParent: string | null = null;
-
     // Safety limit to avoid infinite loops if the conversation tree is malformed
     let safetyCounter = 0;
+
     while (safetyCounter < 1000) {
       safetyCounter++;
       // Find all children of currentParent
@@ -150,6 +151,7 @@ class ChatStore {
 
       const pKey: string = currentParent ?? "ROOT";
       const selectedId: string | undefined = this.branchSelections[pKey];
+
       // Pick selected child or fallback to most recent (highest createdAt / last in array)
       let selectedChild: ChatMessage | undefined = children.find((c) => c.id === selectedId);
       if (!selectedChild) {
@@ -159,7 +161,6 @@ class ChatStore {
       result.push(selectedChild);
       currentParent = selectedChild.id;
     }
-
     return result;
   }
 
@@ -221,6 +222,7 @@ class ChatStore {
           streaming: m.streaming,
         };
       });
+
       this.activeConversationId = detail.id;
       this.activeConversationTitle = detail.title;
       this.pendingAttachments = [];
@@ -231,12 +233,13 @@ class ChatStore {
       artifactStore.close();
 
       // Check if this conversation is actively generating on the backend
-      const isGenerating = (detail as any).isGenerating || (this.messages.length > 0 && (this.messages[this.messages.length - 1] as any).streaming);
-      if (isGenerating) {
-        const lastMsg = this.messages[this.messages.length - 1];
-        if (lastMsg && lastMsg.role === "assistant") {
-          this.reconnectAssistantResponse(lastMsg);
-        }
+      const lastMsg = this.messages.length > 0 ? this.messages[this.messages.length - 1] : undefined;
+      const isGenerating =
+        (detail as any).isGenerating ||
+        (lastMsg?.role === "assistant" && (lastMsg as any).streaming === true);
+
+      if (isGenerating && lastMsg && lastMsg.role === "assistant") {
+        await this.reconnectAssistantResponse(lastMsg);
       }
     } catch (err) {
       console.error("[chatStore] failed to load conversation:", err);
@@ -254,6 +257,8 @@ class ChatStore {
     this.selectedModel = null;
     this.conversationExcludedMcps = [];
     this.conversationExcludedSkills = [];
+    this.streamingConvId = null;
+    this.streamingAssistantId = null;
     artifactStore.close();
   }
 
@@ -327,45 +332,28 @@ class ChatStore {
     }
 
     try {
-      if (target.role === "user") {
-        // Find all assistant children of this user message (handles retry branches)
-        const childAssts = this.messages.filter(
-          (m) => m.role === "assistant" && m.parentId === msgId
-        );
-        const idsToDelete = new Set([msgId, ...childAssts.map((a) => a.id)]);
-
-        if (childAssts.length > 0) {
-          const childAsstIds = new Set(childAssts.map((a) => a.id));
-          // Re-parent any messages that pointed to any of the deleted assistant branches
-          // so that the deeper conversation threads stay connected as sibling branches.
-          this.messages = this.messages.map((m) =>
-            m.parentId && childAsstIds.has(m.parentId)
-              ? { ...m, parentId: target.parentId ?? null }
-              : m
-          );
-        } else {
-          // If no assistant responses existed, reparent the user message's direct children
-          this.messages = this.messages.map((m) =>
-            m.parentId === msgId ? { ...m, parentId: target.parentId ?? null } : m
-          );
-        }
-
-        this.messages = this.messages.filter((m) => !idsToDelete.has(m.id));
-      } else {
-        // Assistant message: Delete this message and ALL its descendants
-        const toDelete = new Set<string>([msgId]);
-        const queue = [msgId];
-        while (queue.length > 0) {
-          const parentId = queue.shift()!;
-          for (const m of this.messages) {
-            if (m.parentId === parentId && !toDelete.has(m.id)) {
-              toDelete.add(m.id);
-              queue.push(m.id);
-            }
+      const deletedIds = new Set<string>([msgId]);
+      const queue = [msgId];
+      while (queue.length > 0) {
+        const parentId = queue.shift()!;
+        for (const m of this.messages) {
+          if (m.parentId === parentId && !deletedIds.has(m.id)) {
+            deletedIds.add(m.id);
+            queue.push(m.id);
           }
         }
-        this.messages = this.messages.filter((m) => !toDelete.has(m.id));
       }
+      this.messages = this.messages.filter((m) => !deletedIds.has(m.id));
+
+      // Clean up branch selections pointing at deleted messages
+      const updatedSelections: Record<string, string> = {};
+      for (const [pKey, childId] of Object.entries(this.branchSelections)) {
+        if (!deletedIds.has(childId)) {
+          updatedSelections[pKey] = childId;
+        }
+      }
+      this.branchSelections = updatedSelections;
+      this.saveBranchSelections();
 
       if (this.messages.length === 0) {
         try {
@@ -400,11 +388,11 @@ class ChatStore {
         attachments: newBranchUserMsg.attachments,
       };
       this.messages.push(newMsgObj);
-      this.setBranchSelection(newBranchUserMsg.parentId, newBranchUserMsg.id);
+      this.setBranchSelection(newBranchUserMsg.parentId ?? null, newBranchUserMsg.id);
       artifactStore.close();
 
       const branchAttachmentIds = newBranchUserMsg.attachments?.map((a) => a.id) ?? attachmentIds;
-      await this.triggerAssistantResponse(newBranchUserMsg, branchAttachmentIds);
+      await this.triggerAssistantResponse(newMsgObj, branchAttachmentIds);
     } catch (err) {
       console.error("[chatStore] failed to branch message:", err);
     }
@@ -478,7 +466,6 @@ class ChatStore {
         let excerpt = words.slice(0, 8).join(" ");
         if (excerpt.length > 60) excerpt = excerpt.slice(0, 57) + "…";
         if (!excerpt) excerpt = "Attachment";
-
         const conv = await createConversation({ title: excerpt, model: this.selectedModel ?? undefined });
         this.activeConversationId = conv.id;
         newConvId = conv.id;
@@ -498,7 +485,6 @@ class ChatStore {
         console.error("[chatStore] Failed to pre-create conversation:", err);
       }
     }
-
 
     // Start assistant response FIRST so the main chat completion starts streaming immediately
     const assistantPromise = this.triggerAssistantResponse(userMessage, attachmentIds);
@@ -534,7 +520,7 @@ class ChatStore {
 
       // 1. Try parallel attempt first
       try {
-        const res = await autoNameConversation(conversationId, userContent, targetModelId);
+        const res = await autoNameConversation(conversationId, userContent, targetModelId, this.autoNameController?.signal);
         applyTitle(res.title);
         return;
       } catch (err) {
@@ -554,7 +540,7 @@ class ChatStore {
       }
 
       try {
-        const res = await autoNameConversation(conversationId, userContent, targetModelId);
+        const res = await autoNameConversation(conversationId, userContent, targetModelId, this.autoNameController?.signal);
         applyTitle(res.title);
       } catch (fallbackErr) {
         console.error("[chatStore] Sequential auto-naming failed:", fallbackErr);
@@ -564,7 +550,17 @@ class ChatStore {
     performAutoName();
   }
 
-  private async triggerAssistantResponse(userMsg: { id: string; content: string; role: string; parentId?: string | null; createdAt?: number; attachments?: AttachmentOut[] }, attachmentIds?: string[]) {
+  private async triggerAssistantResponse(
+    userMsg: {
+      id: string;
+      content: string;
+      role: string;
+      parentId?: string | null;
+      createdAt?: number;
+      attachments?: AttachmentOut[];
+    },
+    attachmentIds?: string[],
+  ) {
     if (!this.selectedModel) return;
 
     let currentUserId: string = userMsg.id;
@@ -584,6 +580,7 @@ class ChatStore {
       stats: undefined,
       model: this.selectedModel,
     };
+
     this.messages.push(assistantMessage);
     this.setBranchSelection(currentUserId, currentAsstId);
 
@@ -594,11 +591,12 @@ class ChatStore {
       .map((m) => ({ role: m.role, content: m.content }));
 
     this.isStreaming = true;
+    this.streamingConvId = this.activeConversationId;
+    this.streamingAssistantId = currentAsstId;
     artifactStore.resetUserClosed();
-    this.abortController = new AbortController();
 
+    this.abortController = new AbortController();
     let rawBuffer = "";
-    let insideThink = false;
 
     await streamChatCompletion({
       model: this.selectedModel,
@@ -609,11 +607,9 @@ class ChatStore {
       assistantMessageId: currentAsstId,
       attachmentIds,
       signal: this.abortController.signal,
-
       onToken: (delta) => {
         const msg = this.messages.find((m) => m.id === currentAsstId);
         if (!msg) return;
-
         rawBuffer += delta;
         msg.content = rawBuffer;
 
@@ -622,14 +618,12 @@ class ChatStore {
         msg.thinkingContent = parsed.thinkingContent;
         msg.thinkingDone = parsed.thinkingDone;
       },
-
       onStatus: (status) => {
         const msg = this.messages.find((m) => m.id === currentAsstId);
         if (msg) {
-          msg.status = status;
+          msg.status = status as any;
         }
       },
-
       onRouterToken: (text) => {
         const msg = this.messages.find((m) => m.id === currentAsstId);
         if (!msg) return;
@@ -637,12 +631,11 @@ class ChatStore {
         rawBuffer = `<router_execution>${msg.routerOutput}</router_execution>\n`;
         msg.content = rawBuffer;
       },
-
       onToolExecution: (evt) => {
         const msg = this.messages.find((m) => m.id === currentAsstId);
         if (!msg) return;
-        if (!msg.toolExecutions) msg.toolExecutions = [];
 
+        if (!msg.toolExecutions) msg.toolExecutions = [];
         const idx = msg.toolExecutions.findIndex((t) => t.callId === evt.callId);
         if (idx >= 0) {
           msg.toolExecutions[idx] = evt;
@@ -665,7 +658,6 @@ class ChatStore {
         msg.thinkingDone = parsed.thinkingDone;
         msg.content = rawBuffer;
       },
-
       onContentReplace: (content) => {
         const msg = this.messages.find((m) => m.id === currentAsstId);
         if (!msg) return;
@@ -675,7 +667,6 @@ class ChatStore {
         msg.thinkingDone = parsed.thinkingDone;
         msg.content = rawBuffer;
       },
-
       onMeta: (meta) => {
         if (meta.isReconnect) {
           rawBuffer = "";
@@ -695,6 +686,7 @@ class ChatStore {
             delete updated[oldUserId];
             this.branchSelections = updated;
           }
+
           // Update parentId references on children (e.g. assistant)
           for (const m of this.messages) {
             if ((m.parentId ?? null) === oldUserId) {
@@ -710,7 +702,6 @@ class ChatStore {
           if (aMsg.id !== meta.assistantMessageId) {
             aMsg.id = meta.assistantMessageId;
             currentAsstId = meta.assistantMessageId;
-
             const pKey = aMsg.parentId ?? "ROOT";
             if (this.branchSelections[pKey] === oldAsstId) {
               this.branchSelections = {
@@ -724,10 +715,10 @@ class ChatStore {
 
         this.activeConversationId = meta.conversationId;
         this.activeConversationTitle = meta.title;
+        this.streamingConvId = meta.conversationId;
         this.saveBranchSelections();
         _invalidateConversations?.();
       },
-
       onDone: () => {
         const msg = this.messages.find((m) => m.id === currentAsstId);
         if (msg) {
@@ -737,8 +728,10 @@ class ChatStore {
           }
         }
         this.isStreaming = false;
+        this.streamingConvId = null;
+        this.streamingAssistantId = null;
+        this.abortController = null;
       },
-
       onError: (message) => {
         const msg = this.messages.find((m) => m.id === currentAsstId);
         if (msg) {
@@ -746,6 +739,9 @@ class ChatStore {
           msg.error = message;
         }
         this.isStreaming = false;
+        this.streamingConvId = null;
+        this.streamingAssistantId = null;
+        this.abortController = null;
       },
     });
   }
@@ -755,6 +751,8 @@ class ChatStore {
 
     this.isStreaming = true;
     asstMsg.streaming = true;
+    this.streamingConvId = this.activeConversationId;
+    this.streamingAssistantId = asstMsg.id;
     this.abortController = new AbortController();
 
     const historyForModel = this.activePath
@@ -771,7 +769,6 @@ class ChatStore {
       conversationId: this.activeConversationId,
       assistantMessageId: asstMsg.id,
       signal: this.abortController.signal,
-
       onToken: (delta) => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);
         if (!msg) return;
@@ -782,7 +779,6 @@ class ChatStore {
           insideThink = true;
           thinkingStartMs = Date.now();
         }
-
         if (insideThink && delta.includes("</think>")) {
           insideThink = false;
           if (thinkingStartMs > 0) {
@@ -803,6 +799,9 @@ class ChatStore {
         const msg = this.messages.find((m) => m.id === asstMsg.id);
         if (msg) msg.streaming = false;
         this.isStreaming = false;
+        this.streamingConvId = null;
+        this.streamingAssistantId = null;
+        this.abortController = null;
       },
       onError: (message) => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);
@@ -811,6 +810,9 @@ class ChatStore {
           msg.error = message;
         }
         this.isStreaming = false;
+        this.streamingConvId = null;
+        this.streamingAssistantId = null;
+        this.abortController = null;
       },
     });
   }
@@ -818,10 +820,27 @@ class ChatStore {
   stop() {
     this.abortController?.abort();
     this.abortController = null;
-    if (this.activeConversationId) {
-      stopChatCompletion(this.activeConversationId).catch(() => { });
+
+    const convId = this.streamingConvId ?? this.activeConversationId;
+    if (convId) {
+      stopChatCompletion(convId).catch(() => { });
     }
+
+    if (this.autoNameController) {
+      this.autoNameController.abort();
+      this.autoNameController = null;
+    }
+
+    // Mark the streaming assistant message as done so UI unblocks immediately
+    const asstId = this.streamingAssistantId;
+    if (asstId) {
+      const msg = this.messages.find((m) => m.id === asstId);
+      if (msg) msg.streaming = false;
+    }
+
     this.isStreaming = false;
+    this.streamingConvId = null;
+    this.streamingAssistantId = null;
   }
 
   clear() {
@@ -830,6 +849,8 @@ class ChatStore {
     this.activeConversationTitle = "New conversation";
     this.pendingAttachments = [];
     this.branchSelections = {};
+    this.streamingConvId = null;
+    this.streamingAssistantId = null;
     artifactStore.close();
   }
 }
