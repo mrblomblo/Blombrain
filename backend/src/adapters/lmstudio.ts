@@ -89,7 +89,17 @@ export const lmStudioAdapter: ApiAdapter = {
         } else if (Array.isArray(msg.content)) {
           content = msg.content.map((p: any) => p.text || '').join(' ');
         }
-        historyText += `${msg.role === 'user' ? 'User' : 'Assistant'}: ${content}\n`;
+        
+        let roleName = 'Assistant';
+        if (msg.role === 'user') roleName = 'User';
+        else if (msg.role === 'tool') roleName = 'Tool Response';
+        else if (msg.role === 'system') roleName = 'System';
+        
+        historyText += `${roleName}: ${content}\n`;
+        
+        if (msg.tool_calls && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+           historyText += `Tool Calls: ${JSON.stringify(msg.tool_calls.map((tc: any) => tc.function))}\n`;
+        }
       }
       historyText += "\nCurrent message:\n";
     }
@@ -182,6 +192,7 @@ export const lmStudioAdapter: ApiAdapter = {
     const decoder = new TextDecoder();
     let buffer = "";
     let capturedJit = false;
+    let toolCallCounter = 0;
 
     return (chunk: Buffer | string): StreamEvent[] => {
       const text = typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
@@ -299,9 +310,12 @@ export const lmStudioAdapter: ApiAdapter = {
             const toolName = parsed.tool;
             if (toolName) {
               const providerInfo = parsed.provider_info;
+              const idx = toolCallCounter++;
               events.push({
                 toolCalls: [
                   {
+                    id: parsed.id || `lms_tc_${idx}`,
+                    index: idx,
                     function: {
                       name: toolName,
                       arguments: parsed.arguments,

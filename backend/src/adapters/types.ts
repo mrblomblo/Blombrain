@@ -2,10 +2,12 @@ import type { ResolvedBackend } from "../types.js";
 
 /** A single function/tool call the assistant asked to invoke. */
 export interface ToolCall {
+  id?: string;
+  index?: number;
   function: {
-    name: string;
+    name?: string;
     description?: string;
-    arguments?: Record<string, any>;
+    arguments?: string | Record<string, any>;
   };
   /** Result returned from the tool, when the backend reports it alongside the call (e.g. LM Studio native API). */
   output?: string;

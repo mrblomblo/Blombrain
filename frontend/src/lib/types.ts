@@ -91,7 +91,7 @@ export interface ModelSettingWriteBody {
   isDefault?: boolean;
 }
 
-export type ChatRole = "system" | "user" | "assistant";
+export type ChatRole = "system" | "user" | "assistant" | "tool";
 
 export interface ResponseStats {
   promptTokens?: number;
@@ -111,6 +111,24 @@ export interface AttachmentOut {
   createdAt: number;
 }
 
+export interface ToolCallItem {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export interface ToolExecutionEvent {
+  callId: string;
+  toolName: string;
+  args: Record<string, any>;
+  result?: string;
+  error?: string;
+  status: "executing" | "completed" | "error";
+}
+
 export interface ChatMessage {
   id: string;
   parentId?: string | null;
@@ -124,6 +142,11 @@ export interface ChatMessage {
   thinkingContent?: string;
   thinkingDone?: boolean;
   thinkingTimeMs?: number;
+  toolCalls?: ToolCallItem[];
+  toolCallId?: string | null;
+  toolExecutions?: ToolExecutionEvent[];
+  status?: string | null;
+  routerOutput?: string;
   stats?: ResponseStats;
   model?: string;
 }
@@ -140,6 +163,8 @@ export interface ConversationSummary {
 /** A full conversation with its messages. */
 export interface ConversationDetail extends ConversationSummary {
   messages: MessageOut[];
+  excludedMcps?: string[];
+  excludedSkills?: string[];
 }
 
 /** Message shape returned from the API. */
@@ -152,7 +177,59 @@ export interface MessageOut {
   error: string | null;
   stats?: ResponseStats;
   model?: string;
+  toolCalls?: ToolCallItem[];
+  toolCallId?: string | null;
   createdAt: number;
   attachments?: AttachmentOut[];
   streaming?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// MCP & Skill Types
+// ---------------------------------------------------------------------------
+
+export interface McpServerInfo {
+  id: string;
+  name: string;
+  type: "stdio" | "http";
+  commandOrUrl: string;
+  args: string[];
+  env: Record<string, string>;
+  headers: Record<string, string>;
+  isEnabled: boolean;
+  status?: "connected" | "connecting" | "error" | "stopped";
+  error?: string;
+}
+
+export interface McpServerWriteBody {
+  id?: string;
+  name: string;
+  type: "stdio" | "http";
+  commandOrUrl: string;
+  args?: string[];
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
+  isEnabled?: boolean;
+}
+
+export interface SkillInfo {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  dirPath: string | null;
+  sourceUrl: string | null;
+  contentHash: string;
+  isEnabled: boolean;
+  createdAt: number;
+}
+
+export interface SkillWriteBody {
+  id?: string;
+  name: string;
+  description: string;
+  instructions: string;
+  dirPath?: string;
+  sourceUrl?: string;
+  isEnabled?: boolean;
 }

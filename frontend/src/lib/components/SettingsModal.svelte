@@ -1,12 +1,14 @@
 <script lang="ts">
-  import { X, Layers, Server, Sliders } from "@lucide/svelte";
+  import { X, Layers, Server, Sliders, Cpu, BookOpen } from "@lucide/svelte";
   import { fade, fly } from "svelte/transition";
-  import BackendsTab from "./settings/BackendsTab.svelte";
-  import ModelsTab from "./settings/ModelsTab.svelte";
   import GeneralTab from "./settings/GeneralTab.svelte";
+  import ModelsTab from "./settings/ModelsTab.svelte";
+  import McpTab from "./settings/McpTab.svelte";
+  import SkillsTab from "./settings/SkillsTab.svelte";
+  import BackendsTab from "./settings/BackendsTab.svelte";
   import Button from "./ui/Button.svelte";
 
-  type Tab = "general" | "models" | "backends";
+  type Tab = "general" | "models" | "mcp" | "skills" | "backends";
 
   interface Props {
     open: boolean;
@@ -16,7 +18,7 @@
 
   let activeTab = $state<Tab>("general");
   let previousTab = $state<Tab>("general");
-  const TABS: Tab[] = ["general", "models", "backends"];
+  const TABS: Tab[] = ["general", "models", "mcp", "skills", "backends"];
 
   function setTab(tab: Tab) {
     if (tab === activeTab) return;
@@ -117,6 +119,30 @@
 
           <button
             type="button"
+            onclick={() => setTab("mcp")}
+            class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
+            'mcp'
+              ? 'border-accent text-accent'
+              : 'border-transparent text-fg-muted hover:text-fg'}"
+          >
+            <Cpu size={14} />
+            <span>MCP Servers</span>
+          </button>
+
+          <button
+            type="button"
+            onclick={() => setTab("skills")}
+            class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
+            'skills'
+              ? 'border-accent text-accent'
+              : 'border-transparent text-fg-muted hover:text-fg'}"
+          >
+            <BookOpen size={14} />
+            <span>Skills</span>
+          </button>
+
+          <button
+            type="button"
             onclick={() => setTab("backends")}
             class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
             'backends'
@@ -146,6 +172,22 @@
             out:fly={getFlyParams(false)}
           >
             <ModelsTab />
+          </div>
+        {:else if activeTab === "mcp"}
+          <div
+            class="col-start-1 row-start-1 overflow-y-auto p-5"
+            in:fly={getFlyParams(true)}
+            out:fly={getFlyParams(false)}
+          >
+            <McpTab />
+          </div>
+        {:else if activeTab === "skills"}
+          <div
+            class="col-start-1 row-start-1 overflow-y-auto p-5"
+            in:fly={getFlyParams(true)}
+            out:fly={getFlyParams(false)}
+          >
+            <SkillsTab />
           </div>
         {:else if activeTab === "backends"}
           <div

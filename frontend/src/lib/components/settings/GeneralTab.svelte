@@ -1,6 +1,11 @@
 <script lang="ts">
   import { Upload } from "@lucide/svelte";
-  import { uploadFile, serveUploadUrl, type AutoNameMode } from "../../api";
+  import {
+    uploadFile,
+    serveUploadUrl,
+    type AutoNameMode,
+    type ToolRoutingMode,
+  } from "../../api";
   import { settingsStore } from "../../stores/settings.svelte";
   import ThemeSwitcher from "../ThemeSwitcher.svelte";
   import Button from "../ui/Button.svelte";
@@ -10,7 +15,22 @@
   const modeOptions: DropdownOption[] = [
     { label: "First Words (Extract 8 words locally)", value: "first_words" },
     { label: "Active Model (Prompt active chat model)", value: "active_model" },
-    { label: "Designated Model (Prompt a specific model)", value: "designated_model" },
+    {
+      label: "Designated Model (Prompt a specific model)",
+      value: "designated_model",
+    },
+  ];
+
+  const toolRoutingModeOptions: DropdownOption[] = [
+    { label: "Disabled (Include all non-excluded schemas)", value: "off" },
+    {
+      label: "Active Model (Pre-pass with active chat model)",
+      value: "active_model",
+    },
+    {
+      label: "Designated Model (Pre-pass with specific model)",
+      value: "designated_model",
+    },
   ];
 
   let imageUploading = $state(false);
@@ -199,6 +219,57 @@
           onchange={(val) =>
             settingsStore.update({
               autoNameModel: val || null,
+            })}
+        />
+      </div>
+    {/if}
+  </div>
+
+  <!-- Context-Scoped Tool Routing Section -->
+  <div
+    class="rounded-lg border border-line bg-bg-elevated p-4 flex flex-col gap-4"
+  >
+    <div>
+      <h3 class="text-sm font-semibold text-fg">Context-Scoped Tool Routing</h3>
+      <p class="text-xs text-fg-subtle mt-0.5">
+        Run a lightweight pre-pass model to filter out irrelevant tool and skill
+        descriptions before sending the prompt to the primary chat model.
+      </p>
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <label
+        for="tool-routing-mode-select"
+        class="text-xs font-medium text-fg-muted"
+      >
+        Routing Pre-pass Mode
+      </label>
+      <Dropdown
+        id="tool-routing-mode-select"
+        value={settingsStore.toolRoutingMode}
+        options={toolRoutingModeOptions}
+        onchange={(val) =>
+          settingsStore.update({
+            toolRoutingMode: val as ToolRoutingMode,
+          })}
+      />
+    </div>
+
+    {#if settingsStore.toolRoutingMode === "designated_model"}
+      <div class="flex flex-col gap-1">
+        <label
+          for="tool-routing-model-select"
+          class="text-xs font-medium text-fg-muted"
+        >
+          Designated Router Model
+        </label>
+        <ModelDropdown
+          id="tool-routing-model-select"
+          value={settingsStore.toolRoutingModel ?? undefined}
+          placeholder="Select a fast router model..."
+          onchange={(val) =>
+            settingsStore.update({
+              toolRoutingModel: val || null,
             })}
         />
       </div>

@@ -12,6 +12,8 @@ import { chatRoutes } from "./routes/chat.js";
 import { conversationsRoutes } from "./routes/conversations.js";
 import { uploadsRoutes } from "./routes/uploads.js";
 import { settingsRoutes } from "./routes/settings.js";
+import { mcpRoutes } from "./routes/mcp.js";
+import { skillRoutes } from "./routes/skills.js";
 import { initModelSync } from "./services/modelSync.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -51,6 +53,8 @@ async function main() {
   await app.register(conversationsRoutes);
   await app.register(uploadsRoutes);
   await app.register(settingsRoutes);
+  await app.register(mcpRoutes);
+  await app.register(skillRoutes);
 
   initModelSync();
 

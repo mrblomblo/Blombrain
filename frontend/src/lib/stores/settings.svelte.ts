@@ -1,4 +1,4 @@
-import { fetchGlobalSettings, updateGlobalSettings, type AutoNameMode } from "../api";
+import { fetchGlobalSettings, updateGlobalSettings, type AutoNameMode, type ToolRoutingMode } from "../api";
 import { themeStore, type ThemeName } from "../theme.svelte";
 
 class SettingsStore {
@@ -7,6 +7,8 @@ class SettingsStore {
   theme = $state<ThemeName>("autumn");
   autoNameMode = $state<AutoNameMode>("first_words");
   autoNameModel = $state<string | null>(null);
+  toolRoutingMode = $state<ToolRoutingMode>("off");
+  toolRoutingModel = $state<string | null>(null);
   loaded = $state(false);
 
   async init() {
@@ -17,6 +19,8 @@ class SettingsStore {
       this.theme = data.theme as ThemeName;
       this.autoNameMode = data.autoNameMode ?? "first_words";
       this.autoNameModel = data.autoNameModel ?? null;
+      this.toolRoutingMode = data.toolRoutingMode ?? "off";
+      this.toolRoutingModel = data.toolRoutingModel ?? null;
       themeStore.set(this.theme);
       this.loaded = true;
     } catch (err) {
@@ -31,6 +35,8 @@ class SettingsStore {
       theme: ThemeName;
       autoNameMode: AutoNameMode;
       autoNameModel: string | null;
+      toolRoutingMode: ToolRoutingMode;
+      toolRoutingModel: string | null;
     }>,
   ) {
     if (patch.userName !== undefined) this.userName = patch.userName;
@@ -41,6 +47,8 @@ class SettingsStore {
     }
     if (patch.autoNameMode !== undefined) this.autoNameMode = patch.autoNameMode;
     if (patch.autoNameModel !== undefined) this.autoNameModel = patch.autoNameModel;
+    if (patch.toolRoutingMode !== undefined) this.toolRoutingMode = patch.toolRoutingMode;
+    if (patch.toolRoutingModel !== undefined) this.toolRoutingModel = patch.toolRoutingModel;
 
     try {
       await updateGlobalSettings({
@@ -49,6 +57,8 @@ class SettingsStore {
         theme: patch.theme,
         autoNameMode: patch.autoNameMode,
         autoNameModel: patch.autoNameModel,
+        toolRoutingMode: patch.toolRoutingMode,
+        toolRoutingModel: patch.toolRoutingModel,
       });
     } catch (err) {
       console.error("Failed to persist settings to server:", err);

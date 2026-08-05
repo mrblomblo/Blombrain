@@ -10,6 +10,7 @@ import {
   branchMessage as apiBranchMessage,
   autoNameConversation,
   stopChatCompletion,
+  patchConversationTools,
 } from "../api";
 import { encodeToWav } from "../audio";
 import type { ChatMessage, ConversationSummary, AttachmentOut, ResponseStats } from "../types";
@@ -26,24 +27,47 @@ function makeId() {
  * display the ThinkingBlock the same as streamed ones.
  */
 function parseThinking(raw: string): { content: string; thinkingContent?: string; thinkingDone?: boolean } {
-  const start = raw.indexOf("<think>");
-  if (start === -1) return { content: raw };
-  const beforeText = raw.slice(0, start).trim();
-  const end = raw.indexOf("</think>", start);
-  if (end === -1) {
-    // Unterminated think block (e.g. response was cut off)
-    return {
-      content: beforeText,
-      thinkingContent: raw.slice(start + 7).trim(),
-      thinkingDone: false,
-    };
+  if (!raw.includes("<think>")) return { content: raw };
+
+  const thinkBlocks: string[] = [];
+  const contentParts: string[] = [];
+  let currentlyThinking = false;
+  let currentThinkStart = -1;
+  let pos = 0;
+
+  while (pos < raw.length) {
+    if (!currentlyThinking) {
+      const startTag = raw.indexOf("<think>", pos);
+      if (startTag === -1) {
+        contentParts.push(raw.slice(pos));
+        break;
+      } else {
+        contentParts.push(raw.slice(pos, startTag));
+        currentlyThinking = true;
+        currentThinkStart = startTag + 7;
+        pos = currentThinkStart;
+      }
+    } else {
+      const endTag = raw.indexOf("</think>", pos);
+      if (endTag === -1) {
+        thinkBlocks.push(raw.slice(currentThinkStart));
+        pos = raw.length;
+        break;
+      } else {
+        thinkBlocks.push(raw.slice(currentThinkStart, endTag));
+        currentlyThinking = false;
+        pos = endTag + 8;
+      }
+    }
   }
-  const afterText = raw.slice(end + 8).trimStart();
-  const fullContent = beforeText ? `${beforeText}\n${afterText}` : afterText;
+
+  const thinkingContent = thinkBlocks.length > 0 ? thinkBlocks.join("\n\n---\n\n").trim() : undefined;
+  const content = contentParts.join("").trimStart();
+
   return {
-    content: fullContent,
-    thinkingContent: raw.slice(start + 7, end).trim(),
-    thinkingDone: true,
+    content,
+    thinkingContent,
+    thinkingDone: !currentlyThinking,
   };
 }
 
@@ -65,6 +89,11 @@ class ChatStore {
 
   pendingAttachments = $state<AttachmentOut[]>([]);
   selectedAttachment = $state<AttachmentOut | null>(null);
+
+  /** MCP server IDs currently excluded for this conversation. */
+  conversationExcludedMcps = $state<string[]>([]);
+  /** Skill IDs currently excluded for this conversation. */
+  conversationExcludedSkills = $state<string[]>([]);
 
   /** Maps parentId ("ROOT" for root messages) to the selected child message ID */
   branchSelections = $state<Record<string, string>>({});
@@ -168,7 +197,7 @@ class ChatStore {
             id: m.id,
             parentId: m.parentId ?? null,
             role: m.role,
-            content: parsed.content,
+            content: m.content,
             thinkingContent: parsed.thinkingContent,
             thinkingDone: parsed.thinkingDone,
             thinkingTimeMs: m.stats?.thinkingTimeMs,
@@ -195,6 +224,8 @@ class ChatStore {
       this.activeConversationId = detail.id;
       this.activeConversationTitle = detail.title;
       this.pendingAttachments = [];
+      this.conversationExcludedMcps = detail.excludedMcps ?? [];
+      this.conversationExcludedSkills = detail.excludedSkills ?? [];
       if (detail.model) this.selectedModel = detail.model;
       this.loadBranchSelections(detail.id);
       artifactStore.close();
@@ -221,7 +252,45 @@ class ChatStore {
     this.pendingAttachments = [];
     this.branchSelections = {};
     this.selectedModel = null;
+    this.conversationExcludedMcps = [];
+    this.conversationExcludedSkills = [];
     artifactStore.close();
+  }
+
+  /**
+   * Toggle a specific MCP server ID in/out of the per-conversation exclusion list.
+   * Persists immediately if a conversation exists.
+   */
+  async toggleExcludedMcp(mcpId: string) {
+    const next = this.conversationExcludedMcps.includes(mcpId)
+      ? this.conversationExcludedMcps.filter((id) => id !== mcpId)
+      : [...this.conversationExcludedMcps, mcpId];
+    this.conversationExcludedMcps = next;
+    if (this.activeConversationId) {
+      try {
+        await patchConversationTools(this.activeConversationId, { excludedMcps: next });
+      } catch (err) {
+        console.warn("[chatStore] failed to persist excludedMcps:", err);
+      }
+    }
+  }
+
+  /**
+   * Toggle a specific skill ID in/out of the per-conversation exclusion list.
+   * Persists immediately if a conversation exists.
+   */
+  async toggleExcludedSkill(skillId: string) {
+    const next = this.conversationExcludedSkills.includes(skillId)
+      ? this.conversationExcludedSkills.filter((id) => id !== skillId)
+      : [...this.conversationExcludedSkills, skillId];
+    this.conversationExcludedSkills = next;
+    if (this.activeConversationId) {
+      try {
+        await patchConversationTools(this.activeConversationId, { excludedSkills: next });
+      } catch (err) {
+        console.warn("[chatStore] failed to persist excludedSkills:", err);
+      }
+    }
   }
 
   /** Edit a message content in place (Save option) */
@@ -415,10 +484,21 @@ class ChatStore {
         newConvId = conv.id;
         this.activeConversationTitle = conv.title;
         _invalidateConversations?.();
+
+        // Persist any pending per-conversation exclusions for the new conversation
+        const hasPendingExclusions =
+          this.conversationExcludedMcps.length > 0 || this.conversationExcludedSkills.length > 0;
+        if (hasPendingExclusions) {
+          patchConversationTools(conv.id, {
+            excludedMcps: this.conversationExcludedMcps,
+            excludedSkills: this.conversationExcludedSkills,
+          }).catch(() => { });
+        }
       } catch (err) {
         console.error("[chatStore] Failed to pre-create conversation:", err);
       }
     }
+
 
     // Start assistant response FIRST so the main chat completion starts streaming immediately
     const assistantPromise = this.triggerAssistantResponse(userMessage, attachmentIds);
@@ -495,6 +575,7 @@ class ChatStore {
       parentId: currentUserId,
       role: "assistant",
       content: "",
+      status: "routing",
       createdAt: Date.now(),
       streaming: true,
       thinkingContent: undefined,
@@ -518,7 +599,6 @@ class ChatStore {
 
     let rawBuffer = "";
     let insideThink = false;
-    let thinkingStartMs = 0;
 
     await streamChatCompletion({
       model: this.selectedModel,
@@ -535,39 +615,72 @@ class ChatStore {
         if (!msg) return;
 
         rawBuffer += delta;
+        msg.content = rawBuffer;
 
-        // Parsing <think>...</think> tags dynamically
-        if (!insideThink && rawBuffer.includes("<think>")) {
-          insideThink = true;
-          thinkingStartMs = Date.now();
-        }
+        // Legacy parseThinking for thinkingContent/thinkingDone
+        const parsed = parseThinking(rawBuffer);
+        msg.thinkingContent = parsed.thinkingContent;
+        msg.thinkingDone = parsed.thinkingDone;
+      },
 
-        if (insideThink) {
-          if (rawBuffer.includes("</think>")) {
-            insideThink = false;
-            const endIdx = rawBuffer.indexOf("</think>");
-            const thinkStr = rawBuffer.slice(rawBuffer.indexOf("<think>") + 7, endIdx);
-            const mainStr = rawBuffer.slice(endIdx + 8).trimStart();
-
-            if (thinkingStartMs > 0 && !msg.thinkingTimeMs) {
-              msg.thinkingTimeMs = Date.now() - thinkingStartMs;
-            }
-
-            msg.thinkingContent = thinkStr.trim();
-            msg.thinkingDone = true;
-            msg.content = mainStr;
-          } else {
-            const thinkStr = rawBuffer.slice(rawBuffer.indexOf("<think>") + 7);
-            msg.thinkingContent = thinkStr;
-            msg.thinkingDone = false;
-            msg.content = "";
-          }
-        } else {
-          msg.content = rawBuffer;
+      onStatus: (status) => {
+        const msg = this.messages.find((m) => m.id === currentAsstId);
+        if (msg) {
+          msg.status = status;
         }
       },
 
+      onRouterToken: (text) => {
+        const msg = this.messages.find((m) => m.id === currentAsstId);
+        if (!msg) return;
+        msg.routerOutput = (msg.routerOutput || "") + text;
+        rawBuffer = `<router_execution>${msg.routerOutput}</router_execution>\n`;
+        msg.content = rawBuffer;
+      },
+
+      onToolExecution: (evt) => {
+        const msg = this.messages.find((m) => m.id === currentAsstId);
+        if (!msg) return;
+        if (!msg.toolExecutions) msg.toolExecutions = [];
+
+        const idx = msg.toolExecutions.findIndex((t) => t.callId === evt.callId);
+        if (idx >= 0) {
+          msg.toolExecutions[idx] = evt;
+        } else {
+          msg.toolExecutions.push(evt);
+        }
+
+        const thinkStartCount = (rawBuffer.match(/<think>/g) || []).length;
+        const thinkEndCount = (rawBuffer.match(/<\/think>/g) || []).length;
+        if (thinkStartCount > thinkEndCount) {
+          rawBuffer += "\n</think>\n";
+        }
+
+        if (evt.status === "completed" || evt.status === "error") {
+          rawBuffer += `\n<tool_execution>${JSON.stringify(evt)}</tool_execution>\n`;
+        }
+
+        const parsed = parseThinking(rawBuffer);
+        msg.thinkingContent = parsed.thinkingContent;
+        msg.thinkingDone = parsed.thinkingDone;
+        msg.content = rawBuffer;
+      },
+
+      onContentReplace: (content) => {
+        const msg = this.messages.find((m) => m.id === currentAsstId);
+        if (!msg) return;
+        rawBuffer = content;
+        const parsed = parseThinking(rawBuffer);
+        msg.thinkingContent = parsed.thinkingContent;
+        msg.thinkingDone = parsed.thinkingDone;
+        msg.content = rawBuffer;
+      },
+
       onMeta: (meta) => {
+        if (meta.isReconnect) {
+          rawBuffer = "";
+        }
+
         // Update user message ID in reactive state array if it changed
         const uMsg = this.messages.find((m) => m.id === currentUserId);
         if (uMsg && uMsg.id !== meta.userMessageId) {
@@ -678,7 +791,7 @@ class ChatStore {
         }
 
         const parsed = parseThinking(rawBuffer);
-        msg.content = parsed.content;
+        msg.content = rawBuffer;
         msg.thinkingContent = parsed.thinkingContent;
         msg.thinkingDone = parsed.thinkingDone;
       },
@@ -706,7 +819,7 @@ class ChatStore {
     this.abortController?.abort();
     this.abortController = null;
     if (this.activeConversationId) {
-      stopChatCompletion(this.activeConversationId).catch(() => {});
+      stopChatCompletion(this.activeConversationId).catch(() => { });
     }
     this.isStreaming = false;
   }

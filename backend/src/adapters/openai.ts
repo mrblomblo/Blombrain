@@ -67,10 +67,7 @@ export const openAIAdapter: ApiAdapter = {
     const decoder = new TextDecoder();
     let buffer = "";
 
-    // Tool-call arguments stream in as raw JSON text fragments across many chunks
-    // (name/id usually arrive once, up front). Buffer per tool-call index and only
-    // hand back parsed `arguments` once the accumulated text is valid JSON.
-    const toolCallAcc = new Map<number, { id?: string; name?: string; argsText: string }>();
+
 
     return (chunk: Buffer | string): StreamEvent[] => {
       const text = typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
@@ -111,31 +108,14 @@ export const openAIAdapter: ApiAdapter = {
 
             let toolCalls: ToolCall[] | undefined;
             if (Array.isArray(delta?.tool_calls)) {
-              for (const tc of delta.tool_calls) {
-                const idx: number = tc.index ?? 0;
-                const entry = toolCallAcc.get(idx) ?? { argsText: "" };
-                if (tc.id) entry.id = tc.id;
-                if (tc.function?.name) entry.name = tc.function.name;
-                if (tc.function?.arguments) entry.argsText += tc.function.arguments;
-                toolCallAcc.set(idx, entry);
-              }
-
-              toolCalls = [...toolCallAcc.entries()]
-                .sort(([a], [b]) => a - b)
-                .map(([, entry]) => {
-                  let args: Record<string, any> | undefined;
-                  try {
-                    args = entry.argsText ? JSON.parse(entry.argsText) : undefined;
-                  } catch {
-                    // Arguments haven't fully arrived yet; leave undefined for now.
-                  }
-                  return {
-                    function: {
-                      name: entry.name ?? "",
-                      ...(args !== undefined ? { arguments: args } : {}),
-                    },
-                  } satisfies ToolCall;
-                });
+              toolCalls = delta.tool_calls.map((tc: any) => ({
+                ...(tc.id ? { id: tc.id } : {}),
+                ...(tc.index !== undefined ? { index: tc.index } : {}),
+                function: {
+                  ...(tc.function?.name ? { name: tc.function.name } : {}),
+                  ...(tc.function?.arguments ? { arguments: tc.function.arguments } : {}),
+                }
+              }));
             }
 
             let logprobs: Logprob[] | undefined;

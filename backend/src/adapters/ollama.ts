@@ -25,9 +25,33 @@ export const ollamaAdapter: ApiAdapter = {
       options.num_predict = max_tokens;
     }
 
+    // Ollama requires tool call arguments to be an object, but OpenAI format (which chat.ts uses) 
+    // provides them as a JSON string. Parse them back to objects for the native Ollama API.
+    const mappedMessages = messages.map((m: any) => {
+      if (m.tool_calls && Array.isArray(m.tool_calls)) {
+        return {
+          ...m,
+          tool_calls: m.tool_calls.map((tc: any) => {
+            let args = tc.function?.arguments;
+            if (typeof args === "string") {
+              try { args = JSON.parse(args); } catch { args = {}; }
+            }
+            return {
+              ...tc,
+              function: {
+                ...tc.function,
+                arguments: args,
+              },
+            };
+          }),
+        };
+      }
+      return m;
+    });
+
     const body: Record<string, any> = {
       model: modelId,
-      messages,
+      messages: mappedMessages,
       options,
       stream: true,
     };
@@ -105,7 +129,9 @@ export const ollamaAdapter: ApiAdapter = {
 
           // Tool calls the model requests mid-stream (ChatStreamEvent.message.tool_calls).
           const toolCalls = Array.isArray(parsed?.message?.tool_calls)
-            ? parsed.message.tool_calls.map((tc: any) => ({
+            ? parsed.message.tool_calls.map((tc: any, idx: number) => ({
+              id: tc?.id || `ollama_tc_${idx}`,
+              index: idx,
               function: {
                 name: tc?.function?.name,
                 description: tc?.function?.description,

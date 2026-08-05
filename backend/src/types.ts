@@ -98,11 +98,13 @@ export interface MessageRow {
   id: string;
   conversation_id: string;
   parent_id: string | null;
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
   error: string | null;
   stats: string | null;
   model: string | null;
+  tool_calls: string | null;
+  tool_call_id: string | null;
   created_at: number;
 }
 
@@ -118,6 +120,17 @@ export interface ConversationSummary {
 /** Full conversation with messages, sent on GET /api/conversations/:id */
 export interface ConversationDetail extends ConversationSummary {
   messages: MessageOut[];
+  excludedMcps?: string[];
+  excludedSkills?: string[];
+}
+
+export interface ToolCallItem {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
 }
 
 /** Message shape sent to the frontend. */
@@ -125,11 +138,13 @@ export interface MessageOut {
   id: string;
   conversationId: string;
   parentId: string | null;
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
   error: string | null;
   stats?: any;
   model?: string;
+  toolCalls?: ToolCallItem[];
+  toolCallId?: string | null;
   createdAt: number;
   attachments?: AttachmentOut[];
   streaming?: boolean;
@@ -139,6 +154,81 @@ export interface MessageOut {
 export interface ConversationPatchBody {
   title?: string;
   model?: string;
+  excludedMcps?: string[];
+  excludedSkills?: string[];
+}
+
+// ---------------------------------------------------------------------------
+// MCP & Skill types
+// ---------------------------------------------------------------------------
+
+export interface McpServerRow {
+  id: string;
+  name: string;
+  type: "stdio" | "http";
+  command_or_url: string;
+  args: string; // JSON array
+  env: string;  // JSON object
+  headers: string; // JSON object
+  is_enabled: number;
+}
+
+export interface McpServerOut {
+  id: string;
+  name: string;
+  type: "stdio" | "http";
+  commandOrUrl: string;
+  args: string[];
+  env: Record<string, string>;
+  headers: Record<string, string>;
+  isEnabled: boolean;
+  status?: "connected" | "connecting" | "error" | "stopped";
+  error?: string;
+}
+
+export interface McpServerWriteBody {
+  id?: string;
+  name: string;
+  type: "stdio" | "http";
+  commandOrUrl: string;
+  args?: string[];
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
+  isEnabled?: boolean;
+}
+
+export interface SkillRow {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  dir_path: string | null;
+  source_url: string | null;
+  content_hash: string;
+  is_enabled: number;
+  created_at: number;
+}
+
+export interface SkillOut {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  dirPath: string | null;
+  sourceUrl: string | null;
+  contentHash: string;
+  isEnabled: boolean;
+  createdAt: number;
+}
+
+export interface SkillWriteBody {
+  id?: string;
+  name: string;
+  description: string;
+  instructions: string;
+  dirPath?: string;
+  sourceUrl?: string;
+  isEnabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +313,7 @@ export interface AttachmentOut {
 // ---------------------------------------------------------------------------
 
 export type AutoNameMode = "first_words" | "active_model" | "designated_model";
+export type ToolRoutingMode = "off" | "active_model" | "designated_model";
 
 export interface GlobalSettingsRow {
   id: string;
@@ -231,6 +322,8 @@ export interface GlobalSettingsRow {
   theme: string;
   auto_name_mode: string;
   auto_name_model: string | null;
+  tool_routing_mode: string;
+  tool_routing_model: string | null;
 }
 
 export interface GlobalSettingsOut {
@@ -240,6 +333,8 @@ export interface GlobalSettingsOut {
   theme: string;
   autoNameMode: AutoNameMode;
   autoNameModel: string | null;
+  toolRoutingMode: ToolRoutingMode;
+  toolRoutingModel: string | null;
 }
 
 export interface GlobalSettingsWriteBody {
@@ -248,4 +343,6 @@ export interface GlobalSettingsWriteBody {
   theme?: string;
   autoNameMode?: AutoNameMode;
   autoNameModel?: string | null;
+  toolRoutingMode?: ToolRoutingMode;
+  toolRoutingModel?: string | null;
 }

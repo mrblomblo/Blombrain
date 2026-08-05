@@ -6,6 +6,7 @@
   import { settingsStore } from "../stores/settings.svelte";
   import { Paperclip, Check, Send as SendIcon, X, Info } from "@lucide/svelte";
   import ThinkingBlock from "./ThinkingBlock.svelte";
+  import ToolTranscriptBlock from "./ToolTranscriptBlock.svelte";
   import MessageTimestamp from "./MessageTimestamp.svelte";
   import BranchNavigator from "./BranchNavigator.svelte";
   import MessageActions from "./MessageActions.svelte";
@@ -13,6 +14,7 @@
   import Button from "./ui/Button.svelte";
   import { fly, fade } from "svelte/transition";
   import type { AttachmentOut } from "../types";
+  import { parseMessageSegments } from "../utils/segmentParser";
 
   interface Props {
     message: ChatMessageType;
@@ -42,6 +44,10 @@
     return matches.map((m) => m.id);
   });
 
+  let parsedSegments = $derived(
+    parseMessageSegments(message.content, message.thinkingContent),
+  );
+
   let hasCodeBlock = $derived(
     !!(
       message.content &&
@@ -62,7 +68,8 @@
   $effect(() => {
     if (isEditing && editTextarea) {
       editTextarea.focus();
-      editTextarea.selectionStart = editTextarea.selectionEnd = editTextarea.value.length;
+      editTextarea.selectionStart = editTextarea.selectionEnd =
+        editTextarea.value.length;
     }
   });
 
@@ -474,20 +481,36 @@
           : 'bg-bg-elevated border border-line/60 text-fg rounded-tl-xs shadow-xs'}
           {hasCodeBlock ? 'w-full' : ''}"
       >
-        {#if message.role === "assistant"}
+        {#if message.role === "assistant" && message.status === "routing" && !parsedSegments.some((s) => s.type === "router")}
           <ThinkingBlock
-            thinkingContent={message.thinkingContent}
-            thinkingDone={message.thinkingDone}
-            streaming={message.streaming}
-            thinkingTimeMs={message.thinkingTimeMs}
-            hasMainContent={!!message.content}
+            status="routing"
+            routerOutput={message.routerOutput}
           />
         {/if}
         {#if message.error}
           <p class="font-medium text-danger">{message.error}</p>
-        {:else if message.content}
-          <Markdown content={message.content} streaming={message.streaming} />
-        {:else if message.streaming && (message.thinkingContent === undefined || message.thinkingDone)}
+        {:else if parsedSegments.length > 0}
+          {#each parsedSegments as seg (seg.id)}
+            {#if seg.type === "router"}
+              <ThinkingBlock
+                isRouter={true}
+                status={message.status}
+                routerOutput={seg.content}
+              />
+            {:else if seg.type === "think"}
+              <ThinkingBlock
+                thinkingContent={seg.content}
+                thinkingDone={seg.isDone}
+                streaming={message.streaming}
+                hasMainContent={true}
+              />
+            {:else if seg.type === "tool" && seg.execution}
+              <ToolTranscriptBlock execution={seg.execution} />
+            {:else if seg.type === "text" && seg.content}
+              <Markdown content={seg.content} streaming={message.streaming} />
+            {/if}
+          {/each}
+        {:else if message.streaming && message.status !== "routing"}
           <span class="inline-flex gap-1 py-1">
             <span
               class="h-1.5 w-1.5 animate-bounce rounded-full bg-fg-subtle [animation-delay:-0.3s]"

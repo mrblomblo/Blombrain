@@ -96,6 +96,31 @@ db.exec(`
     last_synced INTEGER NOT NULL
   );
 
+  -- MCP Servers
+  CREATE TABLE IF NOT EXISTS mcp_servers (
+    id             TEXT PRIMARY KEY,
+    name           TEXT NOT NULL,
+    type           TEXT NOT NULL DEFAULT 'stdio',
+    command_or_url TEXT NOT NULL,
+    args           TEXT NOT NULL DEFAULT '[]',
+    env            TEXT NOT NULL DEFAULT '{}',
+    headers        TEXT NOT NULL DEFAULT '{}',
+    is_enabled     INTEGER NOT NULL DEFAULT 1
+  );
+
+  -- Skills
+  CREATE TABLE IF NOT EXISTS skills (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    description  TEXT NOT NULL,
+    instructions TEXT NOT NULL,
+    dir_path     TEXT,
+    source_url   TEXT,
+    content_hash TEXT NOT NULL,
+    is_enabled   INTEGER NOT NULL DEFAULT 1,
+    created_at   INTEGER NOT NULL
+  );
+
   -- Global App / User Settings
   CREATE TABLE IF NOT EXISTS global_settings (
     id           TEXT PRIMARY KEY,
@@ -139,6 +164,27 @@ for (const col of columnsToAdd) {
   }
 }
 
+// Migration helper for conversations columns (excluded_mcps, excluded_skills)
+const convCols = (db.pragma("table_info(conversations)") as { name: string }[]).map(c => c.name);
+if (!convCols.includes("excluded_mcps")) {
+  try {
+    db.exec(`ALTER TABLE conversations ADD COLUMN excluded_mcps TEXT NOT NULL DEFAULT '[]'`);
+  } catch (e) { }
+}
+if (!convCols.includes("excluded_skills")) {
+  try {
+    db.exec(`ALTER TABLE conversations ADD COLUMN excluded_skills TEXT NOT NULL DEFAULT '[]'`);
+  } catch (e) { }
+}
+
+// Migration helper for mcp_servers columns (headers)
+const mcpCols = (db.pragma("table_info(mcp_servers)") as { name: string }[]).map(c => c.name);
+if (!mcpCols.includes("headers")) {
+  try {
+    db.exec(`ALTER TABLE mcp_servers ADD COLUMN headers TEXT NOT NULL DEFAULT '{}'`);
+  } catch (e) { }
+}
+
 // Migration helper for global_settings columns
 const globalSettingsCols = (db.pragma("table_info(global_settings)") as { name: string }[]).map(c => c.name);
 if (!globalSettingsCols.includes("auto_name_mode")) {
@@ -151,6 +197,16 @@ if (!globalSettingsCols.includes("auto_name_model")) {
     db.exec(`ALTER TABLE global_settings ADD COLUMN auto_name_model TEXT`);
   } catch (e) { }
 }
+if (!globalSettingsCols.includes("tool_routing_mode")) {
+  try {
+    db.exec(`ALTER TABLE global_settings ADD COLUMN tool_routing_mode TEXT NOT NULL DEFAULT 'off'`);
+  } catch (e) { }
+}
+if (!globalSettingsCols.includes("tool_routing_model")) {
+  try {
+    db.exec(`ALTER TABLE global_settings ADD COLUMN tool_routing_model TEXT`);
+  } catch (e) { }
+}
 
 // Migration helper for backends.api_type
 const backendCols = (db.pragma("table_info(backends)") as { name: string }[]).map(c => c.name);
@@ -160,7 +216,7 @@ if (!backendCols.includes("api_type")) {
   } catch (e) { }
 }
 
-// Migration helper for messages.parent_id and messages.model
+// Migration helper for messages (parent_id, model, tool_calls, tool_call_id)
 const msgCols = (db.pragma("table_info(messages)") as { name: string }[]).map(c => c.name);
 if (!msgCols.includes("parent_id")) {
   try {
@@ -170,6 +226,16 @@ if (!msgCols.includes("parent_id")) {
 if (!msgCols.includes("model")) {
   try {
     db.exec(`ALTER TABLE messages ADD COLUMN model TEXT`);
+  } catch (e) { }
+}
+if (!msgCols.includes("tool_calls")) {
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN tool_calls TEXT`);
+  } catch (e) { }
+}
+if (!msgCols.includes("tool_call_id")) {
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN tool_call_id TEXT`);
   } catch (e) { }
 }
 
@@ -190,14 +256,16 @@ export const insertMessage = db.prepare<{
   id: string;
   conversationId: string;
   parentId: string | null;
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
   error: string | null;
   stats: string | null;
   model: string | null;
+  toolCalls: string | null;
+  toolCallId: string | null;
   createdAt: number;
 }>(
-  "INSERT INTO messages (id, conversation_id, parent_id, role, content, error, stats, model, created_at) VALUES (@id, @conversationId, @parentId, @role, @content, @error, @stats, @model, @createdAt)"
+  "INSERT INTO messages (id, conversation_id, parent_id, role, content, error, stats, model, tool_calls, tool_call_id, created_at) VALUES (@id, @conversationId, @parentId, @role, @content, @error, @stats, @model, @toolCalls, @toolCallId, @createdAt)"
 );
 
 // Backfill parent_id for existing linear conversations if null

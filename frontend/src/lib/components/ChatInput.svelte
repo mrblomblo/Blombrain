@@ -7,6 +7,7 @@
   import { createQuery } from "@tanstack/svelte-query";
 
   import MarkdownInput from "./MarkdownInput.svelte";
+  import ToolsPopover from "./ToolsPopover.svelte";
 
   let draft = $state("");
   let fileInput: HTMLInputElement | undefined = $state();
@@ -283,7 +284,7 @@
 
       <!-- Bottom Action Bar Row -->
       <div class="flex items-center justify-between pt-1.5">
-        <!-- Left Side Tools (Attachments, future MCP/Skills) -->
+        <!-- Left Side Tools (Attachments, MCP/Skills) -->
         <div class="flex items-center gap-1">
           {#if allowedAccepts}
             <Button
@@ -298,6 +299,7 @@
               <Paperclip size={16} />
             </Button>
           {/if}
+          <ToolsPopover />
         </div>
 
         <!-- Right Side Actions (Send / Stop) -->

@@ -88,6 +88,18 @@ const updateConversationMeta = db.prepare(
 
 const deleteConversation = db.prepare("DELETE FROM conversations WHERE id = ?");
 
+function removeConversationUploads(convId: string) {
+  try {
+    const convDir = path.join(DATA_DIR, "uploads", convId);
+    if (fs.existsSync(convDir)) {
+      fs.rmSync(convDir, { recursive: true, force: true });
+    }
+  } catch (e) { }
+  try {
+    db.prepare("DELETE FROM attachments WHERE conversation_id = ?").run(convId);
+  } catch (e) { }
+}
+
 const insertMessage = db.prepare(
   `INSERT INTO messages (id, conversation_id, parent_id, role, content, error, stats, model, created_at)
    VALUES (@id, @conversationId, @parentId, @role, @content, @error, @stats, @model, @createdAt)`,
@@ -180,40 +192,54 @@ export async function conversationsRoutes(app: FastifyInstance) {
       model: row.model,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      excludedMcps: (row as any).excluded_mcps ? JSON.parse((row as any).excluded_mcps) : [],
+      excludedSkills: (row as any).excluded_skills ? JSON.parse((row as any).excluded_skills) : [],
       messages,
       isGenerating: active && !active.isDone ? true : undefined,
     });
   });
 
-  /** PATCH /api/conversations/:id -- update title and/or model. */
+  /** PATCH /api/conversations/:id -- update title, model, excludedMcps, excludedSkills. */
   app.patch("/api/conversations/:id", async (req: FastifyRequest, reply: FastifyReply) => {
     const { id } = req.params as { id: string };
-    if (!getConversation.get(id)) {
+    const row = getConversation.get(id);
+    if (!row) {
       return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
     }
     const body = (req.body ?? {}) as ConversationPatchBody;
-    updateConversationMeta.run({
-      id,
-      title: body.title ?? null,
-      model: body.model ?? null,
-      updatedAt: Date.now(),
-    });
+
+    if (body.title !== undefined || body.model !== undefined) {
+      updateConversationMeta.run({
+        id,
+        title: body.title ?? null,
+        model: body.model ?? null,
+        updatedAt: Date.now(),
+      });
+    }
+
+    if (body.excludedMcps !== undefined) {
+      db.prepare("UPDATE conversations SET excluded_mcps = ? WHERE id = ?").run(JSON.stringify(body.excludedMcps), id);
+    }
+
+    if (body.excludedSkills !== undefined) {
+      db.prepare("UPDATE conversations SET excluded_skills = ? WHERE id = ?").run(JSON.stringify(body.excludedSkills), id);
+    }
+
     return rowToSummary(getConversation.get(id)!);
   });
 
   /** DELETE /api/conversations/:id -- hard delete; cascades to messages. */
   app.delete("/api/conversations/:id", async (req: FastifyRequest, reply: FastifyReply) => {
     const { id } = req.params as { id: string };
+    const convDir = path.join(DATA_DIR, "uploads", id);
     const result = deleteConversation.run(id);
-    if (result.changes === 0) {
+    const convDirExists = fs.existsSync(convDir);
+
+    if (result.changes === 0 && !convDirExists) {
       return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
     }
-    try {
-      const convDir = path.join(DATA_DIR, "uploads", id);
-      if (fs.existsSync(convDir)) {
-        fs.rmSync(convDir, { recursive: true, force: true });
-      }
-    } catch (e) { }
+
+    removeConversationUploads(id);
 
     return reply.code(204).send();
   });
@@ -303,6 +329,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
 
     if (remainingCount === 0) {
       deleteConversation.run(convId);
+      removeConversationUploads(convId);
     } else {
       updateConversationMeta.run({ id: convId, title: null, model: null, updatedAt: Date.now() });
     }
@@ -326,10 +353,14 @@ export async function conversationsRoutes(app: FastifyInstance) {
     const newMsgId = crypto.randomUUID();
     const now = Date.now();
 
+    // If branching from a USER message, the new user message is a sibling (same parent_id as target).
+    // If branching from an ASSISTANT message, the new user message is a child of the assistant message (parent_id = target.id).
+    const parentId = target.role === "user" ? target.parent_id : target.id;
+
     insertMessage.run({
       id: newMsgId,
       conversationId: convId,
-      parentId: target.parent_id, // Sibling has same parent_id
+      parentId,
       role: "user",
       content: content ?? "",
       error: null,

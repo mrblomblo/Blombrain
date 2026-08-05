@@ -1,0 +1,249 @@
+import { mcpManager, type McpToolDefinition } from "./mcp.js";
+import { getAllSkills } from "./skills.js";
+import type { SkillOut } from "../types.js";
+import db from "../db.js";
+import { backendRegistry } from "../registry.js";
+import { getAdapter } from "../adapters/index.js";
+import { Readable } from "stream";
+
+export interface ToolRoutingResult {
+  mcpTools: McpToolDefinition[];
+  selectedSkills: SkillOut[];
+}
+
+export function parseRouterOutput(text: string): { tools: string[]; skills: string[] } {
+  // Strip markdown code fences if present
+  let cleaned = text.replace(/```(?:json)?([\s\S]*?)```/gi, "$1").trim();
+
+  // Match first JSON object in text
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (match) {
+    cleaned = match[0];
+  }
+
+  const parsed = JSON.parse(cleaned);
+  const tools = Array.isArray(parsed.tools) ? parsed.tools.map((t: any) => String(t)) : [];
+  const skills = Array.isArray(parsed.skills) ? parsed.skills.map((s: any) => String(s)) : [];
+  return { tools, skills };
+}
+
+async function queryLLM(
+  modelId: string,
+  systemPrompt: string,
+  userPrompt: string,
+  onToken?: (text: string) => void
+): Promise<string> {
+  let targetModelId = modelId;
+  const settingRow = db.prepare("SELECT * FROM model_settings WHERE id = ?").get(modelId) as any;
+  if (settingRow && settingRow.is_preset && settingRow.base_model_id) {
+    targetModelId = settingRow.base_model_id;
+  }
+
+  const resolved = backendRegistry.resolveModelId(targetModelId);
+  if (!resolved) {
+    throw new Error(`Model id "${modelId}" doesn't match any configured backend.`);
+  }
+
+  const { backend, rawModelId } = resolved;
+  const adapter = getAdapter(backend.apiType);
+
+  const extraParams: Record<string, any> = {};
+  if (settingRow) {
+    if (settingRow.seed !== null && settingRow.seed !== undefined) extraParams.seed = settingRow.seed;
+    if (settingRow.max_tokens !== null && settingRow.max_tokens !== undefined) extraParams.max_tokens = settingRow.max_tokens;
+    if (settingRow.top_k !== null && settingRow.top_k !== undefined) extraParams.top_k = settingRow.top_k;
+    if (settingRow.top_p !== null && settingRow.top_p !== undefined) extraParams.top_p = settingRow.top_p;
+    if (settingRow.min_p !== null && settingRow.min_p !== undefined) extraParams.min_p = settingRow.min_p;
+    if (settingRow.presence_penalty !== null && settingRow.presence_penalty !== undefined) extraParams.presence_penalty = settingRow.presence_penalty;
+    if (settingRow.frequency_penalty !== null && settingRow.frequency_penalty !== undefined) extraParams.frequency_penalty = settingRow.frequency_penalty;
+    if (settingRow.repeat_penalty !== null && settingRow.repeat_penalty !== undefined) extraParams.repeat_penalty = settingRow.repeat_penalty;
+    if (settingRow.reasoning_effort) extraParams.reasoning_effort = settingRow.reasoning_effort;
+    if (settingRow.ctx_length !== null && settingRow.ctx_length !== undefined) {
+      extraParams.num_ctx = settingRow.ctx_length;
+    }
+  }
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ];
+
+  const reqConfig = await adapter.buildRequest({
+    backend,
+    modelId: rawModelId,
+    messages,
+    extraParams,
+    temperature: settingRow?.temperature ?? 0.1,
+  });
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60-second timeout for pre-pass
+
+  try {
+    const res = await fetch(reqConfig.url, {
+      ...reqConfig.init,
+      signal: controller.signal,
+    });
+
+    if (!res.ok || !res.body) {
+      throw new Error(`Router LLM HTTP error ${res.status}: ${res.statusText}`);
+    }
+
+    const nodeStream = Readable.fromWeb(res.body as any);
+    const parser = adapter.createStreamParser();
+    let textResult = "";
+    let reasoningMode: "oob" | "inband" | null = null;
+
+    await new Promise<void>((resolve, reject) => {
+      nodeStream.on("data", (chunk: Buffer) => {
+        const events = parser(chunk);
+        for (const ev of events) {
+          if (ev.reasoning) {
+            if (!reasoningMode) {
+              reasoningMode = "oob";
+              textResult += "<think>\n";
+              if (onToken) onToken("<think>\n");
+            }
+            textResult += ev.reasoning;
+            if (onToken) onToken(ev.reasoning);
+          }
+          if (ev.delta) {
+            if (reasoningMode === "oob") {
+              reasoningMode = null;
+              textResult += "\n</think>\n";
+              if (onToken) onToken("\n</think>\n");
+            }
+            textResult += ev.delta;
+            if (onToken) onToken(ev.delta);
+          }
+        }
+      });
+      nodeStream.on("end", () => {
+        if (reasoningMode === "oob") {
+          reasoningMode = null;
+          textResult += "\n</think>\n";
+          if (onToken) onToken("\n</think>\n");
+        }
+        resolve();
+      });
+      nodeStream.on("error", (err) => reject(err));
+      nodeStream.on("close", () => resolve());
+    });
+
+    return textResult;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export async function routeToolsAndSkills(
+  userQuery: string,
+  excludedMcps: string[] = [],
+  excludedSkills: string[] = [],
+  forceTools: string[] = [],
+  activeModelId?: string,
+  onToken?: (text: string) => void
+): Promise<ToolRoutingResult> {
+  const allMcpTools = await mcpManager.getAvailableTools(excludedMcps);
+  const allSkills = getAllSkills(excludedSkills).filter((s) => s.isEnabled);
+
+  // Single unified token estimation (1 token ~= 4 chars)
+  const totalSchemaLength = JSON.stringify(allMcpTools).length + JSON.stringify(allSkills).length;
+  const estimatedTokens = Math.ceil(totalSchemaLength / 4);
+
+  // Check global settings for tool_routing_mode and tool_routing_model
+  const settingsRow = db.prepare("SELECT tool_routing_mode, tool_routing_model FROM global_settings LIMIT 1").get() as any;
+  const mode = settingsRow?.tool_routing_mode || "off";
+  const designatedModel = settingsRow?.tool_routing_model;
+
+  // Determine whether to run LLM pre-pass:
+  // - If mode is 'off' and total tokens < 20,000, don't route (return all available schemas)
+  // - If mode is 'off' and total tokens >= 20,000, automatically trigger router for context safety
+  // - If mode is 'active_model' or 'designated_model', always run router
+  const shouldRoute = mode !== "off" || estimatedTokens >= 20000;
+
+  if (!shouldRoute || !userQuery.trim() || (allMcpTools.length === 0 && allSkills.length === 0)) {
+    return {
+      mcpTools: allMcpTools,
+      selectedSkills: allSkills,
+    };
+  }
+
+  // Determine which model ID to use for the pre-pass
+  let modelToUse: string | undefined;
+  if (mode === "designated_model" && designatedModel) {
+    modelToUse = designatedModel;
+  } else {
+    modelToUse = activeModelId || designatedModel;
+  }
+
+  // Fallback if modelToUse is still not resolved
+  if (!modelToUse) {
+    const row = db.prepare("SELECT id FROM model_settings LIMIT 1").get() as any;
+    if (row?.id) {
+      modelToUse = row.id;
+    }
+  }
+
+  if (!modelToUse) {
+    console.warn("[toolRouter] No valid model available for routing pre-pass, skipping routing.");
+    return { mcpTools: allMcpTools, selectedSkills: allSkills };
+  }
+
+  try {
+    const toolsCatalog = allMcpTools.map((t) => ({
+      name: t.name,
+      description: t.description ? t.description.trim().slice(0, 300) : "No description",
+    }));
+
+    const skillsCatalog = allSkills.map((s) => ({
+      name: s.name,
+      description: s.description ? s.description.trim().slice(0, 300) : "No description",
+    }));
+
+    const systemPrompt = `You are a precision AI tool and skill selector.
+Analyze the user's query and select ONLY the tools and skills strictly required to fulfill it.
+Be conservative: if no external tools or skills are needed, return empty arrays.
+
+You MUST respond strictly with a raw JSON object and NO other text:
+{
+  "tools": ["tool_name_1"],
+  "skills": ["skill_name_1"]
+}`;
+
+    const userPrompt = `User Query: "${userQuery}"
+
+Available Tools:
+${JSON.stringify(toolsCatalog, null, 2)}
+
+Available Skills:
+${JSON.stringify(skillsCatalog, null, 2)}`;
+
+    const rawResponse = await queryLLM(modelToUse, systemPrompt, userPrompt, onToken);
+    const { tools: selectedToolNames, skills: selectedSkillNames } = parseRouterOutput(rawResponse);
+
+    // Filter tools & skills, ensuring forcedTools are ALWAYS included
+    const selectedMcpTools = allMcpTools.filter(
+      (t) => selectedToolNames.includes(t.name) || forceTools.includes(t.name)
+    );
+
+    const selectedSkills = allSkills.filter(
+      (s) => selectedSkillNames.includes(s.name) || forceTools.includes(s.name)
+    );
+
+    console.log(
+      `[toolRouter] Pre-pass completed using ${modelToUse}. Selected ${selectedMcpTools.length}/${allMcpTools.length} tools and ${selectedSkills.length}/${allSkills.length} skills.`
+    );
+
+    return {
+      mcpTools: selectedMcpTools,
+      selectedSkills: selectedSkills,
+    };
+  } catch (err) {
+    console.warn("[toolRouter] LLM pre-pass failed, failing open with all tools/skills:", err);
+    return {
+      mcpTools: allMcpTools,
+      selectedSkills: allSkills,
+    };
+  }
+}

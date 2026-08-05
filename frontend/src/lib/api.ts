@@ -59,6 +59,91 @@ export async function deleteBackend(id: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// MCP Servers
+// ---------------------------------------------------------------------------
+
+export async function fetchMcpServers(): Promise<import("./types").McpServerInfo[]> {
+  const res = await fetch("/api/mcp");
+  return jsonOrThrow<import("./types").McpServerInfo[]>(res);
+}
+
+export async function createMcpServer(data: import("./types").McpServerWriteBody): Promise<import("./types").McpServerInfo> {
+  const res = await fetch("/api/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return jsonOrThrow<import("./types").McpServerInfo>(res);
+}
+
+export async function updateMcpServer(id: string, data: import("./types").McpServerWriteBody): Promise<import("./types").McpServerInfo> {
+  const res = await fetch(`/api/mcp/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return jsonOrThrow<import("./types").McpServerInfo>(res);
+}
+
+export async function deleteMcpServer(id: string): Promise<void> {
+  const res = await fetch(`/api/mcp/${encodeURIComponent(id)}`, { method: "DELETE" });
+  await jsonOrThrow<{ success: boolean }>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+
+export async function fetchSkills(): Promise<import("./types").SkillInfo[]> {
+  const res = await fetch("/api/skills");
+  return jsonOrThrow<import("./types").SkillInfo[]>(res);
+}
+
+export async function createSkill(data: import("./types").SkillWriteBody): Promise<import("./types").SkillInfo> {
+  const res = await fetch("/api/skills", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return jsonOrThrow<import("./types").SkillInfo>(res);
+}
+
+export async function updateSkill(id: string, data: import("./types").SkillWriteBody): Promise<import("./types").SkillInfo> {
+  const res = await fetch(`/api/skills/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return jsonOrThrow<import("./types").SkillInfo>(res);
+}
+
+export async function deleteSkill(id: string): Promise<void> {
+  const res = await fetch(`/api/skills/${encodeURIComponent(id)}`, { method: "DELETE" });
+  await jsonOrThrow<{ success: boolean }>(res);
+}
+
+export async function importSkill(dirPath: string): Promise<import("./types").SkillInfo> {
+  const res = await fetch("/api/skills/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dirPath }),
+  });
+  return jsonOrThrow<import("./types").SkillInfo>(res);
+}
+
+export async function uploadSkillFiles(items: { file: File; relativePath: string }[]): Promise<import("./types").SkillInfo> {
+  const formData = new FormData();
+  for (const item of items) {
+    formData.append("files", item.file, item.relativePath || item.file.name);
+  }
+  const res = await fetch("/api/skills/upload", {
+    method: "POST",
+    body: formData,
+  });
+  return jsonOrThrow<import("./types").SkillInfo>(res);
+}
+
+// ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
 
@@ -170,6 +255,18 @@ export async function updateConversation(
   return jsonOrThrow<ConversationSummary>(res);
 }
 
+export async function patchConversationTools(
+  id: string,
+  patch: { excludedMcps?: string[]; excludedSkills?: string[] },
+): Promise<void> {
+  const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  await jsonOrThrow<unknown>(res);
+}
+
 export async function deleteConversation(id: string): Promise<void> {
   const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) {
@@ -227,8 +324,13 @@ export interface StreamChatOptions {
     isNew: boolean;
     userMessageId: string;
     assistantMessageId: string;
+    isReconnect?: boolean;
     stats?: import("./types").ResponseStats;
   }) => void;
+  onStatus?: (status: string) => void;
+  onRouterToken?: (text: string) => void;
+  onToolExecution?: (evt: import("./types").ToolExecutionEvent) => void;
+  onContentReplace?: (content: string) => void;
   onDone: () => void;
   onError: (message: string) => void;
 }
@@ -320,6 +422,22 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
               onMeta(parsed);
               continue;
             }
+            if (parsed?.type === "status") {
+              opts.onStatus?.(parsed.status);
+              continue;
+            }
+            if (parsed?.type === "router_token") {
+              opts.onRouterToken?.(parsed.text);
+              continue;
+            }
+            if (parsed?.type === "tool_execution") {
+              opts.onToolExecution?.(parsed);
+              continue;
+            }
+            if (parsed?.type === "content_replace") {
+              opts.onContentReplace?.(parsed.content);
+              continue;
+            }
             const delta: string | undefined = parsed?.choices?.[0]?.delta?.content;
             const reasoning: string | undefined =
               parsed?.choices?.[0]?.delta?.reasoning_content ||
@@ -392,6 +510,7 @@ export async function autoNameConversation(
 }
 
 export type AutoNameMode = "first_words" | "active_model" | "designated_model";
+export type ToolRoutingMode = "off" | "active_model" | "designated_model";
 
 export interface GlobalSettingsOut {
   id: string;
@@ -400,6 +519,8 @@ export interface GlobalSettingsOut {
   theme: string;
   autoNameMode: AutoNameMode;
   autoNameModel: string | null;
+  toolRoutingMode: ToolRoutingMode;
+  toolRoutingModel: string | null;
 }
 
 export async function fetchGlobalSettings(): Promise<GlobalSettingsOut> {
@@ -414,6 +535,8 @@ export async function updateGlobalSettings(
     theme: string;
     autoNameMode: AutoNameMode;
     autoNameModel: string | null;
+    toolRoutingMode: ToolRoutingMode;
+    toolRoutingModel: string | null;
   }>,
 ): Promise<GlobalSettingsOut> {
   const res = await fetch("/api/settings", {
