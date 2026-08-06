@@ -364,4 +364,5 @@ export interface GlobalSettingsWriteBody {
   toolRoutingModel?: string | null;
   ctxOverflowBehavior?: CtxOverflowBehavior;
   reasoningInjectionMode?: ReasoningInjectionMode;
+  password?: string;
 }

@@ -5,7 +5,8 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import fastifyMultipart from "@fastify/multipart";
-import "./db.js";
+import cookie from "@fastify/cookie";
+import db from "./db.js";
 import { backendsRoutes } from "./routes/backends.js";
 import { modelsRoutes } from "./routes/models.js";
 import { chatRoutes } from "./routes/chat.js";
@@ -14,6 +15,7 @@ import { uploadsRoutes } from "./routes/uploads.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { mcpRoutes } from "./routes/mcp.js";
 import { skillRoutes } from "./routes/skills.js";
+import { authRoutes } from "./routes/auth.js";
 import { initModelSync } from "./services/modelSync.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -46,7 +48,38 @@ async function main() {
   await app.register(fastifyMultipart, {
     limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 },
   });
+  await app.register(cookie);
 
+  app.addHook("onRequest", async (req, reply) => {
+    const url = req.raw.url ?? "";
+    if (!url.startsWith("/api")) return;
+    if (url.startsWith("/api/auth/")) return;
+
+    const row = db
+      .prepare<[string], { password_hash: string | null }>(
+        "SELECT password_hash FROM global_settings WHERE id = ?"
+      )
+      .get("default");
+
+    if (!row?.password_hash) return;
+
+    const token = req.cookies?.blombrain_token;
+    if (!token) {
+      return reply.code(401).send({ error: { message: "Unauthorized" } });
+    }
+
+    const session = db
+      .prepare<[string], { token: string }>(
+        "SELECT token FROM auth_sessions WHERE token = ?"
+      )
+      .get(token);
+
+    if (!session) {
+      return reply.code(401).send({ error: { message: "Unauthorized" } });
+    }
+  });
+
+  await app.register(authRoutes);
   await app.register(backendsRoutes);
   await app.register(modelsRoutes);
   await app.register(chatRoutes);

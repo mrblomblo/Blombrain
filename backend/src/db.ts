@@ -121,12 +121,19 @@ db.exec(`
     created_at   INTEGER NOT NULL
   );
 
+  -- Auth Sessions
+  CREATE TABLE IF NOT EXISTS auth_sessions (
+    token      TEXT PRIMARY KEY,
+    created_at INTEGER NOT NULL
+  );
+
   -- Global App / User Settings
   CREATE TABLE IF NOT EXISTS global_settings (
-    id           TEXT PRIMARY KEY,
-    user_name    TEXT NOT NULL DEFAULT 'You',
-    user_avatar  TEXT,
-    theme        TEXT NOT NULL DEFAULT 'autumn'
+    id            TEXT PRIMARY KEY,
+    user_name     TEXT NOT NULL DEFAULT 'You',
+    user_avatar   TEXT,
+    theme         TEXT NOT NULL DEFAULT 'autumn',
+    password_hash TEXT
   );
 
   INSERT OR IGNORE INTO global_settings (id, user_name, user_avatar, theme)
@@ -222,6 +229,11 @@ if (!globalSettingsCols.includes("ctx_overflow_behavior")) {
 if (!globalSettingsCols.includes("reasoning_injection_mode")) {
   try {
     db.exec(`ALTER TABLE global_settings ADD COLUMN reasoning_injection_mode TEXT NOT NULL DEFAULT 'all'`);
+  } catch (e) { }
+}
+if (!globalSettingsCols.includes("password_hash")) {
+  try {
+    db.exec(`ALTER TABLE global_settings ADD COLUMN password_hash TEXT`);
   } catch (e) { }
 }
 

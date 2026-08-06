@@ -1,7 +1,7 @@
 <script lang="ts">
   import { chatStore } from "../stores/chat.svelte";
   import { themeStore } from "../theme.svelte";
-  import { serveUploadUrl } from "../api";
+  import { serveUploadUrl, apiFetch } from "../api";
   import { X, Download, FileText, ExternalLink } from "@lucide/svelte";
   import { fade, scale } from "svelte/transition";
   import hljs from "highlight.js";
@@ -27,43 +27,52 @@
       ".jsx",
       ".mjs",
       ".cjs",
+      ".json",
+      ".json5",
+      ".css",
+      ".scss",
+      ".sass",
+      ".less",
+      ".html",
+      ".htm",
+      ".xml",
+      ".svg",
       ".py",
-      ".rs",
-      ".go",
+      ".rb",
+      ".php",
+      ".java",
       ".c",
       ".cpp",
       ".h",
       ".hpp",
       ".cs",
-      ".java",
+      ".go",
+      ".rs",
+      ".swift",
       ".kt",
-      ".rb",
-      ".php",
+      ".kts",
       ".sh",
       ".bash",
       ".zsh",
-      ".json",
-      ".toml",
+      ".fish",
+      ".ps1",
+      ".sql",
       ".yaml",
       ".yml",
+      ".toml",
+      ".ini",
+      ".env",
       ".md",
-      ".css",
-      ".scss",
-      ".html",
-      ".xml",
-      ".sql",
+      ".markdown",
+      ".dockerfile",
+      "dockerfile",
+      ".gitignore",
     ];
     return codeExts.some((ext) => lower.endsWith(ext));
   }
 
-  function isMediaAttachment(att: typeof attachment): boolean {
-    if (!att) return false;
-    if (isCodeFile(att.originalName)) return false;
-    return (
-      att.mimeType.startsWith("image/") ||
-      att.mimeType.startsWith("video/") ||
-      att.mimeType.startsWith("audio/")
-    );
+  function isMediaAttachment(att: any): boolean {
+    return att.mimeType.startsWith("image/") || att.mimeType.startsWith("video/") || att.mimeType.startsWith("audio/");
   }
 
   $effect(() => {
@@ -79,7 +88,7 @@
     isLoadingText = true;
     const url = serveUploadUrl(att.id);
 
-    fetch(url)
+    apiFetch(url)
       .then((res) => res.text())
       .then((text) => {
         textContent = text;

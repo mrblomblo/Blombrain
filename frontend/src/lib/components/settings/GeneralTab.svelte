@@ -9,6 +9,7 @@
     type ReasoningInjectionMode,
   } from "../../api";
   import { settingsStore } from "../../stores/settings.svelte";
+  import { checkAuth } from "../../stores/auth.svelte";
   import ThemeSwitcher from "../ThemeSwitcher.svelte";
   import Button from "../ui/Button.svelte";
   import Dropdown, { type DropdownOption } from "../ui/Dropdown.svelte";
@@ -105,6 +106,41 @@
     }
   }
 
+  let newPassword = $state("");
+  let confirmPassword = $state("");
+  let passwordMsg = $state("");
+  let passwordError = $state(false);
+  let passwordUpdating = $state(false);
+
+  async function handlePasswordUpdate() {
+    passwordMsg = "";
+    passwordError = false;
+
+    if (newPassword !== confirmPassword) {
+      passwordError = true;
+      passwordMsg = "Passwords do not match";
+      return;
+    }
+
+    passwordUpdating = true;
+    try {
+      await settingsStore.update({ password: newPassword });
+      await checkAuth();
+      passwordError = false;
+      passwordMsg =
+        newPassword.trim() === ""
+          ? "Password removed. Auth disabled."
+          : "Password updated successfully.";
+      newPassword = "";
+      confirmPassword = "";
+    } catch (e: any) {
+      passwordError = true;
+      passwordMsg = e.message || "Failed to update password";
+    } finally {
+      passwordUpdating = false;
+    }
+  }
+
   async function handleNameChange(e: Event) {
     const input = e.target as HTMLInputElement;
     await settingsStore.update({ userName: input.value });
@@ -186,6 +222,66 @@
         placeholder="Enter your name"
         class="h-9 w-full rounded-md border border-line bg-bg px-3 text-xs text-fg transition-colors focus:border-accent"
       />
+    </div>
+
+    <!-- Instance Password Section -->
+    <div class="pt-3 border-t border-line flex flex-col gap-3">
+      <div class="flex flex-col gap-0.5">
+        <span class="text-xs font-semibold text-fg">Instance Password</span>
+        <span class="text-[11px] text-fg-muted"
+          >Set a password to require authentication when opening Blombrain.
+          Leave blank to disable auth.</span
+        >
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div class="flex flex-col gap-1">
+          <label for="new-password" class="text-xs font-medium text-fg-muted"
+            >New Password</label
+          >
+          <input
+            id="new-password"
+            type="password"
+            bind:value={newPassword}
+            placeholder="New password (blank to disable)"
+            class="h-9 w-full rounded-md border border-line bg-bg px-3 text-xs text-fg transition-colors focus:border-accent"
+          />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label
+            for="confirm-password"
+            class="text-xs font-medium text-fg-muted">Confirm Password</label
+          >
+          <input
+            id="confirm-password"
+            type="password"
+            bind:value={confirmPassword}
+            placeholder="Confirm password"
+            class="h-9 w-full rounded-md border border-line bg-bg px-3 text-xs text-fg transition-colors focus:border-accent"
+          />
+        </div>
+      </div>
+
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div>
+          {#if passwordMsg}
+            <p class="text-xs {passwordError ? 'text-danger' : 'text-success'}">
+              {passwordMsg}
+            </p>
+          {/if}
+        </div>
+
+        <Button
+          variant={newPassword.length > 0 && confirmPassword.length > 0
+            ? "accent"
+            : "default"}
+          size="sm"
+          onclick={handlePasswordUpdate}
+          disabled={passwordUpdating}
+        >
+          {passwordUpdating ? "Saving..." : "Update Password"}
+        </Button>
+      </div>
     </div>
   </div>
 
@@ -315,7 +411,8 @@
     <div>
       <h3 class="text-sm font-semibold text-fg">Context Overflow Behavior</h3>
       <p class="text-xs text-fg-subtle mt-0.5">
-        Choose default behavior when a conversation exceeds the model's maximum context length.
+        Choose default behavior when a conversation exceeds the model's maximum
+        context length.
       </p>
     </div>
 
@@ -345,7 +442,8 @@
     <div>
       <h3 class="text-sm font-semibold text-fg">Reasoning Context Injection</h3>
       <p class="text-xs text-fg-subtle mt-0.5">
-        Control how reasoning blocks (&lt;think&gt;...&lt;/think&gt;) from past assistant turns are included in prompt history.
+        Control how reasoning blocks (&lt;think&gt;...&lt;/think&gt;) from past
+        assistant turns are included in prompt history.
       </p>
     </div>
 

@@ -1,3 +1,4 @@
+import { authStore } from "./stores/auth.svelte";
 import type {
   BackendInfo,
   BackendCreateBody,
@@ -21,6 +22,14 @@ import type {
 } from "./types";
 export type { CtxOverflowBehavior, ReasoningInjectionMode };
 
+export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const res = await globalThis.fetch(input, { ...init, credentials: "include" });
+  if (res.status === 401) {
+    authStore.authenticated = false;
+  }
+  return res;
+}
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -33,15 +42,15 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 // Backends
 // ---------------------------------------------------------------------------
 export async function fetchBackends(): Promise<BackendInfo[]> {
-  const res = await fetch("/api/backends");
+  const res = await apiFetch("/api/backends");
   return jsonOrThrow<BackendInfo[]>(res);
 }
 export async function fetchBackendProtocols(): Promise<BackendProtocolInfo[]> {
-  const res = await fetch("/api/backends/protocols");
+  const res = await apiFetch("/api/backends/protocols");
   return jsonOrThrow<BackendProtocolInfo[]>(res);
 }
 export async function createBackend(data: BackendCreateBody): Promise<BackendInfo> {
-  const res = await fetch("/api/backends", {
+  const res = await apiFetch("/api/backends", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -49,7 +58,7 @@ export async function createBackend(data: BackendCreateBody): Promise<BackendInf
   return jsonOrThrow<BackendInfo>(res);
 }
 export async function updateBackend(id: string, data: BackendUpdateBody): Promise<BackendInfo> {
-  const res = await fetch(`/api/backends/${encodeURIComponent(id)}`, {
+  const res = await apiFetch(`/api/backends/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -57,7 +66,7 @@ export async function updateBackend(id: string, data: BackendUpdateBody): Promis
   return jsonOrThrow<BackendInfo>(res);
 }
 export async function deleteBackend(id: string): Promise<void> {
-  const res = await fetch(`/api/backends/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await apiFetch(`/api/backends/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) {
     const body = await res.text().catch(() => "");
     throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
@@ -68,11 +77,11 @@ export async function deleteBackend(id: string): Promise<void> {
 // MCP Servers
 // ---------------------------------------------------------------------------
 export async function fetchMcpServers(): Promise<McpServerInfo[]> {
-  const res = await fetch("/api/mcp");
+  const res = await apiFetch("/api/mcp");
   return jsonOrThrow<McpServerInfo[]>(res);
 }
 export async function createMcpServer(data: McpServerWriteBody): Promise<McpServerInfo> {
-  const res = await fetch("/api/mcp", {
+  const res = await apiFetch("/api/mcp", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -80,7 +89,7 @@ export async function createMcpServer(data: McpServerWriteBody): Promise<McpServ
   return jsonOrThrow<McpServerInfo>(res);
 }
 export async function updateMcpServer(id: string, data: McpServerWriteBody): Promise<McpServerInfo> {
-  const res = await fetch(`/api/mcp/${encodeURIComponent(id)}`, {
+  const res = await apiFetch(`/api/mcp/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -88,7 +97,7 @@ export async function updateMcpServer(id: string, data: McpServerWriteBody): Pro
   return jsonOrThrow<McpServerInfo>(res);
 }
 export async function deleteMcpServer(id: string): Promise<void> {
-  const res = await fetch(`/api/mcp/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await apiFetch(`/api/mcp/${encodeURIComponent(id)}`, { method: "DELETE" });
   await jsonOrThrow<{ success: boolean }>(res);
 }
 
@@ -96,11 +105,11 @@ export async function deleteMcpServer(id: string): Promise<void> {
 // Skills
 // ---------------------------------------------------------------------------
 export async function fetchSkills(): Promise<SkillInfo[]> {
-  const res = await fetch("/api/skills");
+  const res = await apiFetch("/api/skills");
   return jsonOrThrow<SkillInfo[]>(res);
 }
 export async function createSkill(data: SkillWriteBody): Promise<SkillInfo> {
-  const res = await fetch("/api/skills", {
+  const res = await apiFetch("/api/skills", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -108,7 +117,7 @@ export async function createSkill(data: SkillWriteBody): Promise<SkillInfo> {
   return jsonOrThrow<SkillInfo>(res);
 }
 export async function updateSkill(id: string, data: SkillWriteBody): Promise<SkillInfo> {
-  const res = await fetch(`/api/skills/${encodeURIComponent(id)}`, {
+  const res = await apiFetch(`/api/skills/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -116,11 +125,11 @@ export async function updateSkill(id: string, data: SkillWriteBody): Promise<Ski
   return jsonOrThrow<SkillInfo>(res);
 }
 export async function deleteSkill(id: string): Promise<void> {
-  const res = await fetch(`/api/skills/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await apiFetch(`/api/skills/${encodeURIComponent(id)}`, { method: "DELETE" });
   await jsonOrThrow<{ success: boolean }>(res);
 }
 export async function importSkill(dirPath: string): Promise<SkillInfo> {
-  const res = await fetch("/api/skills/import", {
+  const res = await apiFetch("/api/skills/import", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dirPath }),
@@ -132,7 +141,7 @@ export async function uploadSkillFiles(items: { file: File; relativePath: string
   for (const item of items) {
     formData.append("files", item.file, item.relativePath || item.file.name);
   }
-  const res = await fetch("/api/skills/upload", { method: "POST", body: formData });
+  const res = await apiFetch("/api/skills/upload", { method: "POST", body: formData });
   return jsonOrThrow<SkillInfo>(res);
 }
 
@@ -140,11 +149,11 @@ export async function uploadSkillFiles(items: { file: File; relativePath: string
 // Models
 // ---------------------------------------------------------------------------
 export async function fetchModels(): Promise<ModelInfo[]> {
-  const res = await fetch("/api/models");
+  const res = await apiFetch("/api/models");
   return jsonOrThrow<ModelInfo[]>(res);
 }
 export async function forceSyncModels(): Promise<void> {
-  const res = await fetch("/api/models/sync", { method: "POST" });
+  const res = await apiFetch("/api/models/sync", { method: "POST" });
   await jsonOrThrow<{ success: boolean }>(res);
 }
 
@@ -152,7 +161,7 @@ export async function forceSyncModels(): Promise<void> {
 // Model Settings & Presets
 // ---------------------------------------------------------------------------
 export async function createPreset(data: ModelSettingWriteBody): Promise<ModelInfo> {
-  const res = await fetch("/api/models", {
+  const res = await apiFetch("/api/models", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -160,7 +169,7 @@ export async function createPreset(data: ModelSettingWriteBody): Promise<ModelIn
   return jsonOrThrow<ModelInfo>(res);
 }
 export async function updateModelSettings(modelId: string, data: Partial<ModelSettingWriteBody>): Promise<void> {
-  const res = await fetch(`/api/models/${encodeURIComponent(modelId)}`, {
+  const res = await apiFetch(`/api/models/${encodeURIComponent(modelId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -168,11 +177,11 @@ export async function updateModelSettings(modelId: string, data: Partial<ModelSe
   await jsonOrThrow<{ ok: boolean }>(res);
 }
 export async function deleteModelSettings(modelId: string): Promise<void> {
-  const res = await fetch(`/api/models/${encodeURIComponent(modelId)}`, { method: "DELETE" });
+  const res = await apiFetch(`/api/models/${encodeURIComponent(modelId)}`, { method: "DELETE" });
   await jsonOrThrow<{ ok: boolean }>(res);
 }
 export async function updateModelOrder(orders: Array<{ id: string; sortOrder: number; isPreset?: boolean }>): Promise<void> {
-  const res = await fetch("/api/models/order", {
+  const res = await apiFetch("/api/models/order", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ orders }),
@@ -187,11 +196,11 @@ export async function uploadFile(file: File, conversationId?: string | null): Pr
   const formData = new FormData();
   formData.append("file", file);
   const url = conversationId ? `/api/uploads?conversationId=${encodeURIComponent(conversationId)}` : "/api/uploads";
-  const res = await fetch(url, { method: "POST", body: formData });
+  const res = await apiFetch(url, { method: "POST", body: formData });
   return jsonOrThrow<AttachmentOut>(res);
 }
 export async function deleteUpload(id: string): Promise<void> {
-  const res = await fetch(`/api/uploads/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await apiFetch(`/api/uploads/${encodeURIComponent(id)}`, { method: "DELETE" });
   await jsonOrThrow<{ success: boolean }>(res);
 }
 export function serveUploadUrl(id: string): string {
@@ -202,15 +211,15 @@ export function serveUploadUrl(id: string): string {
 // Conversations
 // ---------------------------------------------------------------------------
 export async function fetchConversations(): Promise<ConversationSummary[]> {
-  const res = await fetch("/api/conversations");
+  const res = await apiFetch("/api/conversations");
   return jsonOrThrow<ConversationSummary[]>(res);
 }
 export async function fetchConversation(id: string): Promise<ConversationDetail> {
-  const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`);
+  const res = await apiFetch(`/api/conversations/${encodeURIComponent(id)}`);
   return jsonOrThrow<ConversationDetail>(res);
 }
 export async function createConversation(opts?: { title?: string; model?: string }): Promise<ConversationSummary> {
-  const res = await fetch("/api/conversations", {
+  const res = await apiFetch("/api/conversations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(opts ?? {}),
@@ -218,7 +227,7 @@ export async function createConversation(opts?: { title?: string; model?: string
   return jsonOrThrow<ConversationSummary>(res);
 }
 export async function updateConversation(id: string, patch: { title?: string; model?: string }): Promise<ConversationSummary> {
-  const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`, {
+  const res = await apiFetch(`/api/conversations/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
@@ -229,7 +238,7 @@ export async function patchConversationTools(
   id: string,
   patch: { excludedMcps?: string[]; excludedSkills?: string[]; toolsEnabled?: boolean },
 ): Promise<void> {
-  const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`, {
+  const res = await apiFetch(`/api/conversations/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
@@ -237,14 +246,14 @@ export async function patchConversationTools(
   await jsonOrThrow<unknown>(res);
 }
 export async function deleteConversation(id: string): Promise<void> {
-  const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await apiFetch(`/api/conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) {
     const body = await res.text().catch(() => "");
     throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
   }
 }
 export async function patchMessage(convId: string, msgId: string, content: string, attachmentIds?: string[]): Promise<MessageOut> {
-  const res = await fetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}`, {
+  const res = await apiFetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content, attachmentIds }),
@@ -252,7 +261,7 @@ export async function patchMessage(convId: string, msgId: string, content: strin
   return jsonOrThrow<MessageOut>(res);
 }
 export async function deleteMessage(convId: string, msgId: string): Promise<void> {
-  const res = await fetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}`, {
+  const res = await apiFetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}`, {
     method: "DELETE",
   });
   if (!res.ok && res.status !== 204) {
@@ -261,7 +270,7 @@ export async function deleteMessage(convId: string, msgId: string): Promise<void
   }
 }
 export async function branchMessage(convId: string, msgId: string, content: string, attachmentIds?: string[]): Promise<MessageOut> {
-  const res = await fetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}/branch`, {
+  const res = await apiFetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}/branch`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content, attachmentIds }),
@@ -321,7 +330,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
 
   let res: Response;
   try {
-    res = await fetch("/api/chat/completions", {
+    res = await apiFetch("/api/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -457,7 +466,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
 }
 
 export async function stopChatCompletion(conversationId: string): Promise<void> {
-  await fetch("/api/chat/stop", {
+  await apiFetch("/api/chat/stop", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ conversationId }),
@@ -470,7 +479,7 @@ export async function autoNameConversation(
   targetModelId: string,
   signal?: AbortSignal,
 ): Promise<{ title: string }> {
-  const res = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/auto-name`, {
+  const res = await apiFetch(`/api/conversations/${encodeURIComponent(conversationId)}/auto-name`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ userContent, targetModelId }),
@@ -496,7 +505,7 @@ export interface GlobalSettingsOut {
 }
 
 export async function fetchGlobalSettings(): Promise<GlobalSettingsOut> {
-  const res = await fetch("/api/settings");
+  const res = await apiFetch("/api/settings");
   return jsonOrThrow<GlobalSettingsOut>(res);
 }
 export async function updateGlobalSettings(
@@ -510,9 +519,10 @@ export async function updateGlobalSettings(
     toolRoutingModel: string | null;
     ctxOverflowBehavior: CtxOverflowBehavior;
     reasoningInjectionMode: ReasoningInjectionMode;
+    password?: string;
   }>,
 ): Promise<GlobalSettingsOut> {
-  const res = await fetch("/api/settings", {
+  const res = await apiFetch("/api/settings", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),

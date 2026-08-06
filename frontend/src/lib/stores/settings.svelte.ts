@@ -43,6 +43,7 @@ class SettingsStore {
       toolRoutingModel: string | null;
       ctxOverflowBehavior: CtxOverflowBehavior;
       reasoningInjectionMode: ReasoningInjectionMode;
+      password?: string;
     }>,
   ) {
     if (patch.userName !== undefined) this.userName = patch.userName;
@@ -69,9 +70,11 @@ class SettingsStore {
         toolRoutingModel: patch.toolRoutingModel,
         ctxOverflowBehavior: patch.ctxOverflowBehavior,
         reasoningInjectionMode: patch.reasoningInjectionMode,
+        password: patch.password,
       });
     } catch (err) {
       console.error("Failed to persist settings to server:", err);
+      throw err;
     }
   }
 }

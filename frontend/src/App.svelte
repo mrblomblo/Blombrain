@@ -12,12 +12,14 @@
   import AttachmentModal from "./lib/components/AttachmentModal.svelte";
   import ConfirmModal from "./lib/components/ConfirmModal.svelte";
   import ArtifactPanel from "./lib/components/ArtifactPanel.svelte";
+  import LoginScreen from "./lib/components/LoginScreen.svelte";
   import {
     chatStore,
     registerConversationsInvalidator,
   } from "./lib/stores/chat.svelte";
   import { settingsStore } from "./lib/stores/settings.svelte";
   import { artifactStore } from "./lib/stores/artifact.svelte";
+  import { authStore, checkAuth } from "./lib/stores/auth.svelte";
 
   settingsStore.init();
 
@@ -44,15 +46,17 @@
   let hasInitialized = $state(false);
 
   onMount(() => {
-    const match = window.location.pathname.match(/^\/chat\/([a-zA-Z0-9-]+)$/);
-    if (match) {
-      const uuid = match[1];
-      chatStore.loadConversation({ id: uuid } as any).finally(() => {
+    checkAuth().then(() => {
+      const match = window.location.pathname.match(/^\/chat\/([a-zA-Z0-9-]+)$/);
+      if (match) {
+        const uuid = match[1];
+        chatStore.loadConversation({ id: uuid } as any).finally(() => {
+          hasInitialized = true;
+        });
+      } else {
         hasInitialized = true;
-      });
-    } else {
-      hasInitialized = true;
-    }
+      }
+    });
 
     window.addEventListener("popstate", () => {
       const match = window.location.pathname.match(/^\/chat\/([a-zA-Z0-9-]+)$/);
@@ -89,7 +93,14 @@
   }
 </script>
 
-<QueryClientProvider client={queryClient}>
+{#if !authStore.initialized}
+  <div class="flex items-center justify-center h-screen w-screen bg-bg text-fg font-medium">
+    Loading...
+  </div>
+{:else if authStore.authEnabled && !authStore.authenticated}
+  <LoginScreen />
+{:else}
+  <QueryClientProvider client={queryClient}>
   <div class="relative flex h-screen w-screen bg-bg text-fg overflow-hidden">
     <!-- Desktop Sidebar -->
     <div class="hidden md:flex h-full">
@@ -175,3 +186,4 @@
   <AttachmentModal />
   <ConfirmModal />
 </QueryClientProvider>
+{/if}
