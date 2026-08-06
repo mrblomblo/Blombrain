@@ -54,6 +54,7 @@ async function main() {
     const url = req.raw.url ?? "";
     if (!url.startsWith("/api")) return;
     if (url.startsWith("/api/auth/")) return;
+    if (url.startsWith("/api/instance-info")) return;
 
     const row = db
       .prepare<[string], { password_hash: string | null }>(

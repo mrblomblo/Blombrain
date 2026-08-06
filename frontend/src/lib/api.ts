@@ -527,5 +527,9 @@ export async function updateGlobalSettings(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   });
-  return jsonOrThrow<GlobalSettingsOut>(res);
+}
+
+export async function fetchInstanceInfo(): Promise<{ theme: string }> {
+  const res = await globalThis.fetch("/api/instance-info");
+  return jsonOrThrow<{ theme: string }>(res);
 }

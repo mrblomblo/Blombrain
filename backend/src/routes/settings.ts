@@ -20,6 +20,17 @@ function rowToSettings(row: GlobalSettingsRow): GlobalSettingsOut {
 }
 
 export async function settingsRoutes(app: FastifyInstance) {
+  // GET /api/instance-info (Public)
+  app.get("/api/instance-info", async (_req, reply) => {
+    const row = db
+      .prepare<[string], { theme: string }>("SELECT theme FROM global_settings WHERE id = ?")
+      .get("default");
+
+    return reply.send({
+      theme: row?.theme ?? "autumn",
+    });
+  });
+
   // GET /api/settings
   app.get("/api/settings", async (_req, reply) => {
     const row = db

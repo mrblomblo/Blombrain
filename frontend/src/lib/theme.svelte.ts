@@ -1,3 +1,5 @@
+import { fetchInstanceInfo } from "./api";
+
 export const THEMES = [
   "autumn",
   "ctp-mocha",
@@ -38,7 +40,7 @@ function readInitialTheme(): ThemeName {
       return stored as ThemeName;
     }
   }
-  return "ctp-mocha";
+  return "autumn";
 }
 
 class ThemeStore {
@@ -53,6 +55,22 @@ class ThemeStore {
         localStorage.setItem(STORAGE_KEY, this.current);
       });
     });
+
+    this.init();
+  }
+
+  async init() {
+    if (typeof localStorage !== "undefined" && localStorage.getItem(STORAGE_KEY)) {
+      return;
+    }
+    try {
+      const data = await fetchInstanceInfo();
+      if (data.theme && (THEMES as readonly string[]).includes(data.theme)) {
+        this.set(data.theme as ThemeName);
+      }
+    } catch (e) {
+      console.error("Failed to fetch instance info theme:", e);
+    }
   }
 
   get isDark(): boolean {
