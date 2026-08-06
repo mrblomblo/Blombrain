@@ -580,7 +580,8 @@ export async function chatRoutes(app: FastifyInstance) {
     let activeSkills: any[] = [];
 
     if (toolsEnabled) {
-      const { routeToolsAndSkills } = await import("../services/toolRouter.js");
+      const { routeToolsAndSkills, buildRecentContext } = await import("../services/toolRouter.js");
+      const priorContext = buildRecentContext(body.messages);
       const routingResult = await routeToolsAndSkills(
         userQuery,
         excludedMcps,
@@ -591,6 +592,7 @@ export async function chatRoutes(app: FastifyInstance) {
           routerRawText += text;
           broadcastChunk(JSON.stringify({ type: "router_token", text }));
         },
+        priorContext,
       );
       mcpTools = routingResult.mcpTools ?? [];
       activeSkills = routingResult.selectedSkills ?? [];

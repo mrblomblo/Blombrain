@@ -136,13 +136,53 @@ async function queryLLM(
   }
 }
 
+export function buildRecentContext(messages: any[], maxMessages = 4): string {
+  if (!Array.isArray(messages) || messages.length <= 1) return "";
+
+  const prior = messages.slice(0, -1);
+  const recent = prior.slice(-maxMessages);
+
+  const lines: string[] = [];
+  for (const m of recent) {
+    if (m.role === "system") continue;
+
+    let text = "";
+    if (typeof m.content === "string") {
+      text = m.content;
+    } else if (Array.isArray(m.content)) {
+      text = m.content
+        .filter((p: any) => p.type === "text")
+        .map((p: any) => p.text)
+        .join(" ");
+    }
+
+    text = text
+      .replace(/<router_execution>[\s\S]*?<\/router_execution>/gi, "")
+      .replace(/<tool_execution>[\s\S]*?<\/tool_execution>/gi, "")
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .trim();
+
+    if (!text) continue;
+
+    if (text.length > 400) {
+      text = text.slice(0, 400) + "... [truncated]";
+    }
+
+    const roleName = m.role === "user" ? "User" : m.role === "assistant" ? "Assistant" : m.role;
+    lines.push(`${roleName}: ${text}`);
+  }
+
+  return lines.join("\n");
+}
+
 export async function routeToolsAndSkills(
   userQuery: string,
   excludedMcps: string[] = [],
   excludedSkills: string[] = [],
   forceTools: string[] = [],
   activeModelId?: string,
-  onToken?: (text: string) => void
+  onToken?: (text: string) => void,
+  priorContext?: string
 ): Promise<ToolRoutingResult> {
   const allMcpTools = await mcpManager.getAvailableTools(excludedMcps);
   const allSkills = getAllSkills(excludedSkills).filter((s) => s.isEnabled);
@@ -202,7 +242,7 @@ export async function routeToolsAndSkills(
     }));
 
     const systemPrompt = `You are a precision AI tool and skill selector.
-Analyze the user's query and select ONLY the tools and skills strictly required to fulfill it.
+Analyze the user's query along with recent conversation context, and select ONLY the tools and skills strictly required to fulfill it.
 Be conservative: if no external tools or skills are needed, return empty arrays.
 
 You MUST respond strictly with a raw JSON object and NO other text:
@@ -211,7 +251,11 @@ You MUST respond strictly with a raw JSON object and NO other text:
   "skills": ["skill_name_1"]
 }`;
 
-    const userPrompt = `User Query: "${userQuery}"
+    const contextHeader = priorContext && priorContext.trim()
+      ? `Recent Conversation Context:\n${priorContext.trim()}\n\n`
+      : "";
+
+    const userPrompt = `${contextHeader}Current User Query: "${userQuery}"
 
 Available Tools:
 ${JSON.stringify(toolsCatalog, null, 2)}
