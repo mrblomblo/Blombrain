@@ -618,3 +618,12 @@ select,
   margin-right: 0.4rem;
   transform: translateY(1px);
 }
+
+/* Logo SVG dynamic styling */
+.blombrain-logo .svg-bg {
+  fill: var(--bg-inset, var(--bg));
+}
+
+.blombrain-logo .svg-accent {
+  fill: var(--accent);
+}

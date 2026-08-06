@@ -2,12 +2,10 @@
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import {
     PanelLeftClose,
-    PanelLeftOpen,
     SquarePen,
     Trash2,
     Settings,
     X,
-    ChevronDown,
     ChevronUp,
     MoreHorizontal,
     Pencil,
@@ -23,6 +21,7 @@
   import type { ConversationSummary } from "../types";
   import Dropdown from "./ui/Dropdown.svelte";
   import TextInputModal from "./ui/TextInputModal.svelte";
+  import Logo from "./Logo.svelte";
   import { slide } from "svelte/transition";
 
   interface Props {
@@ -142,7 +141,7 @@
           title="Expand sidebar"
           class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted transition-colors cursor-pointer hover:bg-bg-elevated hover:text-fg"
         >
-          <PanelLeftOpen size={18} />
+          <Logo class="h-5 w-5" />
         </button>
       {/if}
     </div>
@@ -175,7 +174,7 @@
     <!-- Logo + new chat + mobile close -->
     <div class="flex items-center justify-between px-4 py-4">
       <div class="flex items-center gap-2">
-        <div class="h-3.5 w-3.5 rotate-45 bg-accent"></div>
+        <Logo class="h-5 w-5" />
         <span class="text-sm font-semibold tracking-wide text-fg"
           >Blombrain</span
         >
@@ -255,10 +254,11 @@
                 onclick={() => !isDisabled && handleSelectConv(conv)}
                 tabindex={isDisabled ? -1 : 0}
                 role="button"
-                onkeydown={(e) => !isDisabled && e.key === "Enter" && handleSelectConv(conv)}
+                onkeydown={(e) =>
+                  !isDisabled && e.key === "Enter" && handleSelectConv(conv)}
               >
                 <span class="w-full truncate">{conv.title}</span>
-                <div 
+                <div
                   class="absolute right-0 top-0 bottom-0 flex items-center gap-1.5 pl-1.5 pr-2.5 bg-bg-elevated rounded-r-lg transition-opacity duration-150 {isMenuOpen
                     ? 'opacity-100 pointer-events-auto'
                     : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'}"
@@ -266,18 +266,26 @@
                   onkeydown={(e) => e.stopPropagation()}
                   role="presentation"
                 >
-                  <div class="absolute -left-4 top-0 bottom-0 w-4 bg-gradient-to-r from-transparent to-bg-elevated pointer-events-none"></div>
+                  <div
+                    class="absolute -left-4 top-0 bottom-0 w-4 bg-gradient-to-r from-transparent to-bg-elevated pointer-events-none"
+                  ></div>
                   <span class="shrink-0 text-[10px] font-mono text-fg-subtle">
                     {formatAge(conv.updatedAt)}
                   </span>
                   <Dropdown
                     onopenchange={(open) => {
                       if (open) openDropdownId = conv.id;
-                      else if (openDropdownId === conv.id) openDropdownId = null;
+                      else if (openDropdownId === conv.id)
+                        openDropdownId = null;
                     }}
                     options={[
                       { label: "Rename", value: "rename", icon: Pencil },
-                      { label: "Delete", value: "delete", icon: Trash2, iconClass: "text-danger" }
+                      {
+                        label: "Delete",
+                        value: "delete",
+                        icon: Trash2,
+                        iconClass: "text-danger",
+                      },
                     ]}
                     onchange={(val) => {
                       if (val === "rename") openRenameModal(conv);
@@ -312,7 +320,9 @@
         <span>Backends ({backendsQuery.data?.length ?? 0})</span>
         <ChevronUp
           size={12}
-          class="shrink-0 transition-transform duration-200 {showBackends ? 'rotate-180' : ''}"
+          class="shrink-0 transition-transform duration-200 {showBackends
+            ? 'rotate-180'
+            : ''}"
         />
       </button>
 

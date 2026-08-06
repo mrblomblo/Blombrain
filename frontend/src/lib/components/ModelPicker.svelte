@@ -1,13 +1,6 @@
 <script lang="ts">
   import { createQuery } from "@tanstack/svelte-query";
-  import {
-    ChevronDown,
-    ChevronUp,
-    Search,
-    Star,
-    Sparkles,
-    Check,
-  } from "@lucide/svelte";
+  import { ChevronDown, ChevronUp, Search, Star, Check } from "@lucide/svelte";
   import { fly, fade } from "svelte/transition";
   import { fetchModels } from "../api";
   import { chatStore } from "../stores/chat.svelte";
@@ -98,14 +91,12 @@
           alt="Icon"
           class="h-4 w-4 rounded-xs object-cover"
         />
-      {:else if selectedModel?.isPreset}
-        <Sparkles size={13} class="text-accent" />
       {:else}
-        <div
-          class="flex h-4 w-4 items-center justify-center rounded-xs bg-bg-inset font-semibold text-[9px] text-fg-muted"
-        >
-          AI
-        </div>
+        <img
+          src="/Blombrain.png"
+          alt="Blombrain"
+          class="h-4 w-4 rounded-xs object-cover shrink-0"
+        />
       {/if}
 
       <span class="font-medium truncate max-w-[180px] sm:max-w-[240px]">
@@ -118,7 +109,9 @@
 
       <ChevronDown
         size={13}
-        class="text-fg-subtle shrink-0 ml-0.5 transition-transform duration-200 {isOpen ? 'rotate-180' : ''}"
+        class="text-fg-subtle shrink-0 ml-0.5 transition-transform duration-200 {isOpen
+          ? 'rotate-180'
+          : ''}"
       />
     </button>
 
@@ -168,11 +161,11 @@
                       class="h-5 w-5 rounded-md object-cover border border-line shrink-0"
                     />
                   {:else}
-                    <div
-                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-bg-inset text-fg-subtle font-semibold text-[9px]"
-                    >
-                      AI
-                    </div>
+                    <img
+                      src="/Blombrain.png"
+                      alt="Blombrain"
+                      class="h-5 w-5 rounded-md object-cover border border-line shrink-0"
+                    />
                   {/if}
 
                   <div class="min-w-0 flex-1">

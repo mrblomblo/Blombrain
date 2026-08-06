@@ -179,11 +179,11 @@
         class="h-full w-full object-cover"
       />
     {:else}
-      <div
-        class="flex h-full w-full items-center justify-center bg-bg-inset text-fg-muted font-semibold text-[9px] sm:text-xs"
-      >
-        AI
-      </div>
+      <img
+        src="/Blombrain.png"
+        alt={currentModelInfo?.name || "Blombrain"}
+        class="h-full w-full object-cover"
+      />
     {/if}
   </div>
 {/snippet}
@@ -482,10 +482,7 @@
           {hasCodeBlock ? 'w-full' : ''}"
       >
         {#if message.role === "assistant" && message.status === "routing" && !parsedSegments.some((s) => s.type === "router")}
-          <ThinkingBlock
-            status="routing"
-            routerOutput={message.routerOutput}
-          />
+          <ThinkingBlock status="routing" routerOutput={message.routerOutput} />
         {/if}
         {#if message.error}
           <p class="font-medium text-danger">{message.error}</p>

@@ -455,14 +455,14 @@
                       <img
                         src={model.icon}
                         alt="Icon"
-                        class="h-7 w-7 rounded-md object-cover border border-line"
+                        class="h-7 w-7 rounded-md object-cover border border-line shrink-0"
                       />
                     {:else}
-                      <div
-                        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent/20 text-accent font-semibold text-xs"
-                      >
-                        AI
-                      </div>
+                      <img
+                        src="/Blombrain.png"
+                        alt="Blombrain"
+                        class="h-7 w-7 rounded-md object-cover border border-line shrink-0"
+                      />
                     {/if}
                     <div class="min-w-0 flex-1">
                       <div class="flex items-center gap-2 flex-wrap">
@@ -578,14 +578,14 @@
                     <img
                       src={model.icon}
                       alt="Icon"
-                      class="h-7 w-7 rounded-md object-cover border border-line"
+                      class="h-7 w-7 rounded-md object-cover border border-line shrink-0"
                     />
                   {:else}
-                    <div
-                      class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-bg-inset text-fg-muted font-semibold text-xs"
-                    >
-                      AI
-                    </div>
+                    <img
+                      src="/Blombrain.png"
+                      alt="Blombrain"
+                      class="h-7 w-7 rounded-md object-cover border border-line shrink-0"
+                    />
                   {/if}
                   <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2 flex-wrap">
@@ -710,11 +710,11 @@
                   class="h-10 w-10 rounded-lg object-cover border border-line bg-bg"
                 />
               {:else}
-                <div
-                  class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-line bg-bg font-semibold text-xs text-fg-muted"
-                >
-                  AI
-                </div>
+                <img
+                  src="/Blombrain.png"
+                  alt="Default Avatar"
+                  class="h-10 w-10 rounded-lg object-cover border border-line bg-bg"
+                />
               {/if}
 
               <div class="flex items-center gap-2">
@@ -837,7 +837,9 @@
             >
               <ChevronRight
                 size={14}
-                class="shrink-0 transition-transform duration-200 {showAdvanced ? 'rotate-90' : ''}"
+                class="shrink-0 transition-transform duration-200 {showAdvanced
+                  ? 'rotate-90'
+                  : ''}"
               />
               <span>Advanced Generation & Sampling Options</span>
             </button>
@@ -924,7 +926,10 @@
                     bind:value={formCtxOverflowBehavior}
                     options={[
                       { label: "Use global default", value: "" },
-                      { label: "Keep first message + recent history", value: "truncate_middle" },
+                      {
+                        label: "Keep first message + recent history",
+                        value: "truncate_middle",
+                      },
                       { label: "Sliding window", value: "rolling" },
                       { label: "Stop generation", value: "stop" },
                     ]}
@@ -946,7 +951,10 @@
                     options={[
                       { label: "Use global default", value: "" },
                       { label: "Inject all reasoning", value: "all" },
-                      { label: "Inject latest reasoning only", value: "latest" },
+                      {
+                        label: "Inject latest reasoning only",
+                        value: "latest",
+                      },
                       { label: "Do not inject reasoning", value: "none" },
                     ]}
                     placeholder="Use global default"

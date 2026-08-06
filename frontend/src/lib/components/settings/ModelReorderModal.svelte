@@ -188,14 +188,14 @@
                 <img
                   src={model.icon}
                   alt="Icon"
-                  class="h-6 w-6 rounded-md object-cover border border-line"
+                  class="h-6 w-6 rounded-md object-cover border border-line shrink-0"
                 />
               {:else}
-                <div
-                  class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-bg-inset font-semibold text-[10px] text-fg-muted"
-                >
-                  AI
-                </div>
+                <img
+                  src="/Blombrain.png"
+                  alt="Blombrain"
+                  class="h-6 w-6 rounded-md object-cover border border-line shrink-0"
+                />
               {/if}
 
               <!-- Details -->

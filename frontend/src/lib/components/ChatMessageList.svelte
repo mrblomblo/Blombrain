@@ -4,7 +4,6 @@
   import ChatInput from "./ChatInput.svelte";
   import { fetchModels } from "../api";
   import { createQuery } from "@tanstack/svelte-query";
-  import { Sparkles } from "@lucide/svelte";
 
   import { flip } from "svelte/animate";
   import { slide, fade, fly } from "svelte/transition";
@@ -98,7 +97,11 @@
     const distance =
       scrollEl.scrollHeight - currentScrollTop - scrollEl.clientHeight;
 
-    if (isUserInteracting && currentScrollTop < lastScrollTop - 5 && distance > 30) {
+    if (
+      isUserInteracting &&
+      currentScrollTop < lastScrollTop - 5 &&
+      distance > 30
+    ) {
       userHasScrolledUp = true;
     } else if (distance <= 30) {
       userHasScrolledUp = false;
@@ -189,11 +192,11 @@
             class="h-12 w-12 rounded-xl object-cover border border-line shadow-md"
           />
         {:else}
-          <div
-            class="flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-bg-elevated text-accent shadow-sm"
-          >
-            <Sparkles size={24} />
-          </div>
+          <img
+            src="/Blombrain.png"
+            alt="Blombrain"
+            class="h-12 w-12 rounded-xl object-cover border border-line shadow-md"
+          />
         {/if}
         <div>
           <h2 class="text-base font-semibold text-fg">
