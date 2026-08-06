@@ -669,7 +669,7 @@ class ChatStore {
           rawBuffer += "\n</think>\n";
         }
 
-        if (evt.status === "completed" || evt.status === "error") {
+        if (evt.status === "completed" || evt.status === "error" || evt.status === "cancelled") {
           rawBuffer += `\n<tool_execution>${JSON.stringify(evt)}</tool_execution>\n`;
         }
 
@@ -677,6 +677,39 @@ class ChatStore {
         msg.thinkingContent = parsed.thinkingContent;
         msg.thinkingDone = parsed.thinkingDone;
         msg.content = rawBuffer;
+      },
+      onToolProgress: (evt) => {
+        const msg = this.messages.find((m) => m.id === currentAsstId);
+        if (!msg) return;
+
+        if (!msg.toolExecutions) msg.toolExecutions = [];
+        const idx = msg.toolExecutions.findIndex((t) => t.callId === evt.callId);
+
+        if (idx >= 0) {
+          msg.toolExecutions[idx] = {
+            ...msg.toolExecutions[idx],
+            status: "polling",
+            progress: evt.progress,
+            total: evt.total,
+            message: evt.message,
+            jobId: evt.jobId,
+            elapsedMs: evt.elapsedMs,
+            attempts: evt.attempts,
+          };
+        } else {
+          msg.toolExecutions.push({
+            callId: evt.callId,
+            toolName: evt.toolName ?? "",
+            args: (evt as any).args ?? {},
+            status: "polling",
+            progress: evt.progress,
+            total: evt.total,
+            message: evt.message,
+            jobId: evt.jobId,
+            elapsedMs: evt.elapsedMs,
+            attempts: evt.attempts,
+          });
+        }
       },
       onContentReplace: (content) => {
         const msg = this.messages.find((m) => m.id === currentAsstId);
@@ -855,7 +888,24 @@ class ChatStore {
     const asstId = this.streamingAssistantId;
     if (asstId) {
       const msg = this.messages.find((m) => m.id === asstId);
-      if (msg) msg.streaming = false;
+      if (msg) {
+        msg.streaming = false;
+        if (msg.toolExecutions) {
+          for (let i = 0; i < msg.toolExecutions.length; i++) {
+            const t = msg.toolExecutions[i];
+            if (t.status === "executing" || t.status === "polling") {
+              msg.toolExecutions[i] = {
+                ...t,
+                status: "cancelled",
+              };
+              const cancelTag = `<tool_execution>${JSON.stringify(msg.toolExecutions[i])}</tool_execution>`;
+              if (!msg.content.includes(t.callId)) {
+                msg.content += `\n${cancelTag}\n`;
+              }
+            }
+          }
+        }
+      }
     }
 
     this.isStreaming = false;

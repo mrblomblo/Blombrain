@@ -39,6 +39,16 @@ function closeUnclosedTags(content: string, tags: string[] = ["think", "thought"
   return newContent;
 }
 
+function isCompleteJson(text: string): boolean {
+  if (!text) return false;
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function reconstructToolCalls(messages: any[]): any[] {
   const reconstructed: any[] = [];
   for (const msg of messages) {
@@ -284,23 +294,49 @@ async function runGenerationPass(opts: {
                 if (found) idx = found[0];
               }
               if (idx === undefined) {
-                // Allocate next sequential slot -- do NOT default to 0, which would
-                // overwrite any existing pending call and prevent multiple tool calls
-                // from Ollama/LM Studio (which emit full arrays without explicit indices).
-                idx = pendingToolCalls.size;
+                // Routing tool calls to the last pending slot to prevent duplicate tool calls.
+                const lastIdx = pendingToolCalls.size > 0 ? pendingToolCalls.size - 1 : undefined;
+                const lastEntry = lastIdx !== undefined ? pendingToolCalls.get(lastIdx) : undefined;
+
+                if (tc.function?.name === undefined) {
+                  // Continuation of whatever call is currently being streamed.
+                  idx = lastIdx !== undefined ? lastIdx : 0;
+                } else if (
+                  lastEntry &&
+                  lastEntry.name === tc.function.name &&
+                  !isCompleteJson(lastEntry.argsText)
+                ) {
+                  // Re-emission/continuation of the same call, not a new one.
+                  idx = lastIdx;
+                } else {
+                  // Genuinely a new call.
+                  idx = pendingToolCalls.size;
+                }
               }
 
-              const existing = pendingToolCalls.get(idx) ?? { argsText: "" };
+              const targetIdx = idx ?? 0;
+              const existing = pendingToolCalls.get(targetIdx) ?? { argsText: "" };
               if (tc.id) existing.id = tc.id;
               if (tc.function?.name !== undefined) existing.name = tc.function.name;
               if (tc.function?.arguments !== undefined) {
                 if (typeof tc.function.arguments === "string") {
-                  existing.argsText += tc.function.arguments;
+                  const incoming = tc.function.arguments;
+                  if (existing.argsText && incoming.startsWith(existing.argsText)) {
+                    existing.argsText = incoming;
+                  } else if (
+                    existing.argsText &&
+                    isCompleteJson(existing.argsText) &&
+                    isCompleteJson(incoming)
+                  ) {
+                    existing.argsText = incoming;
+                  } else {
+                    existing.argsText += incoming;
+                  }
                 } else {
                   existing.argsText = JSON.stringify(tc.function.arguments);
                 }
               }
-              pendingToolCalls.set(idx, existing);
+              pendingToolCalls.set(targetIdx, existing);
             }
           }
         }
@@ -348,6 +384,19 @@ async function runGenerationPass(opts: {
           completedToolCalls.push({ id: entry.id, name: entry.name, arguments: args });
         }
       }
+
+      // Deduplicate identical tool calls (same name + same arguments)
+      const seenCalls = new Set<string>();
+      const deduped: typeof completedToolCalls = [];
+      for (const call of completedToolCalls) {
+        const key = `${call.name}::${JSON.stringify(call.arguments)}`;
+        if (seenCalls.has(key)) continue;
+        seenCalls.add(key);
+        deduped.push(call);
+      }
+      completedToolCalls.length = 0;
+      completedToolCalls.push(...deduped);
+
       resolve();
     };
 
@@ -801,6 +850,16 @@ export async function chatRoutes(app: FastifyInstance) {
           usageStats.durationMs = Date.now() - startTime;
         }
 
+        if (currentToolExecution && !assistantContent.includes(currentToolExecution.callId)) {
+          const cancelledPayload = {
+            callId: currentToolExecution.callId,
+            toolName: currentToolExecution.toolName,
+            args: currentToolExecution.args,
+            status: "cancelled",
+          };
+          assistantContent += `\n<tool_execution>${JSON.stringify(cancelledPayload)}</tool_execution>\n`;
+        }
+
         assistantContent = closeUnclosedTags(assistantContent);
         const savedTurn = persistChatTurn({
           conversationId,
@@ -882,6 +941,8 @@ export async function chatRoutes(app: FastifyInstance) {
     const TOOL_TIMEOUT_MS = 120_000; // 2 minute cap per individual tool call
     let currentMessages = [...outgoingMessages];
     let toolRound = 0;
+    const executedToolCallsInTurn = new Map<string, string>();
+    let currentToolExecution: { callId: string; toolName: string; args: any } | null = null;
 
     const { applyContextOverflowPolicy } = await import("../services/contextWindow.js");
 
@@ -1015,6 +1076,7 @@ export async function chatRoutes(app: FastifyInstance) {
           if (abortController.signal.aborted) break;
 
           const callId = tc.id ?? `call_${userMessageId}_${toolRound}_${idx}`;
+          currentToolExecution = { callId, toolName: tc.name, args: tc.arguments };
 
           // Defensive Check: Ensure the tool was actually routed/available in mcpTools
           const isBuiltInTool = tc.name === "execute_skill_script";
@@ -1023,7 +1085,21 @@ export async function chatRoutes(app: FastifyInstance) {
 
           let result: { content: string; isError?: boolean };
 
-          if (isBuiltInTool) {
+          const toolCallKey = `${tc.name}::${JSON.stringify(tc.arguments)}`;
+          const isDuplicateCall = executedToolCallsInTurn.has(toolCallKey);
+
+          if (!isDuplicateCall) {
+            currentToolExecution = { callId, toolName: tc.name, args: tc.arguments };
+          }
+
+          if (isDuplicateCall) {
+            console.log(`[chat] Suppressing duplicate tool call execution and UI event: ${tc.name}`);
+            const prevResult = executedToolCallsInTurn.get(toolCallKey) || "";
+            result = {
+              content: `[Notice: Tool '${tc.name}' with identical arguments was already executed in a previous round of this turn. Result was: ${prevResult}. Do not invoke this tool again with identical arguments. Synthesize your final response using the existing result.]`,
+              isError: false,
+            };
+          } else if (isBuiltInTool) {
             broadcastChunk(JSON.stringify({
               type: "tool_execution",
               callId,
@@ -1069,36 +1145,59 @@ export async function chatRoutes(app: FastifyInstance) {
             }));
 
             try {
-              result = await withTimeout(
-                mcpManager.callTool(tc.name, tc.arguments),
-                TOOL_TIMEOUT_MS,
-                `MCP tool '${tc.name}'`,
-              );
+              result = await mcpManager.callTool(tc.name, tc.arguments, {
+                signal: abortController.signal,
+                onProgress: (evt) => {
+                  broadcastChunk(JSON.stringify({
+                    type: "tool_progress",
+                    callId,
+                    toolName: tc.name,
+                    args: tc.arguments,
+                    ...evt,
+                  }));
+                },
+              });
             } catch (err) {
               result = { content: err instanceof Error ? err.message : String(err), isError: true };
             }
           }
 
+          const isCancelled = abortController.signal.aborted;
+          const status = isCancelled ? "cancelled" : (result.isError ? "error" : "completed");
+
           const toolExecPayload = {
             callId,
             toolName: tc.name,
             args: tc.arguments,
-            result: result.content,
-            status: result.isError ? "error" : "completed",
+            ...(isCancelled ? {} : { result: result.content }),
+            status,
           };
 
-          // Notify frontend of result
-          broadcastChunk(JSON.stringify({
-            type: "tool_execution",
-            ...toolExecPayload,
-          }));
+          if (!result.isError && !isCancelled && !isDuplicateCall) {
+            executedToolCallsInTurn.set(toolCallKey, result.content);
+          }
 
-          // Append tool execution tag to assistantContent so it persists in DB
-          assistantContent += `\n<tool_execution>${JSON.stringify(toolExecPayload)}</tool_execution>\n`;
+          if (!isDuplicateCall) {
+            // Notify frontend of result
+            broadcastChunk(JSON.stringify({
+              type: "tool_execution",
+              ...toolExecPayload,
+            }));
+
+            // Append tool execution tag to assistantContent so it persists in DB
+            assistantContent += `\n<tool_execution>${JSON.stringify(toolExecPayload)}</tool_execution>\n`;
+            currentToolExecution = null;
+          }
+
+          if (isCancelled) break;
 
           let finalContent = result.content;
           if (result.isError) {
             finalContent = `[Error executing tool: ${result.content}]\n\nINSTRUCTION: The tool call failed. Analyze the error carefully. If it is a parameter validation or usage error, try calling the tool again with corrected arguments. If the error is unrecoverable (e.g., API limits, missing credentials), inform the user about the failure.`;
+          } else if (finalContent.length > 30000) {
+            const head = finalContent.slice(0, 15000);
+            const tail = finalContent.slice(-15000);
+            finalContent = `${head}\n\n[Note: Output truncated for LLM context. Full data saved in UI.]\n\n${tail}`;
           }
 
           // Append tool result message for next model pass
@@ -1106,6 +1205,7 @@ export async function chatRoutes(app: FastifyInstance) {
             role: "tool",
             content: finalContent,
             tool_call_id: callId,
+            name: tc.name,
           } as any);
         }
 

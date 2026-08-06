@@ -45,7 +45,11 @@
   });
 
   let parsedSegments = $derived(
-    parseMessageSegments(message.content, message.thinkingContent),
+    parseMessageSegments(
+      message.content,
+      message.thinkingContent,
+      message.toolExecutions,
+    ),
   );
 
   let hasCodeBlock = $derived(

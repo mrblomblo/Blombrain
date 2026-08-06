@@ -16,6 +16,7 @@ export interface McpToolDefinition {
 class McpManager {
   private clients = new Map<string, { client: Client; transport: any; status: "connected" | "connecting" | "error" | "stopped"; error?: string }>();
   private crashCounts = new Map<string, number>();
+  private toolsCache = new Map<string, McpToolDefinition[]>();
 
   public getAllServers(excludedIds: string[] = []): McpServerOut[] {
     const rows = db.prepare("SELECT * FROM mcp_servers ORDER BY name ASC").all() as McpServerRow[];
@@ -194,6 +195,8 @@ class McpManager {
       } catch { }
       this.clients.delete(id);
     }
+    // Config changed or server stopped -- cached tool schemas may now be stale.
+    this.toolsCache.delete(id);
   }
 
   public async getAvailableTools(excludedIds: string[] = []): Promise<McpToolDefinition[]> {
@@ -206,28 +209,127 @@ class McpManager {
 
       try {
         const res = await client.listTools();
-        for (const t of res.tools) {
-          tools.push({
-            serverId: serverRow.id,
-            serverName: serverRow.name,
-            name: `${serverRow.name}__${t.name}`,
-            description: t.description,
-            inputSchema: t.inputSchema as Record<string, any>,
-          });
-        }
+        const serverTools: McpToolDefinition[] = res.tools.map((t) => ({
+          serverId: serverRow.id,
+          serverName: serverRow.name,
+          name: `${serverRow.name}__${t.name}`,
+          description: t.description,
+          inputSchema: t.inputSchema as Record<string, any>,
+        }));
+        this.toolsCache.set(serverRow.id, serverTools);
+        tools.push(...serverTools);
       } catch (err) {
         console.error(`[McpManager] Failed to list tools for ${serverRow.name}:`, err);
+        // Keep whatever we last cached rather than dropping it on a transient failure.
+        const cached = this.toolsCache.get(serverRow.id);
+        if (cached) tools.push(...cached);
       }
     }
 
     return tools;
   }
 
+  // ---------------------------------------------------------------------
+  // Async job detection & status/cancel tool resolution
+  // ---------------------------------------------------------------------
+
+  private tokenize(name: string): string[] {
+    return name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  }
+
+  /** Strips the `${serverName}__` prefix off a fully-qualified tool name. */
+  private rawToolName(qualifiedName: string): string {
+    const idx = qualifiedName.indexOf("__");
+    return idx === -1 ? qualifiedName : qualifiedName.slice(idx + 2);
+  }
+
+  /**
+   * Heuristically detects whether a parsed tool result represents an async job
+   * handle rather than a final result: an object carrying an id/job_id AND either
+   * an explicit in-progress status or no result payload yet.
+   */
+  private isAsyncJobResult(parsed: any): { jobId: string; status?: string } | null {
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+
+    const jobId =
+      (typeof parsed.id === "string" && parsed.id) ||
+      (typeof parsed.job_id === "string" && parsed.job_id) ||
+      (typeof parsed.jobId === "string" && parsed.jobId) ||
+      null;
+    if (!jobId) return null;
+
+    const status = typeof parsed.status === "string" ? parsed.status.toLowerCase() : undefined;
+    const inProgressStatuses = new Set(["in_progress", "pending", "queued", "running", "processing", "started"]);
+    const terminalStatuses = new Set(["completed", "complete", "success", "succeeded", "failed", "error", "cancelled", "canceled"]);
+
+    // Explicit in-progress status -> definitely async.
+    if (status && inProgressStatuses.has(status)) {
+      return { jobId, status };
+    }
+    // Explicit terminal status -> NOT async, this is already the final result.
+    if (status && terminalStatuses.has(status)) {
+      return null;
+    }
+    // No status field at all, but a `success: true` + bare id and nothing else
+    // resembling a real payload -- treat as an async job handle (common shape:
+    // `{ success: true, id: "..." }` returned by "start job" tools).
+    if (parsed.success === true && jobId) {
+      const otherKeys = Object.keys(parsed).filter((k) => !["success", "id", "job_id", "jobId", "status"].includes(k));
+      if (otherKeys.length === 0) return { jobId, status };
+    }
+
+    return null;
+  }
+
+  private findLinkedTool(serverId: string, mainToolRawName: string, keywords: string[]): McpToolDefinition | undefined {
+    const candidates = this.toolsCache.get(serverId) || [];
+    const mainTokens = new Set(this.tokenize(mainToolRawName));
+
+    let best: { tool: McpToolDefinition; score: number } | undefined;
+    for (const t of candidates) {
+      const rawName = this.rawToolName(t.name);
+      if (rawName === mainToolRawName) continue;
+
+      const nameTokens = this.tokenize(rawName);
+      const descTokens = this.tokenize(t.description || "");
+      const hasKeyword = keywords.some((kw) => nameTokens.includes(kw) || descTokens.includes(kw));
+      if (!hasKeyword) continue;
+
+      const overlap = nameTokens.filter((tok) => mainTokens.has(tok)).length;
+      if (!best || overlap > best.score) {
+        best = { tool: t, score: overlap };
+      }
+    }
+    return best?.tool;
+  }
+
+  private findStatusTool(serverId: string, mainToolRawName: string): McpToolDefinition | undefined {
+    return this.findLinkedTool(serverId, mainToolRawName, ["status", "check", "poll", "result", "get"]);
+  }
+
+  private findCancelTool(serverId: string, mainToolRawName: string): McpToolDefinition | undefined {
+    return this.findLinkedTool(serverId, mainToolRawName, ["cancel", "stop", "abort", "kill"]);
+  }
+
+  private async invokeRaw(client: Client, actualToolName: string, args: Record<string, any>): Promise<{ content: string; isError?: boolean }> {
+    const res = (await client.callTool({ name: actualToolName, arguments: args })) as any;
+    let textResult = "";
+    if (Array.isArray(res.content)) {
+      textResult = res.content.map((c: any) => (c.type === "text" ? c.text : JSON.stringify(c))).join("\n");
+    } else {
+      textResult = JSON.stringify(res.content ?? res);
+    }
+    return { content: textResult, isError: res.isError };
+  }
+
   public async callTool(
     toolNameWithPrefix: string,
     args: Record<string, any>,
-    timeoutMs = 60000
+    options: { signal?: AbortSignal; onProgress?: (event: any) => void } = {}
   ): Promise<{ content: string; isError?: boolean }> {
+    const HARD_CAP_MS = 300_000; // 5 minutes, covers the initial call + all polling
+    const startTime = Date.now();
+
     const parts = toolNameWithPrefix.split("__");
     if (parts.length < 2) {
       return { content: `[mcp-server] Invalid tool name format: ${toolNameWithPrefix}`, isError: true };
@@ -247,30 +349,104 @@ class McpManager {
       return { content: `[mcp-server] Server "${serverName}" failed to connect`, isError: true };
     }
 
-    try {
-      const callPromise = client.callTool({
-        name: actualToolName,
-        arguments: args,
+    const withHardCap = <T,>(p: Promise<T>): Promise<T> => {
+      const remaining = HARD_CAP_MS - (Date.now() - startTime);
+      return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`MCP tool '${toolNameWithPrefix}' exceeded 5-minute hard cap`)), Math.max(0, remaining));
+        p.then((v) => { clearTimeout(timer); resolve(v); }, (e) => { clearTimeout(timer); reject(e); });
       });
+    };
 
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Tool execution timed out after ${timeoutMs}ms`)), timeoutMs)
-      );
-
-      const res = (await Promise.race([callPromise, timeoutPromise])) as any;
-      let textResult = "";
-      if (Array.isArray(res.content)) {
-        textResult = res.content
-          .map((c: any) => (c.type === "text" ? c.text : JSON.stringify(c)))
-          .join("\n");
-      } else {
-        textResult = JSON.stringify(res.content ?? res);
-      }
-
-      return { content: textResult, isError: res.isError };
+    let initial: { content: string; isError?: boolean };
+    try {
+      initial = await withHardCap(this.invokeRaw(client, actualToolName, args));
     } catch (err: any) {
       console.error(`[McpManager] Error executing tool ${toolNameWithPrefix}:`, err);
       return { content: `[mcp-server] failed to respond: ${err?.message || String(err)}`, isError: true };
+    }
+
+    if (initial.isError) return initial;
+
+    // Detect whether this looks like an async job handle rather than a final result.
+    let parsedInitial: any;
+    try { parsedInitial = JSON.parse(initial.content); } catch { parsedInitial = null; }
+    const job = this.isAsyncJobResult(parsedInitial);
+    if (!job) {
+      // Not async -- this is already the final result.
+      return initial;
+    }
+
+    const statusTool = this.findStatusTool(server.id, actualToolName);
+    if (!statusTool) {
+      // Looked like a job handle but we have no way to poll it -- return as-is
+      // rather than silently hanging; the model can see the raw job handle.
+      return initial;
+    }
+    const statusRawName = this.rawToolName(statusTool.name);
+    const cancelTool = this.findCancelTool(server.id, actualToolName);
+
+    let delayMs = 1500;
+    const MAX_DELAY_MS = 15_000;
+    const BACKOFF_FACTOR = 1.5;
+    let attempts = 0;
+
+    const inProgressStatuses = new Set(["in_progress", "pending", "queued", "running", "processing", "started"]);
+    const failedStatuses = new Set(["failed", "error", "cancelled", "canceled"]);
+
+    while (true) {
+      if (options.signal?.aborted) {
+        if (cancelTool) {
+          const cancelRawName = this.rawToolName(cancelTool.name);
+          // Fire-and-forget cancellation; don't let it block or throw.
+          this.invokeRaw(client, cancelRawName, { id: job.jobId, job_id: job.jobId, jobId: job.jobId }).catch(() => { });
+        }
+        return { content: `[mcp-server] Job ${job.jobId} aborted by user`, isError: true };
+      }
+
+      if (Date.now() - startTime > HARD_CAP_MS) {
+        return { content: `[mcp-server] Job ${job.jobId} polling exceeded 5-minute hard cap`, isError: true };
+      }
+
+      attempts++;
+      options.onProgress?.({
+        status: "polling",
+        jobId: job.jobId,
+        attempts,
+        elapsedMs: Date.now() - startTime,
+        message: `Polling job ${job.jobId} (attempt ${attempts})...`,
+      });
+
+      // Sleep with abort-awareness so we don't block past a user cancellation.
+      await new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, delayMs);
+        options.signal?.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true });
+      });
+      delayMs = Math.min(delayMs * BACKOFF_FACTOR, MAX_DELAY_MS);
+
+      let statusResult: { content: string; isError?: boolean };
+      try {
+        statusResult = await withHardCap(
+          this.invokeRaw(client, statusRawName, { id: job.jobId, job_id: job.jobId, jobId: job.jobId })
+        );
+      } catch (err: any) {
+        return { content: `[mcp-server] status check failed: ${err?.message || String(err)}`, isError: true };
+      }
+
+      if (statusResult.isError) return statusResult;
+
+      let parsedStatus: any;
+      try { parsedStatus = JSON.parse(statusResult.content); } catch { parsedStatus = null; }
+      const statusVal = parsedStatus && typeof parsedStatus.status === "string" ? parsedStatus.status.toLowerCase() : undefined;
+
+      if (statusVal && inProgressStatuses.has(statusVal)) {
+        continue; // still running, keep polling
+      }
+      if (statusVal && failedStatuses.has(statusVal)) {
+        return { content: statusResult.content, isError: true };
+      }
+      // Anything else (a recognized terminal status, or no status field at all
+      // meaning the tool just returned real data) -- treat as done.
+      return statusResult;
     }
   }
 }

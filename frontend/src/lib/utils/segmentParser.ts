@@ -8,7 +8,11 @@ export interface MessageSegment {
   execution?: ToolExecutionEvent;
 }
 
-export function parseMessageSegments(rawContent: string, loadedThinkingContent?: string): MessageSegment[] {
+export function parseMessageSegments(
+  rawContent: string,
+  loadedThinkingContent?: string,
+  activeToolExecutions?: ToolExecutionEvent[],
+): MessageSegment[] {
   let fullRaw = rawContent || "";
   if (loadedThinkingContent && !fullRaw.includes("<think>")) {
     fullRaw = `<think>${loadedThinkingContent}</think>\n${fullRaw}`;
@@ -140,5 +144,33 @@ export function parseMessageSegments(rawContent: string, loadedThinkingContent?:
     }
   }
 
-  return segments;
+  if (activeToolExecutions && activeToolExecutions.length > 0) {
+    const closedCallIds = new Set(
+      segments
+        .filter((s) => s.type === "tool" && s.execution)
+        .map((s) => s.execution!.callId),
+    );
+
+    for (const exec of activeToolExecutions) {
+      if (closedCallIds.has(exec.callId)) continue;
+      segments.push({
+        id: `tool_live_${exec.callId}`,
+        type: "tool",
+        execution: exec,
+      });
+    }
+  }
+
+  const seenToolKeys = new Set<string>();
+  const dedupedSegments: MessageSegment[] = [];
+  for (const seg of segments) {
+    if (seg.type === "tool" && seg.execution) {
+      const key = `${seg.execution.toolName}::${JSON.stringify(seg.execution.args || {})}`;
+      if (seenToolKeys.has(key)) continue;
+      seenToolKeys.add(key);
+    }
+    dedupedSegments.push(seg);
+  }
+
+  return dedupedSegments;
 }

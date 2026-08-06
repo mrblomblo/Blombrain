@@ -134,7 +134,13 @@ export interface ToolExecutionEvent {
   args: Record<string, any>;
   result?: string;
   error?: string;
-  status: "executing" | "completed" | "error";
+  status: "executing" | "completed" | "error" | "polling" | "cancelled";
+  progress?: number;
+  total?: number;
+  message?: string;
+  jobId?: string;
+  elapsedMs?: number;
+  attempts?: number;
 }
 
 export interface ChatMessage {

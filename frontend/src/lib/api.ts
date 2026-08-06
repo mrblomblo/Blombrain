@@ -305,6 +305,7 @@ export interface StreamChatOptions {
   onStatus?: (status: string) => void;
   onRouterToken?: (text: string) => void;
   onToolExecution?: (evt: ToolExecutionEvent) => void;
+  onToolProgress?: (evt: Partial<ToolExecutionEvent> & { callId: string }) => void;
   onContentReplace?: (content: string) => void;
   onContextTrimmed?: (evt: { droppedMessageCount: number; behavior: string }) => void;
   onDone: () => void;
@@ -403,6 +404,10 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
             }
             if (parsed?.type === "tool_execution") {
               opts.onToolExecution?.(parsed);
+              continue;
+            }
+            if (parsed?.type === "tool_progress") {
+              opts.onToolProgress?.(parsed);
               continue;
             }
             if (parsed?.type === "content_replace") {
@@ -527,6 +532,7 @@ export async function updateGlobalSettings(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   });
+  return jsonOrThrow<GlobalSettingsOut>(res);
 }
 
 export async function fetchInstanceInfo(): Promise<{ theme: string }> {
