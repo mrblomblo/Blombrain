@@ -136,17 +136,21 @@
     class="flex items-center h-14 shrink-0 px-3 justify-between overflow-hidden"
   >
     <div class="flex items-center overflow-hidden">
-      {#if onToggleSidebar}
+      {#if onToggleSidebar && collapsed}
         <button
-          onclick={collapsed ? onToggleSidebar : undefined}
-          aria-label={collapsed ? "Expand sidebar" : ""}
-          title={collapsed ? "Expand sidebar" : ""}
-          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors {collapsed
-            ? 'cursor-pointer hover:bg-bg-elevated hover:text-fg'
-            : 'cursor-default'}"
+          onclick={onToggleSidebar}
+          aria-label="Expand sidebar"
+          title="Expand sidebar"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors cursor-pointer hover:bg-bg-elevated hover:text-fg"
         >
           <Logo class="h-5 w-5" />
         </button>
+      {:else}
+        <div
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-muted"
+        >
+          <Logo class="h-5 w-5" />
+        </div>
       {/if}
       <div
         class="overflow-hidden transition-all duration-300 ease-in-out {collapsed
@@ -257,6 +261,7 @@
                 class:text-fg={isActive || isMenuOpen}
                 class:font-medium={isActive}
                 class:text-fg-muted={!isActive && !isDisabled}
+                class:bg-bg={!isActive && !isDisabled}
                 class:hover:bg-bg-elevated={!isActive && !isDisabled}
                 onclick={() => !isDisabled && handleSelectConv(conv)}
                 tabindex={isDisabled ? -1 : 0}
@@ -266,15 +271,30 @@
               >
                 <span class="w-full truncate">{conv.title}</span>
                 <div
-                  class="absolute right-0 top-0 bottom-0 flex items-center gap-1.5 pl-1.5 pr-2.5 bg-bg-elevated rounded-r-lg transition-opacity duration-200 {isMenuOpen
+                  class="absolute right-0 top-0 bottom-0 flex items-center gap-1.5 pl-1.5 pr-2.5 rounded-r-lg transition-all duration-200 {isActive ||
+                  isMenuOpen
+                    ? 'bg-bg-elevated'
+                    : 'bg-bg group-hover:bg-bg-elevated'} {isMenuOpen ||
+                  onCloseMobile
                     ? 'opacity-100 pointer-events-auto'
-                    : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'}"
+                    : 'opacity-0 pointer-events-none [media(hover:none)]:opacity-100 [media(hover:none)]:pointer-events-auto group-hover:opacity-100 group-hover:pointer-events-auto'}"
                   onclick={(e) => e.stopPropagation()}
                   onkeydown={(e) => e.stopPropagation()}
                   role="presentation"
                 >
+                  <!-- Gradient for bg-bg (idle unselected) -->
                   <div
-                    class="absolute -left-4 top-0 bottom-0 w-4 bg-gradient-to-r from-transparent to-bg-elevated pointer-events-none"
+                    class="absolute -left-4 top-0 bottom-0 w-4 bg-gradient-to-r from-transparent to-bg pointer-events-none transition-opacity duration-200 {isActive ||
+                    isMenuOpen
+                      ? 'opacity-0'
+                      : 'opacity-100 group-hover:opacity-0'}"
+                  ></div>
+                  <!-- Gradient for bg-bg-elevated (hovered / active) -->
+                  <div
+                    class="absolute -left-4 top-0 bottom-0 w-4 bg-gradient-to-r from-transparent to-bg-elevated pointer-events-none transition-opacity duration-200 {isActive ||
+                    isMenuOpen
+                      ? 'opacity-100'
+                      : 'opacity-0 group-hover:opacity-100'}"
                   ></div>
                   <span class="shrink-0 text-[10px] font-mono text-fg-subtle">
                     {formatAge(conv.updatedAt)}

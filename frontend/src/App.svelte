@@ -2,8 +2,8 @@
   import { onMount } from "svelte";
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { Menu } from "@lucide/svelte";
-  import { fly } from "svelte/transition";
-  import { quintOut } from "svelte/easing";
+  import { fly, fade } from "svelte/transition";
+  import { quintOut, cubicOut } from "svelte/easing";
   import ChatInput from "./lib/components/ChatInput.svelte";
   import ChatMessageList from "./lib/components/ChatMessageList.svelte";
   import ModelPicker from "./lib/components/ModelPicker.svelte";
@@ -94,96 +94,113 @@
 </script>
 
 {#if !authStore.initialized}
-  <div class="flex items-center justify-center h-screen w-screen bg-bg text-fg font-medium">
+  <div
+    class="flex items-center justify-center h-screen w-screen bg-bg text-fg font-medium"
+  >
     Loading...
   </div>
 {:else if authStore.authEnabled && !authStore.authenticated}
   <LoginScreen />
 {:else}
   <QueryClientProvider client={queryClient}>
-  <div class="relative flex h-screen w-screen bg-bg text-fg overflow-hidden">
-    <!-- Desktop Sidebar -->
-    <div class="hidden md:flex h-full">
-      <Sidebar
-        onOpenSettings={() => (settingsOpen = true)}
-        onToggleSidebar={() => (desktopSidebarOpen = !desktopSidebarOpen)}
-        collapsed={!desktopSidebarOpen}
-      />
-    </div>
-
-    <!-- Mobile Drawer Overlay -->
-    {#if mobileSidebarOpen}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <div
-        class="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs md:hidden"
-        onclick={() => (mobileSidebarOpen = false)}
-      ></div>
-      <div
-        class="fixed inset-y-0 left-0 z-50 w-64 md:hidden shadow-2xl animate-in slide-in-from-left duration-200"
-      >
+    <div class="relative flex h-screen w-screen bg-bg text-fg overflow-hidden">
+      <!-- Desktop Sidebar -->
+      <div class="hidden md:flex h-full">
         <Sidebar
-          onOpenSettings={() => {
-            settingsOpen = true;
-            mobileSidebarOpen = false;
-          }}
-          onCloseMobile={() => (mobileSidebarOpen = false)}
+          onOpenSettings={() => (settingsOpen = true)}
+          onToggleSidebar={() => (desktopSidebarOpen = !desktopSidebarOpen)}
+          collapsed={!desktopSidebarOpen}
         />
       </div>
-    {/if}
 
-    <!-- Main Content Area with conditional Artifact Panel -->
-    <div class="relative flex min-w-0 flex-1 h-full overflow-hidden">
-      <!-- Main Content Pane -->
-      <main class="relative flex min-w-0 flex-1 flex-col h-full overflow-hidden {artifactStore.isOpen ? (artifactStore.isExpanded ? 'hidden' : 'hidden lg:flex') : ''}">
-        <header
-          class="flex items-center justify-between border-b border-line px-2.5 py-2.5 bg-bg shrink-0 z-30"
+      <!-- Mobile Drawer Overlay -->
+      {#if mobileSidebarOpen}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <div
+          transition:fade={{ duration: 300, easing: cubicOut }}
+          class="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs md:hidden"
+          onclick={() => (mobileSidebarOpen = false)}
+        ></div>
+        <div
+          transition:fly={{
+            x: -280,
+            duration: 200,
+            opacity: 1,
+            easing: cubicOut,
+          }}
+          class="fixed inset-y-0 left-0 z-50 w-64 md:hidden shadow-2xl"
         >
-          <div class="flex items-center gap-3 min-w-0 flex-1">
-            <!-- Mobile Menu -->
-            <button
-              type="button"
-              onclick={() => (mobileSidebarOpen = true)}
-              aria-label="Open menu"
-              class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted md:hidden hover:bg-bg-elevated hover:text-fg"
-            >
-              <Menu size={18} />
-            </button>
-
-            <!-- Model Picker taking the place of conversation title -->
-            <div class="min-w-0">
-              <ModelPicker />
-            </div>
-          </div>
-        </header>
-
-        <ChatMessageList bottomPadding={inputHeight} />
-        {#if !isNewChat}
-          <div
-            bind:clientHeight={inputHeight}
-            in:fly={{ y: 50, duration: 350, opacity: 0, easing: quintOut }}
-            out:fly={{ y: 50, duration: 300, opacity: 0, easing: quintOut }}
-            class="absolute bottom-0 left-0 right-0 z-20 w-full"
-          >
-            <ChatInput />
-          </div>
-        {/if}
-      </main>
-
-      <!-- Artifact Side Panel (Fullscreen on mobile, side panel on desktop) -->
-      {#if artifactStore.isOpen}
-        <aside
-          transition:panelFly={{ duration: 300 }}
-          class="w-full {artifactStore.isExpanded ? '' : 'lg:w-[48%]'} shrink-0 h-full overflow-hidden z-30"
-        >
-          <ArtifactPanel />
-        </aside>
+          <Sidebar
+            onOpenSettings={() => {
+              settingsOpen = true;
+              mobileSidebarOpen = false;
+            }}
+            onCloseMobile={() => (mobileSidebarOpen = false)}
+          />
+        </div>
       {/if}
-    </div>
-  </div>
 
-  <SettingsModal open={settingsOpen} onClose={() => (settingsOpen = false)} />
-  <AttachmentModal />
-  <ConfirmModal />
-</QueryClientProvider>
+      <!-- Main Content Area with conditional Artifact Panel -->
+      <div class="relative flex min-w-0 flex-1 h-full overflow-hidden">
+        <!-- Main Content Pane -->
+        <main
+          class="relative flex min-w-0 flex-1 flex-col h-full overflow-hidden {artifactStore.isOpen
+            ? artifactStore.isExpanded
+              ? 'hidden'
+              : 'hidden lg:flex'
+            : ''}"
+        >
+          <header
+            class="flex items-center justify-between border-b border-line px-2.5 py-2.5 bg-bg shrink-0 z-30"
+          >
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+              <!-- Mobile Menu -->
+              <button
+                type="button"
+                onclick={() => (mobileSidebarOpen = true)}
+                aria-label="Open menu"
+                class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted md:hidden hover:bg-bg-elevated hover:text-fg"
+              >
+                <Menu size={18} />
+              </button>
+
+              <!-- Model Picker taking the place of conversation title -->
+              <div class="min-w-0">
+                <ModelPicker />
+              </div>
+            </div>
+          </header>
+
+          <ChatMessageList bottomPadding={inputHeight} />
+          {#if !isNewChat}
+            <div
+              bind:clientHeight={inputHeight}
+              in:fly={{ y: 50, duration: 350, opacity: 0, easing: quintOut }}
+              out:fly={{ y: 50, duration: 300, opacity: 0, easing: quintOut }}
+              class="absolute bottom-0 left-0 right-0 z-20 w-full"
+            >
+              <ChatInput />
+            </div>
+          {/if}
+        </main>
+
+        <!-- Artifact Side Panel (Fullscreen on mobile, side panel on desktop) -->
+        {#if artifactStore.isOpen}
+          <aside
+            transition:panelFly={{ duration: 300 }}
+            class="w-full {artifactStore.isExpanded
+              ? ''
+              : 'lg:w-[48%]'} shrink-0 h-full overflow-hidden z-30"
+          >
+            <ArtifactPanel />
+          </aside>
+        {/if}
+      </div>
+    </div>
+
+    <SettingsModal open={settingsOpen} onClose={() => (settingsOpen = false)} />
+    <AttachmentModal />
+    <ConfirmModal />
+  </QueryClientProvider>
 {/if}
