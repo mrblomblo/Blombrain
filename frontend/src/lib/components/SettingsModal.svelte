@@ -1,5 +1,14 @@
 <script lang="ts">
-  import { X, Layers, Server, Sliders, Cpu, BookOpen } from "@lucide/svelte";
+  import {
+    X,
+    Layers,
+    Server,
+    Sliders,
+    Cpu,
+    BookOpen,
+    ChevronRight,
+    ChevronLeft,
+  } from "@lucide/svelte";
   import { fade, fly } from "svelte/transition";
   import GeneralTab from "./settings/GeneralTab.svelte";
   import ModelsTab from "./settings/ModelsTab.svelte";
@@ -19,6 +28,25 @@
   let activeTab = $state<Tab>("general");
   let previousTab = $state<Tab>("general");
   const TABS: Tab[] = ["general", "models", "mcp", "skills", "backends"];
+
+  let tabsEl = $state<HTMLDivElement | undefined>();
+  let canScrollRight = $state(false);
+  let canScrollLeft = $state(false);
+
+  function checkScroll() {
+    if (!tabsEl) return;
+    const { scrollLeft, scrollWidth, clientWidth } = tabsEl;
+    canScrollLeft = scrollLeft > 2;
+    canScrollRight = scrollLeft + clientWidth < scrollWidth - 2;
+  }
+
+  function scrollRight() {
+    tabsEl?.scrollBy({ left: 120, behavior: "smooth" });
+  }
+
+  function scrollLeft() {
+    tabsEl?.scrollBy({ left: -120, behavior: "smooth" });
+  }
 
   function setTab(tab: Tab) {
     if (tab === activeTab) return;
@@ -45,11 +73,21 @@
       const prevActive = document.activeElement as HTMLElement | null;
       setTimeout(() => {
         modalEl?.focus();
-      }, 0);
+        checkScroll();
+      }, 50);
+
+      window.addEventListener("resize", checkScroll);
 
       return () => {
         prevActive?.focus();
+        window.removeEventListener("resize", checkScroll);
       };
+    }
+  });
+
+  $effect(() => {
+    if (activeTab && open) {
+      setTimeout(checkScroll, 50);
     }
   });
 
@@ -75,12 +113,13 @@
   >
     <div
       transition:fly={{ y: 15, duration: 200 }}
-      class="relative flex w-full max-w-3xl flex-col rounded-xl border border-line bg-bg shadow-2xl overflow-hidden"
-      style="max-height: min(92vh, 760px); height: min(92vh, 760px);"
+      class="relative flex h-full w-full sm:h-[min(92vh,760px)] max-w-3xl flex-col sm:rounded-xl border-0 sm:border border-line bg-bg shadow-2xl overflow-hidden"
     >
       <!-- Integrated Header & Navigation Tabs -->
-      <div class="flex flex-col border-b border-line bg-bg px-5 pt-4">
-        <div class="flex items-center justify-between">
+      <div
+        class="flex flex-col border-b border-line bg-bg pt-4 shrink-0 min-w-0"
+      >
+        <div class="flex items-center justify-between px-4 sm:px-5">
           <h2 class="text-base font-semibold text-fg">Settings</h2>
           <Button
             variant="ghost"
@@ -92,66 +131,96 @@
           </Button>
         </div>
 
-        <div class="flex items-center gap-2 mt-3 -mb-px">
-          <button
-            type="button"
-            onclick={() => setTab("general")}
-            class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
-            'general'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-fg-muted hover:text-fg'}"
-          >
-            <Sliders size={14} />
-            <span>General</span>
-          </button>
+        <div class="relative flex items-center min-w-0 w-full sm:mt-3 -mb-px">
+          {#if canScrollLeft}
+            <button
+              type="button"
+              onclick={scrollLeft}
+              aria-label="Scroll left"
+              transition:fly={{ x: -12, duration: 200 }}
+              class="absolute left-0 z-10 flex h-full items-center pl-2 pr-4 bg-gradient-to-r from-bg via-bg/90 to-transparent text-fg-muted hover:text-fg cursor-pointer"
+            >
+              <ChevronLeft size={16} />
+            </button>
+          {/if}
 
-          <button
-            type="button"
-            onclick={() => setTab("models")}
-            class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
-            'models'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-fg-muted hover:text-fg'}"
+          <div
+            bind:this={tabsEl}
+            onscroll={checkScroll}
+            class="flex items-center gap-1 sm:gap-2 overflow-x-auto min-w-0 w-full px-4 sm:px-5 no-scrollbar"
           >
-            <Layers size={14} />
-            <span>Models & Presets</span>
-          </button>
+            <button
+              type="button"
+              onclick={() => setTab("general")}
+              class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors shrink-0 whitespace-nowrap {activeTab ===
+              'general'
+                ? 'border-accent text-accent'
+                : 'border-transparent text-fg-muted hover:text-fg'}"
+            >
+              <Sliders size={14} />
+              <span>General</span>
+            </button>
 
-          <button
-            type="button"
-            onclick={() => setTab("mcp")}
-            class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
-            'mcp'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-fg-muted hover:text-fg'}"
-          >
-            <Cpu size={14} />
-            <span>MCP Servers</span>
-          </button>
+            <button
+              type="button"
+              onclick={() => setTab("models")}
+              class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors shrink-0 whitespace-nowrap {activeTab ===
+              'models'
+                ? 'border-accent text-accent'
+                : 'border-transparent text-fg-muted hover:text-fg'}"
+            >
+              <Layers size={14} />
+              <span>Models & Presets</span>
+            </button>
 
-          <button
-            type="button"
-            onclick={() => setTab("skills")}
-            class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
-            'skills'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-fg-muted hover:text-fg'}"
-          >
-            <BookOpen size={14} />
-            <span>Skills</span>
-          </button>
+            <button
+              type="button"
+              onclick={() => setTab("mcp")}
+              class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors shrink-0 whitespace-nowrap {activeTab ===
+              'mcp'
+                ? 'border-accent text-accent'
+                : 'border-transparent text-fg-muted hover:text-fg'}"
+            >
+              <Cpu size={14} />
+              <span>MCP Servers</span>
+            </button>
 
-          <button
-            type="button"
-            onclick={() => setTab("backends")}
-            class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors {activeTab ===
-            'backends'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-fg-muted hover:text-fg'}"
-          >
-            <Server size={14} />
-            <span>Backends</span>
-          </button>
+            <button
+              type="button"
+              onclick={() => setTab("skills")}
+              class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors shrink-0 whitespace-nowrap {activeTab ===
+              'skills'
+                ? 'border-accent text-accent'
+                : 'border-transparent text-fg-muted hover:text-fg'}"
+            >
+              <BookOpen size={14} />
+              <span>Skills</span>
+            </button>
+
+            <button
+              type="button"
+              onclick={() => setTab("backends")}
+              class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors shrink-0 whitespace-nowrap {activeTab ===
+              'backends'
+                ? 'border-accent text-accent'
+                : 'border-transparent text-fg-muted hover:text-fg'}"
+            >
+              <Server size={14} />
+              <span>Backends</span>
+            </button>
+          </div>
+
+          {#if canScrollRight}
+            <button
+              type="button"
+              onclick={scrollRight}
+              aria-label="Scroll right"
+              transition:fly={{ x: 12, duration: 200 }}
+              class="absolute right-0 z-10 flex h-full items-center pr-2 pl-4 bg-gradient-to-l from-bg via-bg/90 to-transparent text-fg-muted hover:text-fg transition-all duration-200 cursor-pointer"
+            >
+              <ChevronRight size={16} />
+            </button>
+          {/if}
         </div>
       </div>
 

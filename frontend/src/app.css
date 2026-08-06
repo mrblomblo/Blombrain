@@ -411,6 +411,15 @@ body {
   background: transparent;
 }
 
+/* Hide scrollbar for Chrome, Safari and Opera, Firefox, IE/Edge */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+}
+
 /* Remove focus rings/outlines from all inputs globally */
 input,
 textarea,
