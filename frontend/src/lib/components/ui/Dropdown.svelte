@@ -5,6 +5,8 @@
   export interface DropdownOption {
     label: string;
     value: string;
+    icon?: any;
+    iconClass?: string;
   }
 
   interface Props {
@@ -16,6 +18,9 @@
     id?: string;
     class?: string;
     buttonClass?: string;
+    trigger?: import("svelte").Snippet;
+    unstyledTrigger?: boolean;
+    align?: "left" | "right";
   }
 
   let {
@@ -27,6 +32,9 @@
     id,
     class: className = "",
     buttonClass = "",
+    trigger,
+    unstyledTrigger = false,
+    align = "left",
   }: Props = $props();
 
   let isOpen = $state(false);
@@ -61,22 +69,27 @@
     type="button"
     {disabled}
     onclick={() => (isOpen = !isOpen)}
-    class="flex w-full items-center justify-between gap-2 rounded-md border border-line text-xs text-fg transition-colors cursor-pointer hover:border-line-strong hover:bg-bg-hover disabled:opacity-50 disabled:cursor-not-allowed {buttonClass ||
-      'h-8 bg-bg px-3'} {className}"
+    class={unstyledTrigger
+      ? `${buttonClass || ""} ${className || ""}`
+      : `flex w-full items-center justify-between gap-2 rounded-md border border-line text-xs text-fg transition-colors cursor-pointer hover:border-line-strong hover:bg-bg-hover disabled:opacity-50 disabled:cursor-not-allowed ${buttonClass || "h-8 bg-bg px-3"} ${className}`}
   >
-    <span class="truncate">{selectedOption?.label || placeholder}</span>
-    <ChevronDown
-      size={13}
-      class="text-fg-subtle shrink-0 transition-transform duration-200 {isOpen
-        ? 'rotate-180'
-        : ''}"
-    />
+    {#if trigger}
+      {@render trigger()}
+    {:else}
+      <span class="truncate">{selectedOption?.label || placeholder}</span>
+      <ChevronDown
+        size={13}
+        class="text-fg-subtle shrink-0 transition-transform duration-200 {isOpen
+          ? 'rotate-180'
+          : ''}"
+      />
+    {/if}
   </button>
 
   {#if isOpen}
     <div
       transition:fly={{ y: -4, duration: 150 }}
-      class="absolute left-0 top-full z-50 mt-1 w-full min-w-[160px] rounded-lg border border-line bg-bg shadow-xl overflow-hidden"
+      class="absolute {align === 'right' ? 'right-0' : 'left-0'} top-full z-50 mt-1 w-full min-w-[160px] rounded-lg border border-line bg-bg shadow-xl overflow-hidden"
     >
       <div class="max-h-56 overflow-y-auto p-1 space-y-0.5">
         {#each options as option (option.value)}
@@ -88,7 +101,13 @@
               ? 'bg-accent/15 text-accent font-medium hover:bg-accent/20'
               : 'hover:bg-bg-hover text-fg'}"
           >
-            <span class="truncate">{option.label}</span>
+            <div class="flex items-center gap-2 min-w-0">
+              {#if option.icon}
+                {@const Icon = option.icon}
+                <Icon size={13} class="shrink-0 {option.iconClass || 'text-fg-subtle'}" />
+              {/if}
+              <span class="truncate">{option.label}</span>
+            </div>
             {#if value === option.value}
               <Check size={13} class="text-accent shrink-0" />
             {/if}

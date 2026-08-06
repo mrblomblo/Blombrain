@@ -9,15 +9,18 @@
     X,
     ChevronDown,
     ChevronUp,
+    MoreHorizontal,
   } from "@lucide/svelte";
   import {
     fetchBackends,
     fetchConversations,
     deleteConversation,
+    updateConversation,
   } from "../api";
   import { chatStore } from "../stores/chat.svelte";
   import { confirmStore } from "../stores/confirmStore.svelte";
   import type { ConversationSummary } from "../types";
+  import Dropdown from "./ui/Dropdown.svelte";
   import { slide } from "svelte/transition";
 
   interface Props {
@@ -62,8 +65,20 @@
     onCloseMobile?.();
   }
 
-  async function handleDelete(e: MouseEvent, conv: ConversationSummary) {
-    e.stopPropagation();
+  async function handleRename(conv: ConversationSummary) {
+    if (chatStore.isStreaming) return;
+    const newTitle = window.prompt("Enter new name for conversation:", conv.title);
+    if (newTitle && newTitle.trim() !== "" && newTitle !== conv.title) {
+      try {
+        await updateConversation(conv.id, { title: newTitle.trim() });
+        await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      } catch (err) {
+        console.error("Failed to rename conversation", err);
+      }
+    }
+  }
+
+  async function handleDelete(conv: ConversationSummary) {
     if (deletingId || chatStore.isStreaming) return;
     const confirmed = await confirmStore.confirm({
       title: "Delete Conversation",
@@ -234,14 +249,31 @@
                 >
                   {formatAge(conv.updatedAt)}
                 </span>
-                <button
-                  onclick={(e) => handleDelete(e, conv)}
-                  disabled={deletingId === conv.id || chatStore.isStreaming}
-                  aria-label="Delete conversation"
-                  class="shrink-0 rounded p-0.5 text-fg-subtle opacity-0 transition-all cursor-pointer hover:text-danger group-hover:opacity-100 disabled:pointer-events-none"
+                <div 
+                  class="shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                  onclick={(e) => e.stopPropagation()}
+                  onkeydown={(e) => e.stopPropagation()}
+                  role="presentation"
                 >
-                  <Trash2 size={12} />
-                </button>
+                  <Dropdown
+                    options={[
+                      { label: "Rename", value: "rename" },
+                      { label: "Delete", value: "delete" }
+                    ]}
+                    onchange={(val) => {
+                      if (val === "rename") handleRename(conv);
+                      else if (val === "delete") handleDelete(conv);
+                    }}
+                    align="right"
+                    unstyledTrigger={true}
+                    buttonClass="rounded p-0.5 text-fg-subtle transition-all cursor-pointer hover:text-fg disabled:pointer-events-none disabled:opacity-50"
+                    disabled={deletingId === conv.id || chatStore.isStreaming}
+                  >
+                    {#snippet trigger()}
+                      <MoreHorizontal size={14} />
+                    {/snippet}
+                  </Dropdown>
+                </div>
               </div>
             </li>
           {/each}
