@@ -6,6 +6,7 @@
     Sliders,
     Cpu,
     BookOpen,
+    User,
     ChevronRight,
     ChevronLeft,
   } from "@lucide/svelte";
@@ -15,9 +16,10 @@
   import McpTab from "./settings/McpTab.svelte";
   import SkillsTab from "./settings/SkillsTab.svelte";
   import BackendsTab from "./settings/BackendsTab.svelte";
+  import UserTab from "./settings/UserTab.svelte";
   import Button from "./ui/Button.svelte";
 
-  type Tab = "general" | "models" | "mcp" | "skills" | "backends";
+  type Tab = "general" | "models" | "mcp" | "skills" | "backends" | "user";
 
   interface Props {
     open: boolean;
@@ -27,7 +29,14 @@
 
   let activeTab = $state<Tab>("general");
   let previousTab = $state<Tab>("general");
-  const TABS: Tab[] = ["general", "models", "mcp", "skills", "backends"];
+  const TABS: Tab[] = [
+    "general",
+    "models",
+    "mcp",
+    "skills",
+    "backends",
+    "user",
+  ];
 
   let tabsEl = $state<HTMLDivElement | undefined>();
   let canScrollRight = $state(false);
@@ -131,7 +140,7 @@
           </Button>
         </div>
 
-        <div class="relative flex items-center min-w-0 w-full sm:mt-3 -mb-px">
+        <div class="relative flex items-center min-w-0 w-full -mb-px">
           {#if canScrollLeft}
             <button
               type="button"
@@ -208,6 +217,18 @@
               <Server size={14} />
               <span>Backends</span>
             </button>
+
+            <button
+              type="button"
+              onclick={() => setTab("user")}
+              class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors shrink-0 whitespace-nowrap {activeTab ===
+              'user'
+                ? 'border-accent text-accent'
+                : 'border-transparent text-fg-muted hover:text-fg'}"
+            >
+              <User size={14} />
+              <span>User</span>
+            </button>
           </div>
 
           {#if canScrollRight}
@@ -265,6 +286,14 @@
             out:fly={getFlyParams(false)}
           >
             <BackendsTab />
+          </div>
+        {:else if activeTab === "user"}
+          <div
+            class="col-start-1 row-start-1 overflow-y-auto p-5"
+            in:fly={getFlyParams(true)}
+            out:fly={getFlyParams(false)}
+          >
+            <UserTab />
           </div>
         {/if}
       </div>
