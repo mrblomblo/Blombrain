@@ -4,8 +4,7 @@
     | "accent"
     | "danger"
     | "ghost"
-    | "dark"
-    | "primary";
+    | "dark";
 
   export type ButtonSize = "sm" | "md" | "lg" | "icon";
 </script>
@@ -44,7 +43,6 @@
     if (isOutline) {
       switch (v) {
         case "accent":
-        case "primary":
           return "border border-accent/60 text-accent bg-transparent hover:bg-accent/10 hover:border-accent";
         case "danger":
           return "border border-danger/60 text-danger bg-transparent hover:bg-danger/10 hover:border-danger";
@@ -60,7 +58,6 @@
 
     switch (v) {
       case "accent":
-      case "primary":
         return "bg-accent text-accent-fg hover:opacity-90 active:opacity-100";
       case "danger":
         return "bg-danger text-danger-fg hover:opacity-90 active:opacity-100";

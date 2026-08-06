@@ -74,7 +74,7 @@
     <Button variant="ghost" outline onclick={onclose}>
       {cancelText}
     </Button>
-    <Button variant="primary" onclick={() => handleSubmit()}>
+    <Button variant="accent" onclick={() => handleSubmit()}>
       {confirmText}
     </Button>
   {/snippet}

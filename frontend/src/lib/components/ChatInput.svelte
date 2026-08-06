@@ -316,7 +316,7 @@
             </Button>
           {:else}
             <Button
-              variant="primary"
+              variant="accent"
               onclick={handleSend}
               disabled={(!draft.trim() &&
                 chatStore.pendingAttachments.length === 0) ||
