@@ -127,96 +127,103 @@
 </script>
 
 <aside
-  class="hidden md:flex h-full shrink-0 flex-col border-r border-line bg-bg-inset transition-all duration-200 ease-in-out {collapsed
-    ? 'w-14 py-3 items-center justify-between'
+  class="relative flex h-full shrink-0 flex-col border-r border-line bg-bg-inset transition-all duration-300 ease-in-out overflow-hidden {collapsed
+    ? 'w-14'
     : 'w-64'}"
 >
-  {#if collapsed}
-    <!-- Top header icon (Expand sidebar) -->
-    <div class="flex items-center justify-center py-1">
+  <!-- Header -->
+  <div
+    class="flex items-center h-14 shrink-0 px-3 justify-between overflow-hidden"
+  >
+    <div class="flex items-center overflow-hidden">
       {#if onToggleSidebar}
         <button
-          onclick={onToggleSidebar}
-          aria-label="Expand sidebar"
-          title="Expand sidebar"
-          class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted transition-colors cursor-pointer hover:bg-bg-elevated hover:text-fg"
+          onclick={collapsed ? onToggleSidebar : undefined}
+          aria-label={collapsed ? "Expand sidebar" : ""}
+          title={collapsed ? "Expand sidebar" : ""}
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors {collapsed
+            ? 'cursor-pointer hover:bg-bg-elevated hover:text-fg'
+            : 'cursor-default'}"
         >
           <Logo class="h-5 w-5" />
         </button>
       {/if}
-    </div>
-
-    <!-- Body icon (New Chat, positioned at top of body) -->
-    <div class="mt-4 flex flex-1 flex-col items-center">
-      <button
-        onclick={handleNewChat}
-        disabled={chatStore.isStreaming}
-        aria-label="New Chat"
-        title="New Chat"
-        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-bg-elevated text-accent transition-colors cursor-pointer hover:bg-bg-hover disabled:pointer-events-none disabled:opacity-40"
+      <div
+        class="overflow-hidden transition-all duration-300 ease-in-out {collapsed
+          ? 'max-w-0 opacity-0'
+          : 'max-w-30 opacity-100'}"
       >
-        <SquarePen size={16} />
-      </button>
-    </div>
-
-    <!-- Footer icon (Settings) -->
-    <div class="flex flex-col items-center gap-2 w-full">
-      <button
-        onclick={onOpenSettings}
-        aria-label="Settings"
-        title="Backends Settings"
-        class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted transition-colors cursor-pointer hover:bg-bg-elevated hover:text-fg"
-      >
-        <Settings size={16} />
-      </button>
-    </div>
-  {:else}
-    <!-- Logo + new chat + mobile close -->
-    <div class="flex items-center justify-between px-4 py-4">
-      <div class="flex items-center gap-2">
-        <Logo class="h-5 w-5" />
-        <span class="text-sm font-semibold tracking-wide text-fg"
-          >Blombrain</span
+        <span
+          class="text-md font-semibold tracking-wide text-fg whitespace-nowrap pl-1"
         >
-      </div>
-      <div class="flex items-center gap-1">
-        {#if onToggleSidebar}
-          <button
-            onclick={onToggleSidebar}
-            aria-label="Collapse sidebar"
-            title="Collapse sidebar"
-            class="hidden md:flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg-elevated hover:text-fg"
-          >
-            <PanelLeftClose size={16} />
-          </button>
-        {/if}
-
-        {#if onCloseMobile}
-          <button
-            onclick={onCloseMobile}
-            aria-label="Close sidebar"
-            class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted md:hidden cursor-pointer hover:bg-bg-elevated hover:text-fg"
-          >
-            <X size={15} />
-          </button>
-        {/if}
+          Blombrain
+        </span>
       </div>
     </div>
 
-    <div class="flex-1 overflow-y-auto px-2 py-1">
-      <!-- New Chat Button -->
-      <div class="mb-3 px-1">
+    <div
+      class="flex items-center transition-all duration-300 ease-in-out overflow-hidden {collapsed
+        ? 'max-w-0 opacity-0'
+        : 'max-w-10 opacity-100'}"
+    >
+      {#if onToggleSidebar}
         <button
-          onclick={handleNewChat}
-          disabled={chatStore.isStreaming}
-          class="flex w-full items-center gap-2 rounded-lg border border-line bg-bg-elevated px-3 py-2 text-xs font-medium text-fg shadow-xs transition-colors cursor-pointer hover:bg-bg-hover hover:border-line-strong disabled:pointer-events-none disabled:opacity-40"
+          onclick={onToggleSidebar}
+          aria-label="Collapse sidebar"
+          class="hidden md:flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-fg-muted cursor-pointer hover:bg-bg-elevated hover:text-fg ml-1"
         >
-          <SquarePen size={15} class="text-accent" />
-          <span>New Chat</span>
+          <PanelLeftClose size={16} />
         </button>
-      </div>
+      {/if}
+      {#if onCloseMobile}
+        <button
+          onclick={onCloseMobile}
+          aria-label="Close sidebar"
+          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-fg-muted md:hidden cursor-pointer hover:bg-bg-elevated hover:text-fg ml-1"
+        >
+          <X size={15} />
+        </button>
+      {/if}
+    </div>
+  </div>
 
-      <!-- Conversations -->
+  <!-- New Chat Button -->
+  <div class="px-3 mt-1 mb-3 shrink-0">
+    <button
+      onclick={handleNewChat}
+      disabled={chatStore.isStreaming}
+      class="flex items-center h-9 w-full rounded-lg transition-all duration-300 cursor-pointer disabled:pointer-events-none disabled:opacity-40 overflow-hidden {collapsed
+        ? 'border border-transparent bg-transparent shadow-none'
+        : 'border border-line bg-bg-elevated shadow-xs hover:bg-bg-hover hover:border-line-strong'}"
+    >
+      <div class="w-8 h-full shrink-0 flex items-center justify-center">
+        <SquarePen
+          size={16}
+          class="transition-colors duration-300 {collapsed
+            ? 'text-fg hover:text-accent'
+            : 'text-accent'}"
+        />
+      </div>
+      <div
+        class="overflow-hidden transition-all duration-300 ease-in-out {collapsed
+          ? 'max-w-0 opacity-0'
+          : 'max-w-30 opacity-100'}"
+      >
+        <span class="text-xs font-medium text-fg whitespace-nowrap pr-3"
+          >New Chat</span
+        >
+      </div>
+    </button>
+  </div>
+
+  <!-- Middle Content: Conversations & Backends -->
+  <div
+    class="flex-1 flex flex-col overflow-hidden transition-opacity duration-300 {collapsed
+      ? 'opacity-0 pointer-events-none'
+      : 'opacity-100 pointer-events-auto'}"
+  >
+    <!-- Conversations -->
+    <div class="flex-1 overflow-y-auto px-2 py-1 w-64">
       <p
         class="mb-1.5 px-2 text-[11px] font-semibold tracking-wider text-fg-subtle uppercase"
       >
@@ -229,7 +236,7 @@
         <p class="px-2 text-xs text-danger">Couldn't load conversations.</p>
       {:else if (convsQuery.data ?? []).length === 0}
         <p
-          class="rounded-lg border border-dashed border-line px-3 py-3 text-xs text-fg-muted"
+          class="rounded-lg border border-dashed border-line px-3 py-3 text-xs text-fg-muted mx-1"
         >
           No conversations yet. Send a message to start one.
         </p>
@@ -311,7 +318,7 @@
     </div>
 
     <!-- Collapsible Backends section -->
-    <div class="border-t border-line/60 px-3 py-2">
+    <div class="border-t border-line/60 px-3 py-2 w-64 shrink-0">
       <button
         type="button"
         onclick={() => (showBackends = !showBackends)}
@@ -357,22 +364,28 @@
         </div>
       {/if}
     </div>
+  </div>
 
-    <!-- Footer -->
-    <div
-      class="flex items-center justify-between border-t border-line px-3 py-2.5"
+  <!-- Footer -->
+  <div class="border-t border-line px-3 py-2.5 shrink-0">
+    <button
+      onclick={onOpenSettings}
+      aria-label="Settings"
+      title="Settings"
+      class="flex items-center h-8 w-full rounded-md text-xs text-fg-muted transition-colors cursor-pointer hover:bg-bg-elevated hover:text-fg overflow-hidden"
     >
-      <button
-        onclick={onOpenSettings}
-        aria-label="Settings"
-        title="Settings"
-        class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-fg-muted transition-colors cursor-pointer hover:bg-bg-elevated hover:text-fg"
+      <div class="w-8 h-full shrink-0 flex items-center justify-center">
+        <Settings size={16} />
+      </div>
+      <div
+        class="overflow-hidden transition-all duration-300 ease-in-out {collapsed
+          ? 'max-w-0 opacity-0'
+          : 'max-w-[120px] opacity-100'}"
       >
-        <Settings size={15} />
-        <span class="font-medium">Settings</span>
-      </button>
-    </div>
-  {/if}
+        <span class="font-medium whitespace-nowrap pr-2">Settings</span>
+      </div>
+    </button>
+  </div>
 </aside>
 
 <TextInputModal
