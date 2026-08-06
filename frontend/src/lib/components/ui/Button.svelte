@@ -1,7 +1,4 @@
-<script lang="ts">
-  import type { Snippet } from "svelte";
-  import type { HTMLButtonAttributes } from "svelte/elements";
-
+<script module lang="ts">
   export type ButtonVariant =
     | "default"
     | "accent"
@@ -11,6 +8,11 @@
     | "primary";
 
   export type ButtonSize = "sm" | "md" | "lg" | "icon";
+</script>
+
+<script lang="ts">
+  import type { Snippet } from "svelte";
+  import type { HTMLButtonAttributes } from "svelte/elements";
 
   interface Props extends HTMLButtonAttributes {
     variant?: ButtonVariant;
