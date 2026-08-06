@@ -127,9 +127,22 @@
     }
   }
 
-  async function handleDelete(id: string) {
+  import { confirmStore } from "../../stores/confirmStore.svelte";
+
+  async function handleDelete(server: McpServerInfo) {
+    const confirmed = await confirmStore.confirm({
+      title: "Delete MCP Server",
+      message: `Are you sure you want to delete MCP server "${server.name}"? This action cannot be undone.`,
+      confirmText: "Delete",
+      confirmStyle: "danger",
+      cancelText: "Cancel",
+      cancelStyle: "ghost",
+      cancelOutline: true,
+    });
+    if (!confirmed) return;
+
     try {
-      await deleteMcpServer(id);
+      await deleteMcpServer(server.id);
       await queryClient.invalidateQueries({ queryKey: ["mcpServers"] });
     } catch (err: any) {
       alert("Failed to delete server: " + (err?.message || String(err)));
@@ -346,13 +359,14 @@
               size="sm"
               onclick={() => startEdit(server)}>Edit</Button
             >
-            <Button
-              variant="ghost"
-              size="icon"
-              onclick={() => handleDelete(server.id)}
+            <button
+              type="button"
+              onclick={() => handleDelete(server)}
+              aria-label="Delete {server.name}"
+              class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg hover:text-danger disabled:pointer-events-none disabled:opacity-40"
             >
-              <Trash2 size={14} class="text-danger" />
-            </Button>
+              <Trash2 size={13} />
+            </button>
           </div>
         </div>
       {/each}

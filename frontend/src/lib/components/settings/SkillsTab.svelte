@@ -218,9 +218,22 @@
     }
   }
 
-  async function handleDelete(id: string) {
+  import { confirmStore } from "../../stores/confirmStore.svelte";
+
+  async function handleDelete(skill: SkillInfo) {
+    const confirmed = await confirmStore.confirm({
+      title: "Delete Skill",
+      message: `Are you sure you want to delete skill "${skill.name}"? This action cannot be undone.`,
+      confirmText: "Delete",
+      confirmStyle: "danger",
+      cancelText: "Cancel",
+      cancelStyle: "ghost",
+      cancelOutline: true,
+    });
+    if (!confirmed) return;
+
     try {
-      await deleteSkill(id);
+      await deleteSkill(skill.id);
       await queryClient.invalidateQueries({ queryKey: ["skills"] });
     } catch (err: any) {
       alert("Failed to delete skill: " + (err?.message || String(err)));
@@ -526,13 +539,14 @@
             >
               Edit
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onclick={() => handleDelete(skill.id)}
+            <button
+              type="button"
+              onclick={() => handleDelete(skill)}
+              aria-label="Delete {skill.name}"
+              class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg hover:text-danger disabled:pointer-events-none disabled:opacity-40"
             >
-              <Trash2 size={14} class="text-danger" />
-            </Button>
+              <Trash2 size={13} />
+            </button>
           </div>
         </div>
       {/each}
