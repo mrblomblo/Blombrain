@@ -578,6 +578,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
     let mcpTools: any[] = [];
     let activeSkills: any[] = [];
+    let builtInTools: any[] = [];
 
     if (toolsEnabled) {
       const { routeToolsAndSkills, buildRecentContext } = await import("../services/toolRouter.js");
@@ -596,6 +597,7 @@ export async function chatRoutes(app: FastifyInstance) {
       );
       mcpTools = routingResult.mcpTools ?? [];
       activeSkills = routingResult.selectedSkills ?? [];
+      builtInTools = routingResult.selectedBuiltInTools ?? [];
     }
 
     if (routerRawText.trim()) {
@@ -767,44 +769,25 @@ export async function chatRoutes(app: FastifyInstance) {
       toolDefinitions.push(...mcpToolsToOpenAIFormat(mcpTools));
     }
 
-    // Inject execute_skill_script if needed
-    const { getSkillScripts } = await import("../services/skills.js");
-    const activeSkillsWithScripts = activeSkills.filter(s => getSkillScripts(s.dirPath).length > 0);
-    if (activeSkillsWithScripts.length > 0) {
+    const { builtInToolRegistry } = await import("../services/builtinTools/index.js");
+    const builtInCtx = {
+      conversationId,
+      activeSkillIds: activeSkills.map(s => s.id),
+      activeSkills,
+    };
+    // Include all active built-in tools (filtered by router if router was active)
+    const availableBuiltInTools = builtInTools.length > 0
+      ? builtInTools
+      : builtInToolRegistry.getAvailableTools(builtInCtx);
+
+    for (const bTool of availableBuiltInTools) {
+      const params = typeof bTool.parameters === "function" ? bTool.parameters(builtInCtx) : bTool.parameters;
       toolDefinitions.push({
         type: "function",
         function: {
-          name: "execute_skill_script",
-          description: "Execute a script provided by an active skill. The script runs in a conversation-scoped working directory. Returns stdout, stderr, and exit code.",
-          parameters: {
-            type: "object",
-            properties: {
-              skill_name: {
-                type: "string",
-                enum: activeSkillsWithScripts.map(s => s.name),
-                description: "The name of the active skill that owns the script.",
-              },
-              skill_id: {
-                type: "string",
-                enum: activeSkillsWithScripts.map(s => s.id),
-                description: "The ID of the active skill that owns the script (optional).",
-              },
-              script_name: {
-                type: "string",
-                description: "The script filename inside the skill's scripts/ directory (e.g. 'init-artifact.sh'). Do not include paths or '..'.",
-              },
-              cwd: {
-                type: "string",
-                description: "Optional relative subdirectory to execute the script in (e.g. 'apex-fitness-landing'). Runs in the workspace root by default.",
-              },
-              args: {
-                type: "array",
-                description: "Command-line arguments to pass to the script (e.g. ['mrblomblo-portfolio']).",
-                items: { type: "string" },
-              },
-            },
-            required: ["skill_name", "script_name"],
-          },
+          name: bTool.name,
+          description: bTool.description,
+          parameters: params,
         },
       });
     }
@@ -1080,9 +1063,10 @@ export async function chatRoutes(app: FastifyInstance) {
           const callId = tc.id ?? `call_${userMessageId}_${toolRound}_${idx}`;
           currentToolExecution = { callId, toolName: tc.name, args: tc.arguments };
 
-          // Defensive Check: Ensure the tool was actually routed/available in mcpTools
-          const isBuiltInTool = tc.name === "execute_skill_script";
-          const isToolRouted = mcpTools.some((t) => t.name === tc.name);
+          const { builtInToolRegistry } = await import("../services/builtinTools/index.js");
+          const builtInTool = builtInToolRegistry.getTool(tc.name);
+          const isBuiltInTool = !!builtInTool;
+          const isToolRouted = mcpTools.some((t) => t.name === tc.name) || isBuiltInTool;
           const isSkillRouted = activeSkills.some((s) => s.name === tc.name);
 
           let result: { content: string; isError?: boolean };
@@ -1110,16 +1094,16 @@ export async function chatRoutes(app: FastifyInstance) {
               status: "executing",
             }));
 
-            const { executeSkillScriptTool } = await import("../services/scriptExecution.js");
             try {
               result = await withTimeout(
-                executeSkillScriptTool(tc.arguments, {
+                builtInToolRegistry.executeTool(tc.name, tc.arguments, {
                   conversationId,
                   activeSkillIds: activeSkills.map(s => s.id),
+                  activeSkills,
                   abortSignal: abortController.signal,
                 }),
                 TOOL_TIMEOUT_MS,
-                `execute_skill_script (${tc.arguments?.script_name ?? "unknown"})`,
+                `${tc.name}`,
               );
             } catch (err) {
               result = { content: err instanceof Error ? err.message : String(err), isError: true };

@@ -6,9 +6,12 @@ import { backendRegistry } from "../registry.js";
 import { getAdapter } from "../adapters/index.js";
 import { Readable } from "stream";
 
+import { builtInToolRegistry, type BuiltInToolDefinition } from "./builtinTools/index.js";
+
 export interface ToolRoutingResult {
   mcpTools: McpToolDefinition[];
   selectedSkills: SkillOut[];
+  selectedBuiltInTools: BuiltInToolDefinition[];
 }
 
 export function parseRouterOutput(text: string): { tools: string[]; skills: string[] } {
@@ -186,9 +189,10 @@ export async function routeToolsAndSkills(
 ): Promise<ToolRoutingResult> {
   const allMcpTools = await mcpManager.getAvailableTools(excludedMcps);
   const allSkills = getAllSkills(excludedSkills).filter((s) => s.isEnabled);
+  const allBuiltInTools = builtInToolRegistry.getAvailableTools({ activeSkills: allSkills });
 
   // Single unified token estimation (1 token ~= 4 chars)
-  const totalSchemaLength = JSON.stringify(allMcpTools).length + JSON.stringify(allSkills).length;
+  const totalSchemaLength = JSON.stringify(allMcpTools).length + JSON.stringify(allSkills).length + JSON.stringify(allBuiltInTools).length;
   const estimatedTokens = Math.ceil(totalSchemaLength / 4);
 
   // Check global settings for tool_routing_mode and tool_routing_model
@@ -202,10 +206,11 @@ export async function routeToolsAndSkills(
   // - If mode is 'active_model' or 'designated_model', always run router
   const shouldRoute = mode !== "off" || estimatedTokens >= 20000;
 
-  if (!shouldRoute || !userQuery.trim() || (allMcpTools.length === 0 && allSkills.length === 0)) {
+  if (!shouldRoute || !userQuery.trim() || (allMcpTools.length === 0 && allSkills.length === 0 && allBuiltInTools.length === 0)) {
     return {
       mcpTools: allMcpTools,
       selectedSkills: allSkills,
+      selectedBuiltInTools: allBuiltInTools,
     };
   }
 
@@ -227,14 +232,20 @@ export async function routeToolsAndSkills(
 
   if (!modelToUse) {
     console.warn("[toolRouter] No valid model available for routing pre-pass, skipping routing.");
-    return { mcpTools: allMcpTools, selectedSkills: allSkills };
+    return { mcpTools: allMcpTools, selectedSkills: allSkills, selectedBuiltInTools: allBuiltInTools };
   }
 
   try {
-    const toolsCatalog = allMcpTools.map((t) => ({
-      name: t.name,
-      description: t.description ? t.description.trim().slice(0, 300) : "No description",
-    }));
+    const toolsCatalog = [
+      ...allBuiltInTools.map((t) => ({
+        name: t.name,
+        description: t.description ? t.description.trim().slice(0, 300) : "No description",
+      })),
+      ...allMcpTools.map((t) => ({
+        name: t.name,
+        description: t.description ? t.description.trim().slice(0, 300) : "No description",
+      })),
+    ];
 
     const skillsCatalog = allSkills.map((s) => ({
       name: s.name,
@@ -271,23 +282,29 @@ ${JSON.stringify(skillsCatalog, null, 2)}`;
       (t) => selectedToolNames.includes(t.name) || forceTools.includes(t.name)
     );
 
+    const selectedBuiltInTools = allBuiltInTools.filter(
+      (t) => selectedToolNames.includes(t.name) || forceTools.includes(t.name)
+    );
+
     const selectedSkills = allSkills.filter(
       (s) => selectedSkillNames.includes(s.name) || forceTools.includes(s.name)
     );
 
     console.log(
-      `[toolRouter] Pre-pass completed using ${modelToUse}. Selected ${selectedMcpTools.length}/${allMcpTools.length} tools and ${selectedSkills.length}/${allSkills.length} skills.`
+      `[toolRouter] Pre-pass completed using ${modelToUse}. Selected ${selectedMcpTools.length}/${allMcpTools.length} MCP tools, ${selectedBuiltInTools.length}/${allBuiltInTools.length} built-in tools, and ${selectedSkills.length}/${allSkills.length} skills.`
     );
 
     return {
       mcpTools: selectedMcpTools,
       selectedSkills: selectedSkills,
+      selectedBuiltInTools: selectedBuiltInTools,
     };
   } catch (err) {
     console.warn("[toolRouter] LLM pre-pass failed, failing open with all tools/skills:", err);
     return {
       mcpTools: allMcpTools,
       selectedSkills: allSkills,
+      selectedBuiltInTools: allBuiltInTools,
     };
   }
 }
