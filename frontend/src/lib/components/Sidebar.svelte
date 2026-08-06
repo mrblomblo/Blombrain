@@ -10,6 +10,7 @@
     ChevronDown,
     ChevronUp,
     MoreHorizontal,
+    Pencil,
   } from "@lucide/svelte";
   import {
     fetchBackends,
@@ -21,6 +22,7 @@
   import { confirmStore } from "../stores/confirmStore.svelte";
   import type { ConversationSummary } from "../types";
   import Dropdown from "./ui/Dropdown.svelte";
+  import TextInputModal from "./ui/TextInputModal.svelte";
   import { slide } from "svelte/transition";
 
   interface Props {
@@ -52,6 +54,9 @@
 
   let deletingId = $state<string | null>(null);
   let showBackends = $state(false);
+  let renameConv = $state<ConversationSummary | null>(null);
+  let renameInputValue = $state("");
+  let openDropdownId = $state<string | null>(null);
 
   function handleSelectConv(conv: ConversationSummary) {
     if (chatStore.isStreaming) return;
@@ -65,9 +70,17 @@
     onCloseMobile?.();
   }
 
-  async function handleRename(conv: ConversationSummary) {
+  function openRenameModal(conv: ConversationSummary) {
     if (chatStore.isStreaming) return;
-    const newTitle = window.prompt("Enter new name for conversation:", conv.title);
+    renameConv = conv;
+    renameInputValue = conv.title;
+  }
+
+  async function submitRename(newTitle: string) {
+    if (!renameConv) return;
+    const conv = renameConv;
+    renameConv = null;
+
     if (newTitle && newTitle.trim() !== "" && newTitle !== conv.title) {
       try {
         await updateConversation(conv.id, { title: newTitle.trim() });
@@ -225,16 +238,17 @@
         <ul class="flex flex-col gap-0.5">
           {#each convsQuery.data ?? [] as conv (conv.id)}
             {@const isActive = chatStore.activeConversationId === conv.id}
+            {@const isMenuOpen = openDropdownId === conv.id}
             {@const isDisabled = chatStore.isStreaming && !isActive}
             <li class="list-none">
               <div
-                class="group relative flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition-all duration-200"
+                class="group relative flex items-center rounded-lg px-2.5 py-2 text-xs transition-all duration-200"
                 class:cursor-pointer={!isDisabled}
                 class:cursor-not-allowed={isDisabled}
                 class:opacity-40={isDisabled}
                 class:pointer-events-none={isDisabled}
-                class:bg-bg-elevated={isActive}
-                class:text-fg={isActive}
+                class:bg-bg-elevated={isActive || isMenuOpen}
+                class:text-fg={isActive || isMenuOpen}
                 class:font-medium={isActive}
                 class:text-fg-muted={!isActive && !isDisabled}
                 class:hover:bg-bg-elevated={!isActive && !isDisabled}
@@ -243,28 +257,35 @@
                 role="button"
                 onkeydown={(e) => !isDisabled && e.key === "Enter" && handleSelectConv(conv)}
               >
-                <span class="min-w-0 flex-1 truncate">{conv.title}</span>
-                <span
-                  class="shrink-0 text-[10px] font-mono text-fg-subtle opacity-0 transition-opacity group-hover:opacity-100"
-                >
-                  {formatAge(conv.updatedAt)}
-                </span>
+                <span class="w-full truncate">{conv.title}</span>
                 <div 
-                  class="shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                  class="absolute right-0 top-0 bottom-0 flex items-center gap-1.5 pl-1.5 pr-2.5 bg-bg-elevated rounded-r-lg transition-opacity duration-150 {isMenuOpen
+                    ? 'opacity-100 pointer-events-auto'
+                    : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'}"
                   onclick={(e) => e.stopPropagation()}
                   onkeydown={(e) => e.stopPropagation()}
                   role="presentation"
                 >
+                  <div class="absolute -left-4 top-0 bottom-0 w-4 bg-gradient-to-r from-transparent to-bg-elevated pointer-events-none"></div>
+                  <span class="shrink-0 text-[10px] font-mono text-fg-subtle">
+                    {formatAge(conv.updatedAt)}
+                  </span>
                   <Dropdown
+                    onopenchange={(open) => {
+                      if (open) openDropdownId = conv.id;
+                      else if (openDropdownId === conv.id) openDropdownId = null;
+                    }}
                     options={[
-                      { label: "Rename", value: "rename" },
-                      { label: "Delete", value: "delete" }
+                      { label: "Rename", value: "rename", icon: Pencil },
+                      { label: "Delete", value: "delete", icon: Trash2, iconClass: "text-danger" }
                     ]}
                     onchange={(val) => {
-                      if (val === "rename") handleRename(conv);
+                      if (val === "rename") openRenameModal(conv);
                       else if (val === "delete") handleDelete(conv);
                     }}
                     align="right"
+                    resetOnSelect={true}
+                    showCheckmark={false}
                     unstyledTrigger={true}
                     buttonClass="rounded p-0.5 text-fg-subtle transition-all cursor-pointer hover:text-fg disabled:pointer-events-none disabled:opacity-50"
                     disabled={deletingId === conv.id || chatStore.isStreaming}
@@ -343,3 +364,12 @@
     </div>
   {/if}
 </aside>
+
+<TextInputModal
+  isOpen={renameConv !== null}
+  title="Rename Conversation"
+  label="Conversation Name"
+  bind:value={renameInputValue}
+  onsubmit={submitRename}
+  onclose={() => (renameConv = null)}
+/>
