@@ -266,7 +266,7 @@
               >
                 <span class="w-full truncate">{conv.title}</span>
                 <div
-                  class="absolute right-0 top-0 bottom-0 flex items-center gap-1.5 pl-1.5 pr-2.5 bg-bg-elevated rounded-r-lg transition-opacity duration-150 {isMenuOpen
+                  class="absolute right-0 top-0 bottom-0 flex items-center gap-1.5 pl-1.5 pr-2.5 bg-bg-elevated rounded-r-lg transition-opacity duration-200 {isMenuOpen
                     ? 'opacity-100 pointer-events-auto'
                     : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'}"
                   onclick={(e) => e.stopPropagation()}
