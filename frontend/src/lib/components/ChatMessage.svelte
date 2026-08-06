@@ -369,7 +369,7 @@
                 <button
                   type="button"
                   onclick={() => removeEditAttachment(att.id)}
-                  class="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white/90 opacity-0 transition-all duration-150 group-hover:opacity-100 hover:bg-danger hover:text-white z-10 cursor-pointer shadow-xs"
+                  class="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white/90 opacity-0 transition-all duration-150 group-hover:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100 hover:bg-danger hover:text-white z-10 cursor-pointer shadow-xs"
                   aria-label="Remove attachment"
                   title="Remove attachment"
                 >
@@ -525,7 +525,7 @@
     <!-- Hover Actions Toolbar & Branch Navigator -->
     {#if !isEditing}
       <div
-        class="mt-0.5 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+        class="mt-0.5 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100"
       >
         {#if message.role === "user"}
           <BranchNavigator

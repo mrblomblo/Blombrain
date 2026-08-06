@@ -227,7 +227,7 @@
       : 'opacity-100 pointer-events-auto'}"
   >
     <!-- Conversations -->
-    <div class="flex-1 overflow-y-auto px-2 py-1 w-64">
+    <div class="flex-1 overflow-y-auto overscroll-contain px-2 py-1 w-64">
       <p
         class="mb-1.5 px-2 text-[11px] font-semibold tracking-wider text-fg-subtle uppercase"
       >
@@ -277,7 +277,7 @@
                     : 'bg-bg group-hover:bg-bg-elevated'} {isMenuOpen ||
                   onCloseMobile
                     ? 'opacity-100 pointer-events-auto'
-                    : 'opacity-0 pointer-events-none [media(hover:none)]:opacity-100 [media(hover:none)]:pointer-events-auto group-hover:opacity-100 group-hover:pointer-events-auto'}"
+                    : 'opacity-0 pointer-events-none [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(pointer:coarse)]:opacity-100 [@media(pointer:coarse)]:pointer-events-auto group-hover:opacity-100 group-hover:pointer-events-auto'}"
                   onclick={(e) => e.stopPropagation()}
                   onkeydown={(e) => e.stopPropagation()}
                   role="presentation"

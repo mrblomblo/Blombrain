@@ -174,13 +174,13 @@
   ontouchmove={handleTouchMove}
   onmousedown={handleMouseDown}
   onkeydown={handleKeyDown}
-  class="relative flex-1 overflow-y-auto scrollbar-gutter-both px-2 sm:px-6 pb-4 pt-0"
+  class="relative flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-both px-2 sm:px-6 pb-4 pt-0"
 >
   {#if activeMessages.length === 0}
     <div
       in:fly={{ y: 40, duration: 350, opacity: 0, easing: quintOut }}
       out:fly={{ y: 40, duration: 300, opacity: 0, easing: quintOut }}
-      class="absolute inset-0 flex flex-col items-center justify-center gap-6 px-4"
+      class="absolute inset-0 flex flex-col items-center justify-center gap-6 px-2 sm:px-4"
     >
       <div
         class="flex flex-col items-center justify-center gap-3 text-center select-none"

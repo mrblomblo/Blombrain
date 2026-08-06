@@ -103,7 +103,7 @@
   <LoginScreen />
 {:else}
   <QueryClientProvider client={queryClient}>
-    <div class="relative flex h-screen w-screen bg-bg text-fg overflow-hidden">
+    <div class="relative flex h-dvh w-screen bg-bg text-fg overflow-hidden">
       <!-- Desktop Sidebar -->
       <div class="hidden md:flex h-full">
         <Sidebar

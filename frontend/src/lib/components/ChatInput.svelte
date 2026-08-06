@@ -173,7 +173,7 @@
   }
 </script>
 
-<div class="relative {floating ? 'w-full px-2 sm:px-6' : 'px-2 sm:px-6 pb-3'}">
+<div class="relative {floating ? 'w-full sm:px-6' : 'sm:px-6 sm:pb-3'}">
   {#if !floating}
     <div
       class="pointer-events-none absolute inset-x-0 bottom-0 top-20 z-0 bg-linear-to-t from-bg-inset via-bg-inset/85 to-transparent"
@@ -217,7 +217,7 @@
                 e.stopPropagation();
                 chatStore.removeAttachment(att.id);
               }}
-              class="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white/90 opacity-0 transition-all duration-150 group-hover:opacity-100 hover:bg-danger hover:text-white z-10 cursor-pointer shadow-xs"
+              class="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white/90 opacity-0 transition-all duration-150 group-hover:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100 hover:bg-danger hover:text-white z-10 cursor-pointer shadow-xs"
               aria-label="Remove attachment"
               title="Remove attachment"
             >
@@ -244,9 +244,13 @@
       ondragleave={handleDragLeave}
       ondrop={handleDrop}
       onclick={handleContainerClick}
-      class="input-container relative flex flex-col rounded-xl border bg-bg-elevated p-2.5 cursor-text hover:border-accent transition-all duration-150 {isDragging
-        ? 'border-accent!'
-        : ''} {floating ? 'shadow-lg' : 'shadow-sm'}"
+      class="input-container relative flex flex-col {floating
+        ? 'rounded-xl border'
+        : 'sm:rounded-xl border-t sm:border'}
+     bg-bg-elevated p-2.5 cursor-text hover:border-accent transition-all duration-150
+     {isDragging ? 'border-accent!' : ''} {floating
+        ? 'shadow-lg'
+        : 'shadow-sm'}"
     >
       {#if isDragging}
         <div
