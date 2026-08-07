@@ -125,15 +125,17 @@ export async function conversationsRoutes(app: FastifyInstance) {
 
   /** POST /api/conversations -- create a new conversation. */
   app.post("/api/conversations", async (req: FastifyRequest, reply: FastifyReply) => {
-    const body = (req.body ?? {}) as { title?: string; model?: string };
+    const body = (req.body ?? {}) as { title?: string; model?: string; toolsEnabled?: boolean };
     const now = Date.now();
     const id = crypto.randomUUID();
+    const toolsEnabled = body.toolsEnabled !== undefined ? (body.toolsEnabled ? 1 : 0) : 0;
     insertConversation.run({
       id,
       title: body.title ?? "New conversation",
       model: body.model ?? null,
       createdAt: now,
       updatedAt: now,
+      toolsEnabled,
     });
     const row = getConversation.get(id)!;
     return reply.code(201).send(rowToSummary(row));

@@ -16,9 +16,10 @@ import { encodeToWav } from "../audio";
 import type { ChatMessage, ConversationSummary, AttachmentOut, ResponseStats } from "../types";
 import { artifactStore } from "./artifact.svelte";
 import { settingsStore } from "./settings.svelte";
+import { getRandomUUID } from "../utils/uuid";
 
-function makeId() {
-  return crypto.randomUUID();
+function makeId(): string {
+  return getRandomUUID();
 }
 
 /**
