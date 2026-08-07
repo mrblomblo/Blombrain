@@ -512,6 +512,7 @@ export interface GlobalSettingsOut {
   ctxOverflowBehavior: CtxOverflowBehavior;
   reasoningInjectionMode: ReasoningInjectionMode;
   networkToolsEnabled: boolean;
+  artifactNetworkEnabled: boolean;
 }
 
 export async function fetchGlobalSettings(): Promise<GlobalSettingsOut> {
@@ -530,6 +531,7 @@ export async function updateGlobalSettings(
     ctxOverflowBehavior: CtxOverflowBehavior;
     reasoningInjectionMode: ReasoningInjectionMode;
     networkToolsEnabled: boolean;
+    artifactNetworkEnabled: boolean;
     password?: string;
   }>,
 ): Promise<GlobalSettingsOut> {

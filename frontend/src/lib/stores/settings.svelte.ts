@@ -12,6 +12,7 @@ class SettingsStore {
   ctxOverflowBehavior = $state<CtxOverflowBehavior>("truncate_middle");
   reasoningInjectionMode = $state<ReasoningInjectionMode>("all");
   networkToolsEnabled = $state<boolean>(false);
+  artifactNetworkEnabled = $state<boolean>(false);
   loaded = $state(false);
 
   async init() {
@@ -27,6 +28,7 @@ class SettingsStore {
       this.ctxOverflowBehavior = data.ctxOverflowBehavior ?? "truncate_middle";
       this.reasoningInjectionMode = data.reasoningInjectionMode ?? "all";
       this.networkToolsEnabled = !!data.networkToolsEnabled;
+      this.artifactNetworkEnabled = !!data.artifactNetworkEnabled;
       themeStore.set(this.theme);
       this.loaded = true;
     } catch (err) {
@@ -46,6 +48,7 @@ class SettingsStore {
       ctxOverflowBehavior: CtxOverflowBehavior;
       reasoningInjectionMode: ReasoningInjectionMode;
       networkToolsEnabled: boolean;
+      artifactNetworkEnabled: boolean;
       password?: string;
     }>,
   ) {
@@ -62,6 +65,7 @@ class SettingsStore {
     if (patch.ctxOverflowBehavior !== undefined) this.ctxOverflowBehavior = patch.ctxOverflowBehavior;
     if (patch.reasoningInjectionMode !== undefined) this.reasoningInjectionMode = patch.reasoningInjectionMode;
     if (patch.networkToolsEnabled !== undefined) this.networkToolsEnabled = patch.networkToolsEnabled;
+    if (patch.artifactNetworkEnabled !== undefined) this.artifactNetworkEnabled = patch.artifactNetworkEnabled;
 
     try {
       await updateGlobalSettings({
@@ -75,6 +79,7 @@ class SettingsStore {
         ctxOverflowBehavior: patch.ctxOverflowBehavior,
         reasoningInjectionMode: patch.reasoningInjectionMode,
         networkToolsEnabled: patch.networkToolsEnabled,
+        artifactNetworkEnabled: patch.artifactNetworkEnabled,
         password: patch.password,
       });
     } catch (err) {

@@ -355,6 +355,7 @@ export interface GlobalSettingsRow {
   ctx_overflow_behavior: string;
   reasoning_injection_mode: string;
   network_tools_enabled?: number;
+  artifact_network_enabled?: number;
 }
 
 export interface GlobalSettingsOut {
@@ -369,6 +370,7 @@ export interface GlobalSettingsOut {
   ctxOverflowBehavior: CtxOverflowBehavior;
   reasoningInjectionMode: ReasoningInjectionMode;
   networkToolsEnabled: boolean;
+  artifactNetworkEnabled: boolean;
 }
 
 export interface GlobalSettingsWriteBody {
@@ -382,5 +384,6 @@ export interface GlobalSettingsWriteBody {
   ctxOverflowBehavior?: CtxOverflowBehavior;
   reasoningInjectionMode?: ReasoningInjectionMode;
   networkToolsEnabled?: boolean;
+  artifactNetworkEnabled?: boolean;
   password?: string;
 }

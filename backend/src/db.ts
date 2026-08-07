@@ -134,6 +134,7 @@ db.exec(`
     user_avatar   TEXT,
     theme         TEXT NOT NULL DEFAULT 'autumn',
     network_tools_enabled INTEGER NOT NULL DEFAULT 0,
+    artifact_network_enabled INTEGER NOT NULL DEFAULT 0,
     password_hash TEXT
   );
 
@@ -240,6 +241,11 @@ if (!globalSettingsCols.includes("password_hash")) {
 if (!globalSettingsCols.includes("network_tools_enabled")) {
   try {
     db.exec(`ALTER TABLE global_settings ADD COLUMN network_tools_enabled INTEGER NOT NULL DEFAULT 0`);
+  } catch (e) { }
+}
+if (!globalSettingsCols.includes("artifact_network_enabled")) {
+  try {
+    db.exec(`ALTER TABLE global_settings ADD COLUMN artifact_network_enabled INTEGER NOT NULL DEFAULT 0`);
   } catch (e) { }
 }
 

@@ -17,6 +17,7 @@ function rowToSettings(row: GlobalSettingsRow): GlobalSettingsOut {
     ctxOverflowBehavior: (row.ctx_overflow_behavior as any) || "truncate_middle",
     reasoningInjectionMode: (row.reasoning_injection_mode as any) || "all",
     networkToolsEnabled: !!row.network_tools_enabled,
+    artifactNetworkEnabled: !!row.artifact_network_enabled,
   };
 }
 
@@ -66,6 +67,7 @@ export async function settingsRoutes(app: FastifyInstance) {
     const ctxOverflowBehavior = body.ctxOverflowBehavior !== undefined ? body.ctxOverflowBehavior : (current.ctx_overflow_behavior || "truncate_middle");
     const reasoningInjectionMode = body.reasoningInjectionMode !== undefined ? body.reasoningInjectionMode : (current.reasoning_injection_mode || "all");
     const networkToolsEnabled = body.networkToolsEnabled !== undefined ? (body.networkToolsEnabled ? 1 : 0) : (current.network_tools_enabled ?? 0);
+    const artifactNetworkEnabled = body.artifactNetworkEnabled !== undefined ? (body.artifactNetworkEnabled ? 1 : 0) : (current.artifact_network_enabled ?? 0);
 
     if (body.password !== undefined) {
       if (body.password.trim() === "") {
@@ -96,9 +98,9 @@ export async function settingsRoutes(app: FastifyInstance) {
 
     db.prepare(`
       UPDATE global_settings
-      SET user_name = ?, user_avatar = ?, theme = ?, auto_name_mode = ?, auto_name_model = ?, tool_routing_mode = ?, tool_routing_model = ?, ctx_overflow_behavior = ?, reasoning_injection_mode = ?, network_tools_enabled = ?
+      SET user_name = ?, user_avatar = ?, theme = ?, auto_name_mode = ?, auto_name_model = ?, tool_routing_mode = ?, tool_routing_model = ?, ctx_overflow_behavior = ?, reasoning_injection_mode = ?, network_tools_enabled = ?, artifact_network_enabled = ?
       WHERE id = 'default'
-    `).run(userName, userAvatar, theme, autoNameMode, autoNameModel, toolRoutingMode, toolRoutingModel, ctxOverflowBehavior, reasoningInjectionMode, networkToolsEnabled);
+    `).run(userName, userAvatar, theme, autoNameMode, autoNameModel, toolRoutingMode, toolRoutingModel, ctxOverflowBehavior, reasoningInjectionMode, networkToolsEnabled, artifactNetworkEnabled);
 
     const updated = db
       .prepare<[string], GlobalSettingsRow>("SELECT * FROM global_settings WHERE id = ?")

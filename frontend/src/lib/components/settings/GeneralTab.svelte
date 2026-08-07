@@ -245,16 +245,24 @@
     </div>
   </div>
 
-  <!-- Built-in Network Tools Section -->
+  <!-- Network Connectivity Section -->
   <div
-    class="rounded-lg border border-line bg-bg-elevated p-4 flex flex-col gap-4"
+    class="rounded-lg border border-line bg-bg-elevated p-4 flex flex-col gap-5"
   >
+    <div class="border-b border-line pb-3">
+      <h3 class="text-sm font-semibold text-fg">Network Connectivity</h3>
+      <p class="text-xs text-fg-subtle mt-0.5">
+        Configure default network access permissions for built-in tools and rendered artifacts.
+      </p>
+    </div>
+
+    <!-- Built-in Network Tools -->
     <div class="flex items-center justify-between gap-4">
       <div>
-        <h3 class="text-sm font-semibold text-fg">
+        <h4 class="text-xs font-semibold text-fg">
           Network-Dependent Built-in Tools
-        </h3>
-        <p class="text-xs text-fg-subtle mt-0.5">
+        </h4>
+        <p class="text-[11px] text-fg-subtle mt-0.5">
           Allow built-in tools that require network access to be available to
           models. Disabled by default.
         </p>
@@ -265,6 +273,27 @@
         onchange={(checked) =>
           settingsStore.update({ networkToolsEnabled: checked })}
         label="Toggle network-dependent built-in tools"
+      />
+    </div>
+
+    <div class="h-px bg-line/60"></div>
+
+    <!-- Default Artifact Network Access -->
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <h4 class="text-xs font-semibold text-fg">
+          Default Artifact Network Access
+        </h4>
+        <p class="text-[11px] text-fg-subtle mt-0.5">
+          Enable network access for rendered artifacts by default in the side panel. Disabled by default.
+        </p>
+      </div>
+      <ToggleSwitch
+        id="artifact-network-enable-toggle"
+        checked={settingsStore.artifactNetworkEnabled}
+        onchange={(checked) =>
+          settingsStore.update({ artifactNetworkEnabled: checked })}
+        label="Toggle default artifact network access"
       />
     </div>
   </div>

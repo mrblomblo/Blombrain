@@ -1,3 +1,5 @@
+import { settingsStore } from "./settings.svelte";
+
 export interface ArtifactData {
   id: string;
   code: string;
@@ -19,6 +21,9 @@ class ArtifactStore {
   openArtifact(data: ArtifactData, isGenerating: boolean = false) {
     if (data.id) {
       this.userClosedIds.delete(data.id);
+    }
+    if (this.activeId !== data.id) {
+      this.networkAccess = settingsStore.artifactNetworkEnabled;
     }
     this.activeId = data.id;
     this.code = data.code;
