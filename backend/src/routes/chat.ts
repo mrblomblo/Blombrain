@@ -27,13 +27,20 @@ function sendJsonError(reply: FastifyReply, status: number, message: string) {
   reply.code(status).send({ error: { message } });
 }
 
-function closeUnclosedTags(content: string, tags: string[] = ["think", "thought"]): string {
+const THINK_TAGS = ["think", "thought", "reason", "reasoning"];
+
+function closeUnclosedTags(content: string, tags: string[] = THINK_TAGS): string {
   let newContent = content;
+  let totalOpen = 0;
+  let totalClose = 0;
   for (const tag of tags) {
-    const startCount = (newContent.match(new RegExp(`<${tag}>`, "g")) || []).length;
-    const endCount = (newContent.match(new RegExp(`</${tag}>`, "g")) || []).length;
-    if (startCount > endCount) {
-      newContent += `\n</${tag}>\n`;
+    totalOpen += (newContent.match(new RegExp(`<${tag}>`, "gi")) || []).length;
+    totalClose += (newContent.match(new RegExp(`</${tag}>`, "gi")) || []).length;
+  }
+  if (totalOpen > totalClose) {
+    const diff = totalOpen - totalClose;
+    for (let i = 0; i < diff; i++) {
+      newContent += "\n</think>\n";
     }
   }
   return newContent;

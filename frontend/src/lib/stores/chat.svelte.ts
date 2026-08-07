@@ -17,18 +17,24 @@ import type { ChatMessage, ConversationSummary, AttachmentOut, ResponseStats } f
 import { artifactStore } from "./artifact.svelte";
 import { settingsStore } from "./settings.svelte";
 import { getRandomUUID } from "../utils/uuid";
+import { parseMessageSegments, THINK_TAG_NAMES } from "../utils/segmentParser";
+
+const OPEN_TAGS = THINK_TAG_NAMES.map((t) => `<${t}>`);
+const CLOSE_TAGS = THINK_TAG_NAMES.map((t) => `</${t}>`);
 
 function makeId(): string {
   return getRandomUUID();
 }
 
 /**
- * Parse <think>...</think> from stored assistant content.
+ * Parse thinking blocks from stored assistant content.
+ * Supports all tag variants in THINK_TAG_NAMES (think, thought, reason, reasoning).
  * Returns { content, thinkingContent, thinkingDone } so loaded messages
  * display the ThinkingBlock the same as streamed ones.
  */
 function parseThinking(raw: string): { content: string; thinkingContent?: string; thinkingDone?: boolean } {
-  if (!raw.includes("<think>")) return { content: raw };
+  const hasOpenTag = OPEN_TAGS.some((open) => raw.includes(open));
+  if (!hasOpenTag) return { content: raw };
 
   const thinkBlocks: string[] = [];
   const contentParts: string[] = [];
@@ -36,28 +42,50 @@ function parseThinking(raw: string): { content: string; thinkingContent?: string
   let currentThinkStart = -1;
   let pos = 0;
 
+  const findNextOpen = (startPos: number) => {
+    let earliest: { pos: number; len: number } | null = null;
+    for (const open of OPEN_TAGS) {
+      const p = raw.indexOf(open, startPos);
+      if (p !== -1 && (!earliest || p < earliest.pos)) {
+        earliest = { pos: p, len: open.length };
+      }
+    }
+    return earliest;
+  };
+
+  const findNextClose = (startPos: number) => {
+    let earliest: { pos: number; len: number } | null = null;
+    for (const close of CLOSE_TAGS) {
+      const p = raw.indexOf(close, startPos);
+      if (p !== -1 && (!earliest || p < earliest.pos)) {
+        earliest = { pos: p, len: close.length };
+      }
+    }
+    return earliest;
+  };
+
   while (pos < raw.length) {
     if (!currentlyThinking) {
-      const startTag = raw.indexOf("<think>", pos);
-      if (startTag === -1) {
+      const openInfo = findNextOpen(pos);
+      if (!openInfo) {
         contentParts.push(raw.slice(pos));
         break;
       } else {
-        contentParts.push(raw.slice(pos, startTag));
+        contentParts.push(raw.slice(pos, openInfo.pos));
         currentlyThinking = true;
-        currentThinkStart = startTag + 7;
+        currentThinkStart = openInfo.pos + openInfo.len;
         pos = currentThinkStart;
       }
     } else {
-      const endTag = raw.indexOf("</think>", pos);
-      if (endTag === -1) {
+      const closeInfo = findNextClose(pos);
+      if (!closeInfo) {
         thinkBlocks.push(raw.slice(currentThinkStart));
         pos = raw.length;
         break;
       } else {
-        thinkBlocks.push(raw.slice(currentThinkStart, endTag));
+        thinkBlocks.push(raw.slice(currentThinkStart, closeInfo.pos));
         currentlyThinking = false;
-        pos = endTag + 8;
+        pos = closeInfo.pos + closeInfo.len;
       }
     }
   }
@@ -668,8 +696,12 @@ class ChatStore {
           msg.toolExecutions.push(evt);
         }
 
-        const thinkStartCount = (rawBuffer.match(/<think>/g) || []).length;
-        const thinkEndCount = (rawBuffer.match(/<\/think>/g) || []).length;
+        let thinkStartCount = 0;
+        let thinkEndCount = 0;
+        for (const tag of THINK_TAG_NAMES) {
+          thinkStartCount += (rawBuffer.match(new RegExp(`<${tag}>`, "gi")) || []).length;
+          thinkEndCount += (rawBuffer.match(new RegExp(`</${tag}>`, "gi")) || []).length;
+        }
         if (thinkStartCount > thinkEndCount) {
           rawBuffer += "\n</think>\n";
         }
