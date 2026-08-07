@@ -99,10 +99,15 @@
   <div
     class="rounded-lg border border-line bg-bg-elevated p-4 flex flex-col gap-4"
   >
-    <h3 class="text-sm font-semibold text-fg">User Profile</h3>
+    <div class="border-b border-line pb-3">
+      <h3 class="text-sm font-semibold text-fg">User Profile</h3>
+      <p class="text-xs text-fg-subtle mt-0.5">
+        Manage your profile and preferences.
+      </p>
+    </div>
 
     <!-- Avatar Upload -->
-    <div class="flex flex-col gap-1.5">
+    <div class="flex flex-col gap-2">
       <span class="text-xs font-medium text-fg-muted">Profile Avatar</span>
       <div class="flex items-center gap-3">
         {#if settingsStore.userAvatar}
@@ -163,8 +168,9 @@
       />
     </div>
 
+    <div class="h-px bg-line/60"></div>
     <!-- Instance Password Section -->
-    <div class="pt-3 border-t border-line flex flex-col gap-3">
+    <div class="flex flex-col gap-3">
       <div class="flex flex-col gap-0.5">
         <span class="text-xs font-semibold text-fg">Instance Password</span>
         <span class="text-[11px] text-fg-muted"
