@@ -3,6 +3,7 @@
   import { fly } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
   import morphdom from "morphdom";
+  import { chatStore } from "../stores/chat.svelte";
   import { artifactStore } from "../stores/artifact.svelte";
   import { decodeBase64 } from "../markdown";
 
@@ -163,8 +164,6 @@
 
   const instanceId = Math.random().toString(36).substring(2, 9);
 
-  let autoOpenedIds = new Set<string>();
-
   $effect(() => {
     const _html = html;
     const activeId = artifactStore.activeId;
@@ -180,22 +179,7 @@
         card.setAttribute("data-artifact-id", id);
       }
 
-      const b64Code = card.getAttribute("data-artifact-code") || "";
-      const code = b64Code ? decodeBase64(b64Code) : "";
-      const lang = card.getAttribute("data-artifact-lang") || "html";
-      const title = card.getAttribute("data-artifact-title") || "Artifact";
-
-      if (streaming && !autoOpenedIds.has(id) && !artifactStore.userClosedIds.has(id)) {
-        autoOpenedIds.add(id);
-        if (!isOpen) {
-          artifactStore.openArtifact({ id, code, language: lang, title }, streaming);
-        }
-      }
-
       const isActive = isOpen && activeId === id;
-      if (isActive) {
-        artifactStore.updateCode(id, code, lang, streaming);
-      }
 
       // Update button text and labels reactively
       const btnTexts = card.querySelectorAll<HTMLElement>(".btn-text");
@@ -234,13 +218,18 @@
       if (artifactStore.isOpen && artifactStore.activeId === id) {
         artifactStore.close();
       } else {
-        const b64Code = artifactCard.getAttribute("data-artifact-code") || "";
-        const code = b64Code ? decodeBase64(b64Code) : "";
         const lang = artifactCard.getAttribute("data-artifact-lang") || "html";
         const title =
           artifactCard.getAttribute("data-artifact-title") || "Artifact";
+        const filename =
+          artifactCard.getAttribute("data-artifact-filename") || "";
 
-        artifactStore.openArtifact({ id, code, language: lang, title });
+        // Open the panel with empty code, then immediately fetch the latest from the server
+        artifactStore.openArtifact(
+          { id, filename, code: "", language: lang, title },
+          false,
+        );
+        artifactStore.refreshArtifactContent(id);
       }
       return;
     }

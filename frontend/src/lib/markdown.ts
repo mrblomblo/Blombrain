@@ -89,6 +89,46 @@ function formatCodeLines(highlightedHtml: string): string {
     .join("\n");
 }
 
+function generateArtifactCardHtml(id: string, filename: string, title: string, lang: string): string {
+  let cardTitle = title || filename;
+  let iconSvg = `<svg class="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`;
+
+  if (lang === "svg") {
+    iconSvg = `<svg class="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="12 8 8 16 16 16"/></svg>`;
+  } else if (lang === "markdown" || lang === "md") {
+    iconSvg = `<svg class="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+  }
+
+  return `<div class="artifact-card relative my-4 rounded-xl border border-line bg-bg-elevated p-3 sm:p-3.5 shadow-sm transition-all hover:border-accent group cursor-pointer flex flex-col gap-2.5" data-artifact-id="${id}" data-artifact-filename="${filename}" data-artifact-lang="${lang}" data-artifact-title="${cardTitle}">
+  <div class="flex items-center justify-between w-full gap-3">
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/10 border border-accent/20">${iconSvg}</div>
+      <div class="min-w-0">
+        <div class="text-sm font-semibold text-fg truncate">${cardTitle}</div>
+        <div class="hidden sm:flex text-xs text-fg-muted items-center gap-1.5 mt-0.5">
+          <span class="font-mono text-[11px] uppercase px-1.5 py-0.2 rounded bg-bg-inset border border-line">${lang}</span>
+          <span class="artifact-click-label">Click to view artifact in side panel</span>
+        </div>
+        <div class="flex sm:hidden text-xs text-fg-muted items-center gap-1.5 mt-0.5">
+          <span class="font-mono text-[11px] uppercase px-1.5 py-0.2 rounded bg-bg-inset border border-line">${lang}</span>
+        </div>
+      </div>
+    </div>
+    <button type="button" class="open-artifact-btn hidden sm:flex shrink-0 items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent transition-all hover:bg-accent hover:text-white shadow-xs">
+      <span class="btn-text">View Artifact</span>
+      <svg class="btn-icon w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
+    </button>
+  </div>
+  <div class="flex sm:hidden items-center justify-between w-full border-t border-line/50 pt-2.5 mt-0.5">
+    <span class="text-xs text-fg-muted artifact-mobile-click-label">Click to view artifact</span>
+    <button type="button" class="open-artifact-btn shrink-0 flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent transition-all hover:bg-accent hover:text-white shadow-xs">
+      <span class="btn-text">View Artifact</span>
+      <svg class="btn-icon w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
+    </button>
+  </div>
+</div>`;
+}
+
 const marked = new Marked();
 
 const ALERT_CONFIGS: Record<
@@ -179,57 +219,6 @@ marked.use({
       const validLang = hljs.getLanguage(rawLang) ? rawLang : "";
       const displayLang = validLang || rawLang || "code";
 
-      const lineCount = text.split("\n").length;
-      const charCount = text.length;
-      const isSvg = rawLang === "svg";
-      const isArtifactCandidate = rawLang === "html" || rawLang === "markdown" || rawLang === "md";
-      const isArtifact =
-        !isArtifactPreview &&
-        (isSvg || (isArtifactCandidate && (lineCount >= 20 || charCount >= 700)));
-
-      if (isArtifact) {
-        let cardTitle = "HTML Web Content";
-        let iconSvg = `<svg class="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`;
-        if (rawLang === "svg") {
-          cardTitle = "SVG Graphic";
-          iconSvg = `<svg class="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="12 8 8 16 16 16"/></svg>`;
-        } else if (rawLang === "markdown" || rawLang === "md") {
-          cardTitle = "Markdown Document";
-          iconSvg = `<svg class="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>`;
-        }
-
-        return `<div class="artifact-card relative my-4 rounded-xl border border-line bg-bg-elevated p-3 sm:p-3.5 shadow-sm transition-all hover:border-accent group cursor-pointer flex flex-col gap-2.5" data-artifact-lang="${rawLang}" data-artifact-title="Artifact" data-artifact-code="${encodeBase64(text)}">
-  <div class="flex items-center justify-between w-full gap-3">
-    <div class="flex items-center gap-3 min-w-0">
-      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/10 border border-accent/20">
-        ${iconSvg}
-      </div>
-      <div class="min-w-0">
-        <div class="text-sm font-semibold text-fg truncate">${cardTitle}</div>
-        <div class="hidden sm:flex text-xs text-fg-muted items-center gap-1.5 mt-0.5">
-          <span class="font-mono text-[11px] uppercase px-1.5 py-0.2 rounded bg-bg-inset border border-line">${rawLang}</span>
-          <span class="artifact-click-label">Click to view artifact in side panel</span>
-        </div>
-        <div class="flex sm:hidden text-xs text-fg-muted items-center gap-1.5 mt-0.5">
-          <span class="font-mono text-[11px] uppercase px-1.5 py-0.2 rounded bg-bg-inset border border-line">${rawLang}</span>
-        </div>
-      </div>
-    </div>
-    <button type="button" class="open-artifact-btn hidden sm:flex shrink-0 items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent transition-all hover:bg-accent hover:text-white shadow-xs">
-      <span class="btn-text">View Artifact</span>
-      <svg class="btn-icon w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
-    </button>
-  </div>
-  <div class="flex sm:hidden items-center justify-between w-full border-t border-line/50 pt-2.5 mt-0.5">
-    <span class="text-xs text-fg-muted artifact-mobile-click-label">Click to view artifact</span>
-    <button type="button" class="open-artifact-btn shrink-0 flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent transition-all hover:bg-accent hover:text-white shadow-xs">
-      <span class="btn-text">View Artifact</span>
-      <svg class="btn-icon w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
-    </button>
-  </div>
-</div>`;
-      }
-
       let highlightedCode = escapeHtml(text);
       if (validLang) {
         try {
@@ -307,119 +296,6 @@ marked.use({
   },
 });
 
-function findMatchingCloseIndex(lines: string[], startIndex: number, fenceChar: string, fenceLength: number): number {
-  for (let i = startIndex; i < lines.length; i++) {
-    const line = lines[i];
-    const fenceMatch = line.match(/^( {0,3})(`{3,}|~{3,})(.*)$/);
-    if (fenceMatch) {
-      const currChar = fenceMatch[2][0];
-      const currLength = fenceMatch[2].length;
-      const rest = fenceMatch[3].trim();
-      const currLang = rest.split(/\s+/)[0].toLowerCase();
-
-      if (currLang) {
-        return -1; // Another opening fence
-      }
-
-      if (currChar === fenceChar && currLength >= fenceLength) {
-        return i; // Found matching close
-      }
-    }
-  }
-  return -1;
-}
-
-function hasFenceAfter(lines: string[], startIndex: number): boolean {
-  for (let i = startIndex; i < lines.length; i++) {
-    if (lines[i].match(/^( {0,3})(`{3,}|~{3,})(.*)$/)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function fixNestedMarkdownCodeBlocks(src: string): string {
-  const normalizedSrc = src.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const lines = normalizedSrc.split("\n");
-  const result: string[] = [];
-
-  let inArtifact = false;
-  let artifactIndent = "";
-  let artifactFenceChar = "";
-  let artifactFenceLength = 0;
-  let innerStack: Array<{ char: string; length: number }> = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const fenceMatch = line.match(/^( {0,3})(`{3,}|~{3,})(.*)$/);
-
-    if (fenceMatch) {
-      const indent = fenceMatch[1];
-      const fenceStr = fenceMatch[2];
-      const fenceChar = fenceStr[0];
-      const fenceLength = fenceStr.length;
-      const rest = fenceMatch[3].trim();
-      const rawLang = rest.split(/\s+/)[0].toLowerCase();
-
-      if (!inArtifact) {
-        if (rawLang === "markdown" || rawLang === "md") {
-          inArtifact = true;
-          artifactIndent = indent;
-          artifactFenceChar = fenceChar;
-          artifactFenceLength = fenceLength;
-          innerStack = [];
-          result.push(`${indent}${"`".repeat(20)}${rawLang}`);
-          continue;
-        }
-      } else {
-        if (innerStack.length > 0) {
-          const top = innerStack[innerStack.length - 1];
-          if (fenceChar === top.char && fenceLength >= top.length && !rawLang) {
-            innerStack.pop();
-            result.push(line);
-            continue;
-          } else {
-            // Literal text inside inner code block
-            result.push(line);
-            continue;
-          }
-        } else {
-          // innerStack is empty
-          if (rawLang) {
-            // Potential opening fence for inner block
-            const closeIndex = findMatchingCloseIndex(lines, i + 1, fenceChar, fenceLength);
-            // Only treat as inner block if it has a matching close AND there's another fence after it
-            if (closeIndex !== -1 && hasFenceAfter(lines, closeIndex + 1)) {
-              innerStack.push({ char: fenceChar, length: fenceLength });
-              result.push(line);
-              continue;
-            } else {
-              // No matching close, or no fence after. Treat as artifact close.
-              inArtifact = false;
-              result.push(`${artifactIndent}${"`".repeat(20)}`);
-              continue;
-            }
-          } else {
-            // Bare fence
-            // Close artifact
-            inArtifact = false;
-            result.push(`${artifactIndent}${"`".repeat(20)}`);
-            continue;
-          }
-        }
-      }
-    }
-
-    result.push(line);
-  }
-
-  if (inArtifact) {
-    result.push(`${artifactIndent}${"`".repeat(20)}`);
-  }
-
-  return result.join("\n");
-}
-
 export function renderMarkdown(
   content: string,
   options?: { isArtifactPreview?: boolean }
@@ -427,17 +303,41 @@ export function renderMarkdown(
   if (!content) return "";
   try {
     const isArtifactPreview = !!options?.isArtifactPreview;
-    const processedContent = isArtifactPreview
-      ? content
-      : fixNestedMarkdownCodeBlocks(content);
+
+    // Step 1: pull <artifact-card> tags out BEFORE Marked can escape them.
+    const extractedCards: Array<{ id: string; filename: string; title: string; lang: string }> = [];
+    let processedContent = content.replace(
+      /<artifact-card\s+id="([^"]*)"\s+filename="([^"]*)"\s+title="([^"]*)"\s+lang="([^"]*)"\s*>\s*<\/artifact-card>/gi,
+      (_m, id, filename, title, lang) => {
+        const idx = extractedCards.length;
+        extractedCards.push({ id, filename, title, lang });
+        return `\n\nARTIFACTCARDSLOT${idx}END\n\n`;
+      }
+    );
+
+    // Step 2: normal markdown pass.
     const rawHtml = (marked.parse(processedContent, { isArtifactPreview } as any) as unknown) as string;
 
-    if (typeof window === "undefined") {
-      return rawHtml;
+    // Step 3: swap tokens for the real card markup.
+    let finalHtml = rawHtml;
+    for (let i = 0; i < extractedCards.length; i++) {
+      const card = extractedCards[i];
+      const cardHtml = generateArtifactCardHtml(card.id, card.filename, card.title, card.lang);
+      const token = `ARTIFACTCARDSLOT${i}END`;
+      finalHtml = finalHtml.split(`<p>${token}</p>`).join(cardHtml);
+      finalHtml = finalHtml.split(token).join(cardHtml);
     }
 
-    return DOMPurify.sanitize(rawHtml, {
-      ADD_ATTR: ["target", "rel"],
+    if (typeof window === "undefined") {
+      return finalHtml;
+    }
+
+    return DOMPurify.sanitize(finalHtml, {
+      ADD_ATTR: [
+        "target", "rel", "data-code",
+        "data-artifact-id", "data-artifact-filename",
+        "data-artifact-lang", "data-artifact-title"
+      ],
     });
   } catch (err) {
     console.error("[markdown] parse error:", err);

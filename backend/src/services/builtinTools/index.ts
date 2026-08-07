@@ -16,6 +16,14 @@ import { percentageTool } from "./tools/percentageTool.js";
 import { colorTool } from "./tools/colorTool.js";
 import { getWeatherTool } from "./tools/getWeather.js";
 import { searchWikipediaTool } from "./tools/searchWikipedia.js";
+import {
+  createArtifactToolDef,
+  readFileToolDef,
+  writeFileToolDef,
+  editFileToolDef,
+  findInFileToolDef,
+  presentArtifactToolDef
+} from "./tools/artifactTools.js";
 
 export * from "./types.js";
 
@@ -40,6 +48,12 @@ class BuiltInToolRegistry {
     this.register(colorTool);
     this.register(getWeatherTool);
     this.register(searchWikipediaTool);
+    this.register(createArtifactToolDef);
+    this.register(readFileToolDef);
+    this.register(writeFileToolDef);
+    this.register(editFileToolDef);
+    this.register(findInFileToolDef);
+    this.register(presentArtifactToolDef);
   }
 
   public register(tool: BuiltInToolDefinition) {

@@ -1,7 +1,10 @@
 import { settingsStore } from "./settings.svelte";
+import { fetchArtifactContent } from "../api";
 
 export interface ArtifactData {
   id: string;
+  filename?: string;
+  conversationId?: string;
   code: string;
   language: string;
   title: string;
@@ -11,6 +14,9 @@ class ArtifactStore {
   isOpen = $state(false);
   isExpanded = $state(false);
   activeId = $state<string | null>(null);
+  artifactId = $state<string | null>(null);
+  filename = $state<string | null>(null);
+  conversationId = $state<string | null>(null);
   code = $state("");
   language = $state("html");
   title = $state("Artifact");
@@ -26,6 +32,9 @@ class ArtifactStore {
       this.networkAccess = settingsStore.artifactNetworkEnabled;
     }
     this.activeId = data.id;
+    this.artifactId = data.id;
+    this.filename = data.filename ?? null;
+    this.conversationId = data.conversationId ?? null;
     this.code = data.code;
     this.language = data.language;
     this.title = data.title;
@@ -34,6 +43,38 @@ class ArtifactStore {
       this.generatingArtifactId = data.id;
     } else if (!isGenerating && this.generatingArtifactId === data.id) {
       this.generatingArtifactId = null;
+    }
+  }
+
+  async loadArtifact(artifactId: string, conversationId: string, filename: string, title: string, language: string) {
+    this.userClosedIds.delete(artifactId);
+    if (this.activeId !== artifactId) {
+      this.networkAccess = settingsStore.artifactNetworkEnabled;
+    }
+    this.activeId = artifactId;
+    this.artifactId = artifactId;
+    this.conversationId = conversationId;
+    this.filename = filename;
+    this.title = title;
+    this.language = language;
+    this.isOpen = true;
+
+    try {
+      const content = await fetchArtifactContent(artifactId);
+      this.code = content;
+    } catch (err) {
+      console.error("Failed to load artifact content:", err);
+    }
+  }
+
+  async refreshArtifactContent(artifactId: string) {
+    if (this.artifactId === artifactId || this.activeId === artifactId) {
+      try {
+        const content = await fetchArtifactContent(artifactId);
+        this.code = content;
+      } catch (err) {
+        console.error("Failed to refresh artifact content:", err);
+      }
     }
   }
 

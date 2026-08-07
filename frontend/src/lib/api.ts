@@ -310,6 +310,8 @@ export interface StreamChatOptions {
   onToolProgress?: (evt: Partial<ToolExecutionEvent> & { callId: string }) => void;
   onContentReplace?: (content: string) => void;
   onContextTrimmed?: (evt: { droppedMessageCount: number; behavior: string }) => void;
+  onArtifactCreated?: (evt: { artifactId: string; conversationId: string; filename: string; title: string; language: string }) => void;
+  onArtifactUpdated?: (evt: { artifactId: string; conversationId: string; filename: string; title: string; language: string }) => void;
   onDone: () => void;
   onError: (message: string) => void;
 }
@@ -420,6 +422,14 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
             }
             if (parsed?.type === "context_trimmed") {
               opts.onContextTrimmed?.(parsed);
+              continue;
+            }
+            if (parsed?.type === "artifact_created") {
+              opts.onArtifactCreated?.(parsed);
+              continue;
+            }
+            if (parsed?.type === "artifact_updated") {
+              opts.onArtifactUpdated?.(parsed);
               continue;
             }
 
@@ -546,4 +556,21 @@ export async function updateGlobalSettings(
 export async function fetchInstanceInfo(): Promise<{ theme: string }> {
   const res = await globalThis.fetch("/api/instance-info");
   return jsonOrThrow<{ theme: string }>(res);
+}
+
+export async function fetchArtifacts(conversationId: string): Promise<any[]> {
+  const res = await apiFetch(`/api/artifacts?conversationId=${encodeURIComponent(conversationId)}`);
+  return jsonOrThrow<any[]>(res);
+}
+
+export async function fetchArtifactContent(artifactId: string): Promise<string> {
+  const res = await apiFetch(
+    `/api/artifacts/${encodeURIComponent(artifactId)}/content`,
+    { cache: 'no-store' }
+  );
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch artifact content: ${res.statusText}`);
+  }
+  return res.text();
 }

@@ -262,7 +262,7 @@
                 class="absolute bottom-full right-0 mb-1.5 z-20 flex flex-col gap-1 whitespace-nowrap rounded-lg border border-line bg-bg-elevated px-3 py-2 shadow-lg text-[11px] font-mono text-fg-muted"
               >
                 {#if s.promptTokens !== undefined}
-                  <span>Prompt: {s.promptTokens.toLocaleString()} tok</span>
+                  <span>Input: {s.promptTokens.toLocaleString()} tok</span>
                 {/if}
                 {#if s.completionTokens !== undefined}
                   <span>Output: {s.completionTokens.toLocaleString()} tok</span>

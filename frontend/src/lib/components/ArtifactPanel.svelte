@@ -11,7 +11,6 @@
     Maximize2,
     Minimize2,
     ChevronDown,
-    ChevronUp,
     Download,
     Globe,
   } from "@lucide/svelte";
@@ -24,16 +23,15 @@
   let showDownloadMenu = $state(false);
 
   let debouncedCode = $state(artifactStore.code);
-  let timeoutRunning = false;
 
   let isIframeArtifact = $derived(
-    artifactStore.language !== "markdown" && artifactStore.language !== "md"
+    artifactStore.language !== "markdown" && artifactStore.language !== "md",
   );
 
   let isCurrentArtifactGenerating = $derived(
     isIframeArtifact &&
-    artifactStore.generatingArtifactId !== null &&
-    artifactStore.generatingArtifactId === artifactStore.activeId
+      artifactStore.generatingArtifactId !== null &&
+      artifactStore.generatingArtifactId === artifactStore.activeId,
   );
 
   let showPreviewReadyBanner = $state(false);
@@ -61,14 +59,11 @@
 
   $effect(() => {
     const currentCode = artifactStore.code;
-    if (!timeoutRunning && debouncedCode !== currentCode) {
-      timeoutRunning = true;
+    const timer = setTimeout(() => {
       debouncedCode = currentCode;
-      setTimeout(() => {
-        debouncedCode = artifactStore.code;
-        timeoutRunning = false;
-      }, 300);
-    }
+    }, 300);
+
+    return () => clearTimeout(timer);
   });
 
   let srcDoc = $derived.by(() => {
@@ -204,12 +199,30 @@ document.addEventListener('submit', function(e) {
     if (ext === "markdown") ext = "md";
 
     if (
-      !["html", "svg", "md", "txt", "js", "json", "ts", "css"].includes(ext)
+      ![
+        "html",
+        "svg",
+        "md",
+        "txt",
+        "js",
+        "json",
+        "ts",
+        "css",
+        "py",
+        "jsx",
+        "tsx",
+      ].includes(ext)
     ) {
       ext = "txt";
     }
 
-    const filename = `${artifactStore.title.replace(/[^a-z0-9]/gi, "_").toLowerCase() || "artifact"}.${ext}`;
+    // Use the actual filename if available, otherwise fallback to title
+    const baseName = artifactStore.filename
+      ? artifactStore.filename.replace(/\.[^/.]+$/, "")
+      : artifactStore.title.replace(/[^a-z0-9]/gi, "_").toLowerCase() ||
+        "artifact";
+
+    const filename = `${baseName}.${ext}`;
     const blob = new Blob([artifactStore.code], {
       type: "text/plain;charset=utf-8",
     });
@@ -256,7 +269,9 @@ document.addEventListener('submit', function(e) {
         type="button"
         disabled={isCurrentArtifactGenerating}
         onclick={() => (viewMode = "preview")}
-        title={isCurrentArtifactGenerating ? "Preview is unavailable while artifact is generating" : "Switch to Preview"}
+        title={isCurrentArtifactGenerating
+          ? "Preview is unavailable while artifact is generating"
+          : "Switch to Preview"}
         class="flex items-center justify-center gap-1.5 h-full rounded-md px-1 sm:px-2.5 aspect-square sm:aspect-auto text-xs font-medium transition-all {isCurrentArtifactGenerating
           ? 'opacity-40 cursor-not-allowed text-fg-muted'
           : viewMode === 'preview'
@@ -402,7 +417,9 @@ document.addEventListener('submit', function(e) {
     >
       <div class="flex items-center gap-2 min-w-0">
         <Eye size={14} class="text-accent shrink-0" />
-        <span class="text-fg font-medium truncate">Preview is now available</span>
+        <span class="text-fg font-medium truncate"
+          >Preview is now available</span
+        >
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <button
@@ -429,7 +446,6 @@ document.addEventListener('submit', function(e) {
 
   <!-- Content Pane -->
   <div class="relative flex-1 w-full h-full overflow-hidden bg-bg">
-
     {#if viewMode === "preview"}
       {#if artifactStore.language === "markdown" || artifactStore.language === "md"}
         <div class="h-full w-full overflow-auto bg-bg text-fg">

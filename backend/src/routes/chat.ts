@@ -4,7 +4,7 @@ import path from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { backendRegistry } from "../registry.js";
 import { persistChatTurn } from "./conversations.js";
-import db from "../db.js";
+import db, { DATA_DIR } from "../db.js";
 import type { AttachmentRow, ModelSettingRow } from "../types.js";
 import { getAdapter } from "../adapters/index.js";
 import { mcpManager } from "../services/mcp.js";
@@ -427,6 +427,49 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+function buildArtifactCardTag(conversationId: string, filename: string): string | null {
+  const row = db.prepare(
+    "SELECT * FROM artifacts WHERE conversation_id = ? AND filename = ?"
+  ).get(conversationId, filename) as any;
+  if (!row) return null;
+
+  const safeTitle = String(row.title ?? filename).replace(/"/g, "'");
+  return `<artifact-card id="${row.id}" filename="${row.filename}" title="${safeTitle}" lang="${row.language}"></artifact-card>`;
+}
+
+function materializeArtifactCards(
+  content: string,
+  conversationId: string,
+  createdFilenames: Set<string>
+): string {
+  let result = content;
+  const placed = new Set<string>();
+
+  // Replace every [artifact: x] / [present: x] placeholder whose artifact exists.
+  result = result.replace(/\[(?:artifact|present):\s*([^\]\n]+)\]/gi, (match, rawName) => {
+    const filename = String(rawName).trim();
+    const card = buildArtifactCardTag(conversationId, filename);
+    if (card) {
+      placed.add(filename);
+      return `\n${card}\n`;
+    }
+    return match; // artifact not found -> leave placeholder as-is
+  });
+
+  // Append cards for artifacts created/presented this turn that never got a placeholder.
+  for (const filename of createdFilenames) {
+    if (placed.has(filename)) continue;
+    if (result.includes(`filename="${filename}"`)) continue; // already embedded elsewhere
+    const card = buildArtifactCardTag(conversationId, filename);
+    if (card) {
+      result += `\n${card}\n`;
+      placed.add(filename);
+    }
+  }
+
+  return result;
+}
+
 export async function chatRoutes(app: FastifyInstance) {
   app.post("/api/chat/stop", async (req: FastifyRequest, reply: FastifyReply) => {
     const { conversationId } = req.body as { conversationId: string };
@@ -584,6 +627,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     let assistantContent = "";
+    const artifactFilenamesThisTurn = new Set<string>();
     let routerRawText = "";
     const userQuery = originalUserContent;
     let currentToolExecution: { callId: string; toolName: string; args: any } | null = null;
@@ -815,6 +859,28 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
+    const { builtInToolRegistry } = await import("../services/builtinTools/index.js");
+
+    if (toolsEnabled) {
+      const artifactGuidance =
+        `ARTIFACT TOOLS:\n` +
+        `When generating HTML web pages, SVG graphics, scripts, or markdown documents, call the \`create_artifact\` tool function.\n` +
+        `Do NOT print raw standalone HTML or SVG code inside standard markdown code blocks.\n` +
+        `CRITICAL: In your visible text response, you MUST output the placeholder \`[artifact: filename]\` exactly where you want the artifact card to appear.\n` +
+        `Example: "Here is the interactive chart you requested:\\n[artifact: chart.svg]\\nYou can click it to view the full preview."\n` +
+        `To re-display an existing artifact, use the placeholder \`[present: filename]\` and call the \`present_artifact\` tool.\n` +
+        `To edit artifacts, use \`edit_file\` or \`write_file\`. To inspect files, use \`read_file\` or \`find_in_file\`.`;
+
+      if (outgoingMessages.length > 0 && outgoingMessages[0].role === "system") {
+        outgoingMessages[0] = {
+          ...outgoingMessages[0],
+          content: outgoingMessages[0].content + "\n\n" + artifactGuidance,
+        };
+      } else {
+        outgoingMessages.unshift({ role: "system", content: artifactGuidance });
+      }
+    }
+
     const { model: _incomingModel, conversationId: _incomingConvId, userMessageId: _umId, userParentId: _upId, assistantMessageId: _amId, attachments: _attachments, messages: _msgs, ...rest } = body;
 
     const finalTemperature = settingRow?.temperature ?? body.temperature;
@@ -892,22 +958,63 @@ export async function chatRoutes(app: FastifyInstance) {
       toolDefinitions.push(...mcpToolsToOpenAIFormat(mcpTools));
     }
 
-    const { builtInToolRegistry } = await import("../services/builtinTools/index.js");
+    const { builtInToolRegistry: _registry } = await import("../services/builtinTools/index.js");
+
     const builtInCtx = {
       conversationId,
-      activeSkillIds: activeSkills.map(s => s.id),
+      activeSkillIds: activeSkills.map((s) => s.id),
       activeSkills,
+      uploadsDir: path.join(DATA_DIR, "uploads"),
+      emitEvent: (type: string, payload: Record<string, any>) => {
+        if (type === "inject_artifact_card" && payload?.filename) {
+          const filename = String(payload.filename);
+          artifactFilenamesThisTurn.add(filename);
+
+          const escaped = filename.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+          const placeholderRegex = new RegExp(`\\[(?:artifact|present):\\s*${escaped}\\]`, "i");
+          if (placeholderRegex.test(assistantContent)) {
+            const card = buildArtifactCardTag(conversationId, filename);
+            if (card) {
+              assistantContent = assistantContent.replace(placeholderRegex, `\n${card}\n`);
+              currentActiveStream.assistantContent = assistantContent;
+              broadcastChunk(JSON.stringify({ type: "content_replace", content: assistantContent }));
+            }
+          }
+
+          return;
+        }
+        broadcastChunk(JSON.stringify({ type, ...payload }));
+      },
     };
-    // Include active built-in tools (filtered by router if router was active)
-    const availableBuiltInTools = toolsEnabled ? builtInTools : [];
+
+    const availableBuiltInTools = toolsEnabled ? [...builtInTools] : [];
+
+    if (toolsEnabled) {
+      // Force-include any artifact tools the router might have dropped
+      const artifactTools = builtInToolRegistry.getAllTools().filter((t) => t.category === "artifact");
+      for (const tool of artifactTools) {
+        if (!availableBuiltInTools.some((t) => t.name.trim() === tool.name.trim())) {
+          availableBuiltInTools.push(tool);
+        }
+      }
+    }
+
+    // Build OpenAI-format tool definitions, trimming names/descriptions
+    // as a safety net against trailing-space bugs in tool definitions.
+    if (mcpTools.length > 0) {
+      toolDefinitions.push(...mcpToolsToOpenAIFormat(mcpTools));
+    }
 
     for (const bTool of availableBuiltInTools) {
-      const params = typeof bTool.parameters === "function" ? bTool.parameters(builtInCtx) : bTool.parameters;
+      const params =
+        typeof bTool.parameters === "function"
+          ? bTool.parameters(builtInCtx)
+          : bTool.parameters;
       toolDefinitions.push({
         type: "function",
         function: {
-          name: bTool.name,
-          description: bTool.description,
+          name: bTool.name.trim(),
+          description: bTool.description.trim(),
           parameters: params,
         },
       });
@@ -1105,7 +1212,6 @@ export async function chatRoutes(app: FastifyInstance) {
           const callId = tc.id ?? `call_${userMessageId}_${toolRound}_${idx}`;
           currentToolExecution = { callId, toolName: tc.name, args: tc.arguments };
 
-          const { builtInToolRegistry } = await import("../services/builtinTools/index.js");
           const builtInTool = builtInToolRegistry.getTool(tc.name);
           const isBuiltInTool = !!builtInTool;
           const isToolRouted = mcpTools.some((t) => t.name === tc.name) || isBuiltInTool;
@@ -1139,9 +1245,7 @@ export async function chatRoutes(app: FastifyInstance) {
             try {
               result = await withTimeout(
                 builtInToolRegistry.executeTool(tc.name, tc.arguments, {
-                  conversationId,
-                  activeSkillIds: activeSkills.map(s => s.id),
-                  activeSkills,
+                  ...builtInCtx,
                   abortSignal: abortController.signal,
                 }),
                 TOOL_TIMEOUT_MS,
@@ -1244,6 +1348,13 @@ export async function chatRoutes(app: FastifyInstance) {
       if ((err as any)?.name !== "AbortError") {
         streamError = String(err);
       }
+    }
+
+    const materialized = materializeArtifactCards(assistantContent, conversationId, artifactFilenamesThisTurn);
+    if (materialized !== assistantContent) {
+      assistantContent = materialized;
+      currentActiveStream.assistantContent = assistantContent;
+      broadcastChunk(JSON.stringify({ type: "content_replace", content: assistantContent }));
     }
 
     currentActiveStream.isDone = true;

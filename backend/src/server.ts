@@ -15,6 +15,7 @@ import { uploadsRoutes } from "./routes/uploads.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { mcpRoutes } from "./routes/mcp.js";
 import { skillRoutes } from "./routes/skills.js";
+import { artifactsRoutes } from "./routes/artifacts.js";
 import { authRoutes } from "./routes/auth.js";
 import { initModelSync } from "./services/modelSync.js";
 
@@ -89,6 +90,7 @@ async function main() {
   await app.register(settingsRoutes);
   await app.register(mcpRoutes);
   await app.register(skillRoutes);
+  await app.register(artifactsRoutes);
 
   initModelSync();
 

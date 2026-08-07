@@ -334,6 +334,29 @@ export interface AttachmentOut {
   createdAt: number;
 }
 
+export interface ArtifactRow {
+  id: string;
+  conversation_id: string;
+  filename: string;
+  language: string;
+  title: string;
+  disk_path: string;
+  size_bytes: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ArtifactOut {
+  id: string;
+  conversationId: string;
+  filename: string;
+  language: string;
+  title: string;
+  sizeBytes: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // ---------------------------------------------------------------------------
 // Global Settings / User Profile
 // ---------------------------------------------------------------------------

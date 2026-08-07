@@ -757,6 +757,12 @@ class ChatStore {
         msg.thinkingDone = parsed.thinkingDone;
         msg.content = rawBuffer;
       },
+      onArtifactCreated: (evt) => {
+        artifactStore.loadArtifact(evt.artifactId, evt.conversationId, evt.filename, evt.title, evt.language);
+      },
+      onArtifactUpdated: (evt) => {
+        artifactStore.refreshArtifactContent(evt.artifactId);
+      },
       onMeta: (meta) => {
         if (meta.isReconnect) {
           rawBuffer = "";
@@ -887,6 +893,12 @@ class ChatStore {
       onMeta: (meta) => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);
         if (msg) msg.stats = meta.stats;
+      },
+      onArtifactCreated: (evt) => {
+        artifactStore.loadArtifact(evt.artifactId, evt.conversationId, evt.filename, evt.title, evt.language);
+      },
+      onArtifactUpdated: (evt) => {
+        artifactStore.refreshArtifactContent(evt.artifactId);
       },
       onDone: () => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);
