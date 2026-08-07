@@ -1,4 +1,5 @@
 import type { CtxOverflowBehavior, ReasoningInjectionMode } from "../types.js";
+import { builtInToolRegistry } from "./builtinTools/index.js";
 
 export interface TokenEstimateBreakdown {
   messagesTokens: number;
@@ -27,6 +28,8 @@ export interface ContextTrimResult {
   droppedMessageCount: number;
   droppedGroupCount: number;
   reason?: string;
+  toolDefinitions: any[];
+  prunedToolCount: number;
 }
 
 export interface ApplyContextOverflowPolicyOptions {
@@ -36,6 +39,7 @@ export interface ApplyContextOverflowPolicyOptions {
   completionReserve?: number | null;
   safetyReserve?: number | null;
   behavior?: CtxOverflowBehavior | null;
+  forcedToolNames?: string[];
 }
 
 /**
@@ -236,6 +240,54 @@ export function partitionMessageGroups(messages: any[]): MessageGroup[] {
   return groups;
 }
 
+export interface PruneToolDefinitionsResult {
+  toolDefinitions: any[];
+  toolSchemasTokens: number;
+  prunedCount: number;
+}
+
+export function pruneToolDefinitionsToFit(
+  toolDefinitions: any[],
+  availableTokens: number,
+  forcedToolNames: string[] = []
+): PruneToolDefinitionsResult {
+  if (!toolDefinitions || toolDefinitions.length === 0) {
+    return { toolDefinitions: [], toolSchemasTokens: 0, prunedCount: 0 };
+  }
+
+  const isForced = (t: any) => forcedToolNames.includes(t?.function?.name);
+  const isBuiltIn = (t: any) =>
+    t?._source === "builtin" ||
+    (t?.function?.name && !!builtInToolRegistry.getTool(t.function.name));
+
+  const builtins = toolDefinitions.filter((t) => isBuiltIn(t) && !isForced(t));
+  const mcpTools = toolDefinitions.filter((t) => !isBuiltIn(t) && !isForced(t));
+  const forcedTools = toolDefinitions.filter(isForced);
+
+  // Order in which candidates get dropped: built-ins first, then MCP tools,
+  // forced tools last (only if nothing else is left to cut).
+  const removalOrder = [...builtins, ...mcpTools, ...forcedTools];
+
+  const kept = new Set(toolDefinitions);
+  let prunedCount = 0;
+  let currentTokens = estimateToolDefinitionsTokens(Array.from(kept));
+
+  for (const tool of removalOrder) {
+    if (currentTokens <= availableTokens) break;
+    if (kept.has(tool)) {
+      kept.delete(tool);
+      prunedCount++;
+      currentTokens = estimateToolDefinitionsTokens(Array.from(kept));
+    }
+  }
+
+  return {
+    toolDefinitions: toolDefinitions.filter((t) => kept.has(t)),
+    toolSchemasTokens: currentTokens,
+    prunedCount,
+  };
+}
+
 /**
  * Main context overflow policy function.
  * Evaluates budget and applies truncate_middle, rolling, or stop behavior.
@@ -250,6 +302,7 @@ export function applyContextOverflowPolicy(
     completionReserve: rawCompletionReserve,
     safetyReserve: rawSafetyReserve,
     behavior = "truncate_middle",
+    forcedToolNames = [],
   } = opts;
 
   const effectiveBehavior: CtxOverflowBehavior = behavior || "truncate_middle";
@@ -272,6 +325,8 @@ export function applyContextOverflowPolicy(
       },
       droppedMessageCount: 0,
       droppedGroupCount: 0,
+      toolDefinitions,
+      prunedToolCount: 0,
     };
   }
 
@@ -303,10 +358,12 @@ export function applyContextOverflowPolicy(
       breakdown: initialBreakdown,
       droppedMessageCount: 0,
       droppedGroupCount: 0,
+      toolDefinitions,
+      prunedToolCount: 0,
     };
   }
 
-  // If behavior is stop, reject immediately
+  // If behavior is stop, reject immediately (no pruning, user asked to stop)
   if (effectiveBehavior === "stop") {
     return {
       messages,
@@ -316,6 +373,8 @@ export function applyContextOverflowPolicy(
       droppedMessageCount: 0,
       droppedGroupCount: 0,
       reason: `Context overflow: total estimated tokens (${totalTokens}) exceeds prompt budget (${promptBudget}).`,
+      toolDefinitions,
+      prunedToolCount: 0,
     };
   }
 
@@ -328,21 +387,32 @@ export function applyContextOverflowPolicy(
   // Cap first user anchor if it exceeds anchor budget
   const anchorGroupIndex = groups.findIndex((g) => g.kind === "first_user_anchor");
   if (anchorGroupIndex !== -1 && effectiveBehavior === "truncate_middle") {
-    const anchorCap = Math.min(
-      groups[anchorGroupIndex].estimatedTokens,
-      Math.floor(promptBudget * 0.20),
-      2048
-    );
-    // If the anchor group is larger than its cap, we allow it to be droppable during trimming
     groups[anchorGroupIndex].protected = false;
   }
 
-  // Calculate required protected tokens (system + latest turn)
-  const protectedTokens = groups
+  // Calculate required protected message tokens (system + latest turn),
+  // excluding tool schemas -- those get their own pruning pass below.
+  const protectedMessagesTokens = groups
     .filter((g) => g.protected)
-    .reduce((acc, g) => acc + g.estimatedTokens, 0) + toolSchemasTokens;
+    .reduce((acc, g) => acc + g.estimatedTokens, 0);
 
-  // If even protected content alone exceeds promptBudget, return impossible_fit
+  let effectiveToolDefinitions = toolDefinitions;
+  let effectiveToolSchemasTokens = toolSchemasTokens;
+  let prunedToolCount = 0;
+
+  if (protectedMessagesTokens + toolSchemasTokens > promptBudget) {
+    const availableForTools = Math.max(0, promptBudget - protectedMessagesTokens);
+    const pruneResult = pruneToolDefinitionsToFit(toolDefinitions, availableForTools, forcedToolNames);
+    effectiveToolDefinitions = pruneResult.toolDefinitions;
+    effectiveToolSchemasTokens = pruneResult.toolSchemasTokens;
+    prunedToolCount = pruneResult.prunedCount;
+  }
+
+  const protectedTokens = protectedMessagesTokens + effectiveToolSchemasTokens;
+
+  // Only fail with impossible_fit if system prompt + current query alone
+  // (after pruning every tool/skill schema we're allowed to drop) still
+  // exceed the prompt budget.
   if (protectedTokens > promptBudget) {
     return {
       messages,
@@ -352,11 +422,13 @@ export function applyContextOverflowPolicy(
       droppedMessageCount: 0,
       droppedGroupCount: 0,
       reason: `Required system prompt, tools, and current query (${protectedTokens} tokens) exceed prompt budget (${promptBudget}).`,
+      toolDefinitions: effectiveToolDefinitions,
+      prunedToolCount,
     };
   }
 
-  // Determine candidate groups to trim
-  let currentGroupTokens = totalTokens;
+  // Determine candidate message groups to trim
+  let currentGroupTokens = messagesTokens + effectiveToolSchemasTokens;
   let droppedGroupCount = 0;
   let droppedMessageCount = 0;
 
@@ -420,14 +492,16 @@ export function applyContextOverflowPolicy(
     action: "proceed",
     breakdown: {
       messagesTokens: finalMessagesTokens,
-      toolSchemasTokens,
+      toolSchemasTokens: effectiveToolSchemasTokens,
       systemTokens,
-      totalTokens: finalMessagesTokens + toolSchemasTokens,
+      totalTokens: finalMessagesTokens + effectiveToolSchemasTokens,
       promptBudget,
       contextLimit,
     },
     droppedMessageCount,
     droppedGroupCount,
+    toolDefinitions: effectiveToolDefinitions,
+    prunedToolCount,
   };
 }
 

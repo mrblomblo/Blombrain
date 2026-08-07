@@ -540,6 +540,7 @@ export async function chatRoutes(app: FastifyInstance) {
         ? (body.forceTools as string[])
         : [];
 
+    const contextLimit = settingRow?.ctx_length ?? null;
     const userMessageId = body.userMessageId ? String(body.userMessageId) : crypto.randomUUID();
     const userParentId = body.userParentId ? String(body.userParentId) : null;
     const assistantMessageId = body.assistantMessageId ? String(body.assistantMessageId) : crypto.randomUUID();
@@ -689,6 +690,7 @@ export async function chatRoutes(app: FastifyInstance) {
           excludedSkills,
           forcedTools,
           body.model,
+          contextLimit,
           (text: string) => {
             routerRawText += text;
             broadcastChunk(JSON.stringify({ type: "router_token", text }));
@@ -935,7 +937,6 @@ export async function chatRoutes(app: FastifyInstance) {
     // Fetch context overflow behavior settings
     const defaultBehavior = globalSettingsRow?.ctx_overflow_behavior || "truncate_middle";
     const effectiveOverflowBehavior = settingRow?.ctx_overflow_behavior || defaultBehavior;
-    const contextLimit = settingRow?.ctx_length ?? null;
     const completionReserve = settingRow?.max_tokens ?? 2048;
 
     // -----------------------------------------------------------------------
@@ -958,6 +959,7 @@ export async function chatRoutes(app: FastifyInstance) {
           contextLimit,
           completionReserve,
           behavior: effectiveOverflowBehavior as any,
+          forcedToolNames: forcedTools,
         });
 
         if (trimResult.action === "impossible_fit" || trimResult.action === "stop") {
@@ -985,7 +987,21 @@ export async function chatRoutes(app: FastifyInstance) {
           }));
         }
 
-        // CRITICAL FIX: Reassign currentMessages to the trimmed array
+        if (trimResult.prunedToolCount > 0) {
+          const droppedNames = toolDefinitions
+            .filter((t) => !trimResult.toolDefinitions.includes(t))
+            .map((t) => t?.function?.name)
+            .filter(Boolean);
+          console.log(`[chat] Pruned ${trimResult.prunedToolCount} tool/skill schema(s) to fit prompt budget: ${droppedNames.join(", ")}`);
+          toolDefinitions = trimResult.toolDefinitions;
+          broadcastChunk(JSON.stringify({
+            type: "tools_pruned",
+            prunedCount: trimResult.prunedToolCount,
+            remainingCount: toolDefinitions.length,
+            droppedToolNames: droppedNames,
+          }));
+        }
+
         currentMessages = trimResult.messages;
 
         const passParams = {

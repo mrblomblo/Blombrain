@@ -6,9 +6,73 @@ import {
   partitionMessageGroups,
   applyContextOverflowPolicy,
   filterReasoningContent,
+  pruneToolDefinitionsToFit,
 } from "../contextWindow.js";
 
 describe("contextWindow service", () => {
+  describe("pruneToolDefinitionsToFit", () => {
+    const makeTool = (name: string) => ({
+      type: "function",
+      function: { name, description: "x".repeat(200), parameters: { type: "object", properties: {} } },
+    });
+
+    it("drops built-in tools before MCP tools", () => {
+      const tools = [makeTool("execute_skill_script"), makeTool("mcpserver__search")];
+      const result = pruneToolDefinitionsToFit(tools, 20, []);
+      expect(result.toolDefinitions.some((t: any) => t.function.name === "execute_skill_script")).toBe(false);
+    });
+
+    it("never drops forced tools while non-forced tools remain", () => {
+      const tools = [makeTool("mcpserver__forced"), makeTool("mcpserver__other")];
+      const result = pruneToolDefinitionsToFit(tools, 1, ["mcpserver__forced"]);
+      expect(result.toolDefinitions.some((t: any) => t.function.name === "mcpserver__forced")).toBe(true);
+    });
+  });
+
+  describe("applyContextOverflowPolicy tool pruning fallback", () => {
+    it("prunes tool schemas instead of failing when they alone blow the budget", () => {
+      const messages = [
+        { role: "system", content: "System" },
+        { role: "user", content: "Query" },
+      ];
+      const toolDefinitions = Array.from({ length: 20 }, (_, i) => ({
+        type: "function",
+        function: { name: `mcpserver__tool_${i}`, description: "x".repeat(500), parameters: {} },
+      }));
+
+      const result = applyContextOverflowPolicy({
+        messages,
+        toolDefinitions,
+        contextLimit: 2000,
+        completionReserve: 200,
+        safetyReserve: 100,
+        behavior: "truncate_middle",
+      });
+
+      expect(result.action).toBe("proceed");
+      expect(result.prunedToolCount).toBeGreaterThan(0);
+      expect(result.toolDefinitions.length).toBeLessThan(toolDefinitions.length);
+    });
+
+    it("still returns impossible_fit when system+query alone exceed budget, even with 0 tools", () => {
+      const messages = [
+        { role: "system", content: "System " + "X".repeat(3000) },
+        { role: "user", content: "Query " + "Y".repeat(3000) },
+      ];
+
+      const result = applyContextOverflowPolicy({
+        messages,
+        toolDefinitions: [],
+        contextLimit: 500,
+        completionReserve: 100,
+        safetyReserve: 50,
+        behavior: "truncate_middle",
+      });
+
+      expect(result.action).toBe("impossible_fit");
+    });
+  });
+
   describe("estimateTokens", () => {
     it("estimates simple strings conservatively", () => {
       const text = "Hello world"; // 11 chars -> ceil(11/3) + 4 = 8

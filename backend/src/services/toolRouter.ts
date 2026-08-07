@@ -218,6 +218,7 @@ export async function routeToolsAndSkills(
   excludedSkills: string[] = [],
   forceTools: string[] = [],
   activeModelId?: string,
+  contextLimit?: number | null,
   onToken?: (text: string) => void,
   priorContext?: string,
   signal?: AbortSignal
@@ -241,10 +242,13 @@ export async function routeToolsAndSkills(
   const designatedModel = settingsRow?.tool_routing_model;
 
   // Determine whether to run LLM pre-pass:
-  // - If mode is 'off' and total tokens < 20,000, don't route (return all available schemas)
-  // - If mode is 'off' and total tokens >= 20,000, automatically trigger router for context safety
+  // - If mode is 'off', auto-trigger routing once tool/skill schemas would eat
+  //   more than 30% of the target model's context window (capped at 20,000
+  //   tokens as an absolute ceiling for models with very large/no limit set).
   // - If mode is 'active_model' or 'designated_model', always run router
-  const shouldRoute = mode !== "off" || estimatedTokens >= 20000;
+  const dynamicRoutingThreshold =
+    contextLimit && contextLimit > 0 ? Math.min(20000, Math.floor(contextLimit * 0.30)) : 20000;
+  const shouldRoute = mode !== "off" || estimatedTokens >= dynamicRoutingThreshold;
 
   if (!shouldRoute || !userQuery.trim() || (allMcpTools.length === 0 && allSkills.length === 0 && allBuiltInTools.length === 0)) {
     return {
