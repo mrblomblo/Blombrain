@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import {
     PanelLeftClose,
@@ -114,8 +115,17 @@
     }
   }
 
+  let now = $state(Date.now());
+
+  onMount(() => {
+    const interval = setInterval(() => {
+      now = Date.now();
+    }, 10_000);
+    return () => clearInterval(interval);
+  });
+
   function formatAge(ts: number): string {
-    const diffMs = Date.now() - ts;
+    const diffMs = now - ts;
     const mins = Math.floor(diffMs / 60_000);
     if (mins < 1) return "just now";
     if (mins < 60) return `${mins}m ago`;
