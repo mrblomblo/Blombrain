@@ -11,6 +11,7 @@ export interface BuiltInToolDefinition {
   parameters: Record<string, any> | ((ctx?: BuiltInToolContext) => Record<string, any>);
   /** Optional predicate: whether this tool is available for the given turn context (defaults to true) */
   isAvailable?: (ctx?: BuiltInToolContext) => boolean;
+  requiresNetwork?: boolean;
   execute: (
     args: Record<string, any>,
     ctx: BuiltInToolContext

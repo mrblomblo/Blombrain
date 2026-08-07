@@ -1,6 +1,21 @@
 import type { BuiltInToolDefinition, BuiltInToolContext } from "./types.js";
 import { getCurrentTimeTool } from "./tools/getCurrentTime.js";
 import { executeSkillScriptToolDef } from "./tools/executeSkillScript.js";
+import { getRandomValueTool } from "./tools/getRandomValue.js";
+import { encodeDecodeTool } from "./tools/encodeDecode.js";
+import { jsonUtilsTool } from "./tools/jsonUtils.js";
+import { textUtilsTool } from "./tools/textUtils.js";
+import { mathEvalTool } from "./tools/mathEval.js";
+import { unitConvertTool } from "./tools/unitConvert.js";
+import { csvTool } from "./tools/csvTool.js";
+import { pathTool } from "./tools/pathTool.js";
+import { diffTool } from "./tools/diffTool.js";
+import { dateMathTool } from "./tools/dateMathTool.js";
+import { timezoneTool } from "./tools/timezoneTool.js";
+import { percentageTool } from "./tools/percentageTool.js";
+import { colorTool } from "./tools/colorTool.js";
+import { getWeatherTool } from "./tools/getWeather.js";
+import { searchWikipediaTool } from "./tools/searchWikipedia.js";
 
 export * from "./types.js";
 
@@ -10,6 +25,21 @@ class BuiltInToolRegistry {
   constructor() {
     this.register(getCurrentTimeTool);
     this.register(executeSkillScriptToolDef);
+    this.register(getRandomValueTool);
+    this.register(encodeDecodeTool);
+    this.register(jsonUtilsTool);
+    this.register(textUtilsTool);
+    this.register(mathEvalTool);
+    this.register(unitConvertTool);
+    this.register(csvTool);
+    this.register(pathTool);
+    this.register(diffTool);
+    this.register(dateMathTool);
+    this.register(timezoneTool);
+    this.register(percentageTool);
+    this.register(colorTool);
+    this.register(getWeatherTool);
+    this.register(searchWikipediaTool);
   }
 
   public register(tool: BuiltInToolDefinition) {
