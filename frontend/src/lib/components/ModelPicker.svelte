@@ -104,7 +104,7 @@
       </span>
 
       {#if selectedModel?.isDefault}
-        <Star size={11} class="text-amber-400 fill-amber-400 shrink-0" />
+        <Star size={11} class="text-warning fill-warning shrink-0" />
       {/if}
 
       <ChevronDown
@@ -180,7 +180,7 @@
                       {#if model.isDefault}
                         <Star
                           size={11}
-                          class="text-amber-400 fill-amber-400 shrink-0"
+                          class="text-warning fill-warning shrink-0"
                         />
                       {/if}
                     </div>

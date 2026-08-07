@@ -1,4 +1,12 @@
 @import "tailwindcss";
+@import "@fontsource/ubuntu/300.css";
+@import "@fontsource/ubuntu/400.css";
+@import "@fontsource/ubuntu/500.css";
+@import "@fontsource/ubuntu/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/600.css";
+@import "@fontsource/jetbrains-mono/700.css";
 
 :root {
   --bg: #11111b;
@@ -16,14 +24,14 @@
   --danger: #f38ba8;
   --danger-fg: #11111b;
   --success: #a6e3a1;
+  --success-fg: #11111b;
   --warning: #fab387;
+  --warning-fg: #11111b;
+  --info: #89b4fa;
+  --info-fg: #11111b;
+  --important: #cba6f7;
+  --important-fg: #11111b;
   --shadow: rgba(0, 0, 0, 0.45);
-
-  --red: #f38ba8;
-  --green: #a6e3a1;
-  --purple: #cba6f7;
-  --blue: #89b4fa;
-  --orange: #fab387;
 }
 
 [data-theme="autumn"] {
@@ -42,14 +50,14 @@
   --danger: #cc523e;
   --danger-fg: #1a1815;
   --success: #879a39;
+  --success-fg: #1a1815;
   --warning: #d4741a;
+  --warning-fg: #1a1815;
+  --info: #5da0a4;
+  --info-fg: #1a1815;
+  --important: #a86ea4;
+  --important-fg: #1a1815;
   --shadow: rgba(0, 0, 0, 0.45);
-
-  --red: #cc523e;
-  --green: #879a39;
-  --purple: #a86ea4;
-  --blue: #5da0a4;
-  --orange: #d4741a;
 }
 
 /* 
@@ -71,16 +79,16 @@
   --accent-fg: #eff1f5;
   --accent-muted: color-mix(in srgb, #fe640b 15%, transparent);
   --danger: #d20f39;
-  --danger-fg: #4c4f69;
+  --danger-fg: #eff1f5;
   --success: #40a02b;
+  --success-fg: #eff1f5;
   --warning: #fe640b;
+  --warning-fg: #eff1f5;
+  --info: #1e66f5;
+  --info-fg: #eff1f5;
+  --important: #8839ef;
+  --important-fg: #eff1f5;
   --shadow: rgba(30, 30, 20, 0.12);
-
-  --red: #d20f39;
-  --green: #40a02b;
-  --purple: #8839ef;
-  --blue: #1e66f5;
-  --orange: #fe640b;
 }
 
 /* 
@@ -104,14 +112,14 @@
   --danger: #f38ba8;
   --danger-fg: #11111b;
   --success: #a6e3a1;
+  --success-fg: #11111b;
   --warning: #fab387;
+  --warning-fg: #11111b;
+  --info: #89b4fa;
+  --info-fg: #11111b;
+  --important: #cba6f7;
+  --important-fg: #11111b;
   --shadow: rgba(0, 0, 0, 0.45);
-
-  --red: #f38ba8;
-  --green: #a6e3a1;
-  --purple: #cba6f7;
-  --blue: #89b4fa;
-  --orange: #fab387;
 }
 
 /* 
@@ -135,14 +143,14 @@
   --danger: #ff5555;
   --danger-fg: #282a36;
   --success: #50fa7b;
+  --success-fg: #282a36;
   --warning: #ffb86c;
+  --warning-fg: #282a36;
+  --info: #8be9fd;
+  --info-fg: #282a36;
+  --important: #bd93f9;
+  --important-fg: #282a36;
   --shadow: rgba(0, 0, 0, 0.45);
-
-  --red: #ff5555;
-  --green: #50fa7b;
-  --purple: #bd93f9;
-  --blue: #8be9fd;
-  --orange: #ffb86c;
 }
 
 /* 
@@ -166,14 +174,14 @@
   --danger: #e67e80;
   --danger-fg: #1e2326;
   --success: #a7c080;
+  --success-fg: #1e2326;
   --warning: #e69875;
+  --warning-fg: #1e2326;
+  --info: #7fbbb3;
+  --info-fg: #1e2326;
+  --important: #d699b6;
+  --important-fg: #1e2326;
   --shadow: rgba(0, 0, 0, 0.45);
-
-  --red: #e67e80;
-  --green: #a7c080;
-  --purple: #d699b6;
-  --blue: #7fbbb3;
-  --orange: #dbbc7f;
 }
 
 /* 
@@ -195,16 +203,16 @@
   --accent-fg: #f3ead3;
   --accent-muted: color-mix(in srgb, #8da101 15%, transparent);
   --danger: #f85552;
-  --danger-fg: #5c6a72;
+  --danger-fg: #f3ead3;
   --success: #8da101;
+  --success-fg: #f3ead3;
   --warning: #f57d26;
+  --warning-fg: #f3ead3;
+  --info: #3a94c5;
+  --info-fg: #f3ead3;
+  --important: #df69ba;
+  --important-fg: #f3ead3;
   --shadow: rgba(30, 30, 20, 0.12);
-
-  --red: #f85552;
-  --green: #8da101;
-  --purple: #df69ba;
-  --blue: #3a94c5;
-  --orange: #dfa000;
 }
 
 /* 
@@ -226,16 +234,16 @@
   --accent-fg: #1d2021;
   --accent-muted: color-mix(in srgb, #d79921 15%, transparent);
   --danger: #cc241d;
-  --danger-fg: #11111b;
+  --danger-fg: #1d2021;
   --success: #98971a;
+  --success-fg: #1d2021;
   --warning: #d65d0e;
+  --warning-fg: #1d2021;
+  --info: #83a598;
+  --info-fg: #1d2021;
+  --important: #b16286;
+  --important-fg: #1d2021;
   --shadow: rgba(0, 0, 0, 0.45);
-
-  --red: #fb4934;
-  --green: #b8bb26;
-  --purple: #b16286;
-  --blue: #83a598;
-  --orange: #fe8019;
 }
 
 /* 
@@ -257,16 +265,16 @@
   --accent-fg: #3c3836;
   --accent-muted: color-mix(in srgb, #d79921 15%, transparent);
   --danger: #cc241d;
-  --danger-fg: #282828;
+  --danger-fg: #f2e5bc;
   --success: #98971a;
+  --success-fg: #f2e5bc;
   --warning: #d65d0e;
+  --warning-fg: #f2e5bc;
+  --info: #076678;
+  --info-fg: #f2e5bc;
+  --important: #8f3f71;
+  --important-fg: #f2e5bc;
   --shadow: rgba(30, 30, 20, 0.12);
-
-  --red: #9d0006;
-  --green: #79740e;
-  --purple: #8f3f71;
-  --blue: #076678;
-  --orange: #af3a03;
 }
 
 /* 
@@ -290,14 +298,14 @@
   --danger: #bf616a;
   --danger-fg: #2e3440;
   --success: #a3be8c;
+  --success-fg: #2e3440;
   --warning: #d08770;
+  --warning-fg: #2e3440;
+  --info: #81a1c1;
+  --info-fg: #2e3440;
+  --important: #b48ead;
+  --important-fg: #2e3440;
   --shadow: rgba(0, 0, 0, 0.45);
-
-  --red: #bf616a;
-  --green: #a3be8c;
-  --purple: #b48ead;
-  --blue: #81a1c1;
-  --orange: #d08770;
 }
 
 /* 
@@ -319,16 +327,16 @@
   --accent-fg: #eceff4;
   --accent-muted: color-mix(in srgb, #5e81ac 15%, transparent);
   --danger: #bf616a;
-  --danger-fg: #2e3440;
+  --danger-fg: #eceff4;
   --success: #a3be8c;
+  --success-fg: #eceff4;
   --warning: #d08770;
+  --warning-fg: #eceff4;
+  --info: #5e81ac;
+  --info-fg: #eceff4;
+  --important: #b48ead;
+  --important-fg: #eceff4;
   --shadow: rgba(30, 30, 20, 0.12);
-
-  --red: #bf616a;
-  --green: #a3be8c;
-  --purple: #b48ead;
-  --blue: #5e81ac;
-  --orange: #d08770;
 }
 
 @theme {
@@ -349,15 +357,16 @@
   --color-danger: var(--danger);
   --color-danger-fg: var(--danger-fg);
   --color-success: var(--success);
+  --color-success-fg: var(--success-fg);
   --color-warning: var(--warning);
+  --color-warning-fg: var(--warning-fg);
+  --color-info: var(--info);
+  --color-info-fg: var(--info-fg);
+  --color-important: var(--important);
+  --color-important-fg: var(--important-fg);
 
-  /* Typography: system stacks only. This is a fully local/offline tool, so
-     we deliberately don't reach out to a font CDN for display type -- the
-     OS's own UI font is the right choice here, with a monospace stack used
-     throughout for anything "technical" (model ids, backend prefixes,
-     token counts, code) to visually separate machine facts from prose. */
-  --font-sans: -apple-system, "Segoe UI", "Inter", "Helvetica Neue", system-ui, sans-serif;
-  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --font-sans: "Ubuntu", -apple-system, "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   --radius-sm: 0.25rem;
   --radius-md: 0.5rem;

@@ -143,7 +143,7 @@
           </span>
         {/each}
         {#each parsedRouterInfo.skills as skill}
-          <span class="inline-flex items-center rounded bg-purple-500/10 px-1.5 py-0.5 text-[10px] font-medium text-purple-400 border border-purple-500/20">
+          <span class="inline-flex items-center rounded bg-important/10 px-1.5 py-0.5 text-[10px] font-medium text-important border border-important/20">
             {skill}
           </span>
         {/each}
@@ -179,7 +179,7 @@
                     <span class="text-[10px] text-fg-muted font-medium uppercase tracking-wider">Skills:</span>
                     <div class="flex flex-wrap gap-1">
                       {#each parsedRouterInfo.skills as skill}
-                        <span class="inline-flex items-center rounded bg-purple-500/10 px-1.5 py-0.5 text-[10px] font-medium text-purple-400 border border-purple-500/20">
+                        <span class="inline-flex items-center rounded bg-important/10 px-1.5 py-0.5 text-[10px] font-medium text-important border border-important/20">
                           {skill}
                         </span>
                       {/each}

@@ -488,7 +488,7 @@
                         {:else if model.isDefault}
                           <span
                             transition:slide={{ axis: "x", duration: 250 }}
-                            class="rounded bg-amber-500/20 text-amber-500 px-1.5 py-0.5 text-[10px] font-semibold inline-block whitespace-nowrap"
+                            class="rounded bg-warning/20 text-warning px-1.5 py-0.5 text-[10px] font-semibold inline-block whitespace-nowrap"
                             >Default</span
                           >
                         {/if}
@@ -512,8 +512,8 @@
                       type="button"
                       onclick={() => handleToggleDefault(model)}
                       class="flex h-7 w-7 items-center justify-center rounded-md transition-colors duration-200 cursor-pointer {model.isDefault
-                        ? 'text-amber-400'
-                        : 'text-fg-muted hover:bg-bg hover:text-amber-400'}"
+                        ? 'text-warning'
+                        : 'text-fg-muted hover:bg-bg hover:text-warning'}"
                       title={model.isDefault
                         ? "Current Default Model"
                         : "Set as Default Model"}
@@ -521,7 +521,7 @@
                       <Star
                         size={13}
                         class="transition-colors duration-300 {model.isDefault
-                          ? 'fill-amber-400 text-amber-400'
+                          ? 'fill-warning text-warning'
                           : ''}"
                       />
                     </button>
@@ -607,7 +607,7 @@
                       {#if model.isDefault}
                         <span
                           transition:slide={{ axis: "x", duration: 250 }}
-                          class="rounded bg-amber-500/20 text-amber-500 px-1.5 py-0.5 text-[10px] font-semibold inline-block whitespace-nowrap"
+                          class="rounded bg-warning/20 text-warning px-1.5 py-0.5 text-[10px] font-semibold inline-block whitespace-nowrap"
                           >Default</span
                         >
                       {/if}
@@ -634,8 +634,8 @@
                     onclick={() => handleToggleDefault(model)}
                     disabled={model.isHidden && !model.isDefault}
                     class="flex h-7 w-7 items-center justify-center rounded-md transition-colors duration-200 cursor-pointer {model.isDefault
-                      ? 'text-amber-400'
-                      : 'text-fg-muted hover:bg-bg hover:text-amber-400'} disabled:opacity-30 disabled:pointer-events-none"
+                      ? 'text-warning'
+                      : 'text-fg-muted hover:bg-bg hover:text-warning'} disabled:opacity-30 disabled:pointer-events-none"
                     title={model.isHidden && !model.isDefault
                       ? "Hidden models cannot be set as default"
                       : model.isDefault
@@ -645,7 +645,7 @@
                     <Star
                       size={13}
                       class="transition-colors duration-300 {model.isDefault
-                        ? 'fill-amber-400 text-amber-400'
+                        ? 'fill-warning text-warning'
                         : ''}"
                     />
                   </button>

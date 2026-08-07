@@ -167,9 +167,7 @@
           ? 'max-w-0 opacity-0'
           : 'max-w-30 opacity-100'}"
       >
-        <span
-          class="text-md font-semibold tracking-wide text-fg whitespace-nowrap pl-1"
-        >
+        <span class="text-md font-semibold text-fg whitespace-nowrap pl-1">
           Blombrain
         </span>
       </div>

@@ -177,7 +177,7 @@
 
       {#if type === "stdio"}
         <div
-          class="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-500"
+          class="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-2.5 text-xs text-warning"
         >
           <AlertTriangle size={16} class="shrink-0 mt-0.5" />
           <div>
@@ -327,13 +327,13 @@
                 >
                 {#if server.status === "connected"}
                   <span
-                    class="flex items-center gap-1 text-[10px] text-emerald-500 font-medium"
+                    class="flex items-center gap-1 text-[10px] text-success font-medium"
                   >
                     <CheckCircle size={10} /> Connected
                   </span>
                 {:else if server.status === "error"}
                   <span
-                    class="flex items-center gap-1 text-[10px] text-red-500 font-medium"
+                    class="flex items-center gap-1 text-[10px] text-danger font-medium"
                   >
                     <AlertTriangle size={10} /> Error
                   </span>
@@ -346,7 +346,7 @@
                 {(server.args || []).join(" ")}
               </p>
               {#if server.status === "error" && server.error}
-                <p class="text-[11px] text-red-400 mt-1 max-w-md break-words">
+                <p class="text-[11px] text-danger mt-1 max-w-md break-words">
                   {server.error}
                 </p>
               {/if}

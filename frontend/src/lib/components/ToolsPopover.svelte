@@ -145,9 +145,9 @@
                 <p class="text-[10px] text-fg-subtle font-mono truncate">{server.commandOrUrl}</p>
               </div>
               {#if server.status === "connected"}
-                <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                <span class="h-1.5 w-1.5 rounded-full bg-success shrink-0"></span>
               {:else if server.status === "error"}
-                <span class="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0"></span>
+                <span class="h-1.5 w-1.5 rounded-full bg-danger shrink-0"></span>
               {/if}
             </div>
           {/each}

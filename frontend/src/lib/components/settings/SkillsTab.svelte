@@ -289,7 +289,7 @@
       <div
         class="flex items-center gap-2 text-[10px] font-mono text-fg-subtle bg-bg p-2 rounded border border-line/50"
       >
-        <ShieldCheck size={12} class="text-emerald-500" />
+        <ShieldCheck size={12} class="text-success" />
         <span>Content Hash: {previewSkill.contentHash.slice(0, 16)}…</span>
       </div>
       <pre

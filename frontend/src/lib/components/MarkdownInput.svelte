@@ -349,15 +349,15 @@
   :global(
       .markdown-input-editor .ProseMirror blockquote[data-alert-type="NOTE"]
     ) {
-    border-left-color: var(--blue);
-    background-color: color-mix(in srgb, var(--blue) 10%, transparent);
+    border-left-color: var(--info);
+    background-color: color-mix(in srgb, var(--info) 10%, transparent);
   }
 
   :global(
       .markdown-input-editor .ProseMirror blockquote[data-alert-type="TIP"]
     ) {
-    border-left-color: var(--green);
-    background-color: color-mix(in srgb, var(--green) 10%, transparent);
+    border-left-color: var(--success);
+    background-color: color-mix(in srgb, var(--success) 10%, transparent);
   }
 
   :global(
@@ -365,22 +365,22 @@
         .ProseMirror
         blockquote[data-alert-type="IMPORTANT"]
     ) {
-    border-left-color: var(--purple);
-    background-color: color-mix(in srgb, var(--purple) 10%, transparent);
+    border-left-color: var(--important);
+    background-color: color-mix(in srgb, var(--important) 10%, transparent);
   }
 
   :global(
       .markdown-input-editor .ProseMirror blockquote[data-alert-type="WARNING"]
     ) {
-    border-left-color: var(--orange);
-    background-color: color-mix(in srgb, var(--orange) 10%, transparent);
+    border-left-color: var(--warning);
+    background-color: color-mix(in srgb, var(--warning) 10%, transparent);
   }
 
   :global(
       .markdown-input-editor .ProseMirror blockquote[data-alert-type="CAUTION"]
     ) {
-    border-left-color: var(--red);
-    background-color: color-mix(in srgb, var(--red) 10%, transparent);
+    border-left-color: var(--danger);
+    background-color: color-mix(in srgb, var(--danger) 10%, transparent);
   }
 
   :global(.ProseMirror-dropcursor),

@@ -211,7 +211,7 @@
                     >
                   {/if}
                   {#if model.isDefault}
-                    <Star size={11} class="text-amber-400 fill-amber-400" />
+                    <Star size={11} class="text-warning fill-warning" />
                   {/if}
                   {#if model.isHidden}
                     <EyeOff size={11} class="text-fg-subtle" />
