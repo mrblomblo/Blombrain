@@ -8,6 +8,7 @@
   import { settingsStore } from "../../stores/settings.svelte";
   import Dropdown, { type DropdownOption } from "../ui/Dropdown.svelte";
   import ModelDropdown from "../ui/ModelDropdown.svelte";
+  import ToggleSwitch from "../ui/ToggleSwitch.svelte";
 
   const modeOptions: DropdownOption[] = [
     { label: "First Words (Extract 8 words locally)", value: "first_words" },
@@ -221,6 +222,30 @@
           settingsStore.update({
             reasoningInjectionMode: val as ReasoningInjectionMode,
           })}
+      />
+    </div>
+  </div>
+
+  <!-- Built-in Network Tools Section -->
+  <div
+    class="rounded-lg border border-line bg-bg-elevated p-4 flex flex-col gap-4"
+  >
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <h3 class="text-sm font-semibold text-fg">
+          Network-Dependent Built-in Tools
+        </h3>
+        <p class="text-xs text-fg-subtle mt-0.5">
+          Allow built-in tools that require network access to be available to
+          models. Disabled by default.
+        </p>
+      </div>
+      <ToggleSwitch
+        id="network-tools-enable-toggle"
+        checked={settingsStore.networkToolsEnabled}
+        onchange={(checked) =>
+          settingsStore.update({ networkToolsEnabled: checked })}
+        label="Toggle network-dependent built-in tools"
       />
     </div>
   </div>

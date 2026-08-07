@@ -495,10 +495,12 @@ class ChatStore {
         const hasPendingExclusions =
           this.conversationExcludedMcps.length > 0 || this.conversationExcludedSkills.length > 0;
         if (hasPendingExclusions) {
-          patchConversationTools(conv.id, {
-            excludedMcps: this.conversationExcludedMcps,
-            excludedSkills: this.conversationExcludedSkills,
-          }).catch(() => { });
+          try {
+            await patchConversationTools(conv.id, {
+              excludedMcps: this.conversationExcludedMcps,
+              excludedSkills: this.conversationExcludedSkills,
+            });
+          } catch { }
         }
       } catch (err) {
         console.error("[chatStore] Failed to pre-create conversation:", err);
@@ -626,6 +628,8 @@ class ChatStore {
       assistantMessageId: currentAsstId,
       attachmentIds,
       toolsEnabled: this.conversationToolsEnabled,
+      excludedMcps: this.conversationExcludedMcps,
+      excludedSkills: this.conversationExcludedSkills,
       signal: this.abortController.signal,
       onToken: (delta) => {
         const msg = this.messages.find((m) => m.id === currentAsstId);
@@ -821,6 +825,9 @@ class ChatStore {
       messages: historyForModel,
       conversationId: this.activeConversationId,
       assistantMessageId: asstMsg.id,
+      toolsEnabled: this.conversationToolsEnabled,
+      excludedMcps: this.conversationExcludedMcps,
+      excludedSkills: this.conversationExcludedSkills,
       signal: this.abortController.signal,
       onToken: (delta) => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);

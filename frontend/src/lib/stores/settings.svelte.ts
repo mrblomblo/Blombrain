@@ -11,6 +11,7 @@ class SettingsStore {
   toolRoutingModel = $state<string | null>(null);
   ctxOverflowBehavior = $state<CtxOverflowBehavior>("truncate_middle");
   reasoningInjectionMode = $state<ReasoningInjectionMode>("all");
+  networkToolsEnabled = $state<boolean>(false);
   loaded = $state(false);
 
   async init() {
@@ -25,6 +26,7 @@ class SettingsStore {
       this.toolRoutingModel = data.toolRoutingModel ?? null;
       this.ctxOverflowBehavior = data.ctxOverflowBehavior ?? "truncate_middle";
       this.reasoningInjectionMode = data.reasoningInjectionMode ?? "all";
+      this.networkToolsEnabled = !!data.networkToolsEnabled;
       themeStore.set(this.theme);
       this.loaded = true;
     } catch (err) {
@@ -43,6 +45,7 @@ class SettingsStore {
       toolRoutingModel: string | null;
       ctxOverflowBehavior: CtxOverflowBehavior;
       reasoningInjectionMode: ReasoningInjectionMode;
+      networkToolsEnabled: boolean;
       password?: string;
     }>,
   ) {
@@ -58,6 +61,7 @@ class SettingsStore {
     if (patch.toolRoutingModel !== undefined) this.toolRoutingModel = patch.toolRoutingModel;
     if (patch.ctxOverflowBehavior !== undefined) this.ctxOverflowBehavior = patch.ctxOverflowBehavior;
     if (patch.reasoningInjectionMode !== undefined) this.reasoningInjectionMode = patch.reasoningInjectionMode;
+    if (patch.networkToolsEnabled !== undefined) this.networkToolsEnabled = patch.networkToolsEnabled;
 
     try {
       await updateGlobalSettings({
@@ -70,6 +74,7 @@ class SettingsStore {
         toolRoutingModel: patch.toolRoutingModel,
         ctxOverflowBehavior: patch.ctxOverflowBehavior,
         reasoningInjectionMode: patch.reasoningInjectionMode,
+        networkToolsEnabled: patch.networkToolsEnabled,
         password: patch.password,
       });
     } catch (err) {

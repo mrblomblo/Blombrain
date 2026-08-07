@@ -1,3 +1,7 @@
+export interface ToolVisibilityOptions {
+  allowNetwork?: boolean;
+}
+
 export interface BuiltInToolContext {
   conversationId?: string;
   activeSkillIds?: string[];

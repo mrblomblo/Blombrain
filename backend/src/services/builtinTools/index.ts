@@ -1,4 +1,4 @@
-import type { BuiltInToolDefinition, BuiltInToolContext } from "./types.js";
+import type { BuiltInToolDefinition, BuiltInToolContext, ToolVisibilityOptions } from "./types.js";
 import { getCurrentTimeTool } from "./tools/getCurrentTime.js";
 import { executeSkillScriptToolDef } from "./tools/executeSkillScript.js";
 import { getRandomValueTool } from "./tools/getRandomValue.js";
@@ -54,12 +54,23 @@ class BuiltInToolRegistry {
     return Array.from(this.tools.values());
   }
 
-  public getAvailableTools(ctx: BuiltInToolContext = {}): BuiltInToolDefinition[] {
-    return this.getAllTools().filter((t) => (t.isAvailable ? t.isAvailable(ctx) : true));
+  public getAvailableTools(
+    ctx: BuiltInToolContext = {},
+    options?: ToolVisibilityOptions
+  ): BuiltInToolDefinition[] {
+    return this.getAllTools().filter((t) => {
+      if (t.requiresNetwork && !options?.allowNetwork) {
+        return false;
+      }
+      return t.isAvailable ? t.isAvailable(ctx) : true;
+    });
   }
 
-  public getOpenAIToolSchemas(ctx: BuiltInToolContext = {}): any[] {
-    return this.getAvailableTools(ctx).map((t) => {
+  public getOpenAIToolSchemas(
+    ctx: BuiltInToolContext = {},
+    options?: ToolVisibilityOptions
+  ): any[] {
+    return this.getAvailableTools(ctx, options).map((t) => {
       const params = typeof t.parameters === "function" ? t.parameters(ctx) : t.parameters;
       return {
         type: "function" as const,

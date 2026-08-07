@@ -505,15 +505,20 @@ export async function chatRoutes(app: FastifyInstance) {
     // -----------------------------------------------------------------------
     // 3. Fetch per-conversation excluded MCP/Skill IDs and tools_enabled from DB
     // -----------------------------------------------------------------------
-    let excludedMcps: string[] = [];
-    let excludedSkills: string[] = [];
+    let excludedMcps: string[] = Array.isArray((body as any).excludedMcps) ? (body as any).excludedMcps : [];
+    let excludedSkills: string[] = Array.isArray((body as any).excludedSkills) ? (body as any).excludedSkills : [];
     let toolsEnabled = (body as any).toolsEnabled !== undefined ? Boolean((body as any).toolsEnabled) : true;
+
     if (body.conversationId) {
       const convRow = db.prepare("SELECT excluded_mcps, excluded_skills, tools_enabled FROM conversations WHERE id = ?").get(body.conversationId) as any;
       if (convRow) {
-        try { excludedMcps = JSON.parse(convRow.excluded_mcps || "[]"); } catch { }
-        try { excludedSkills = JSON.parse(convRow.excluded_skills || "[]"); } catch { }
-        if (convRow.tools_enabled !== undefined && convRow.tools_enabled !== null) {
+        if ((body as any).excludedMcps === undefined) {
+          try { excludedMcps = JSON.parse(convRow.excluded_mcps || "[]"); } catch { }
+        }
+        if ((body as any).excludedSkills === undefined) {
+          try { excludedSkills = JSON.parse(convRow.excluded_skills || "[]"); } catch { }
+        }
+        if ((body as any).toolsEnabled === undefined && convRow.tools_enabled !== undefined && convRow.tools_enabled !== null) {
           toolsEnabled = Boolean(convRow.tools_enabled);
         }
       }
@@ -612,7 +617,7 @@ export async function chatRoutes(app: FastifyInstance) {
     // -----------------------------------------------------------------------
     let outgoingMessages = reconstructToolCalls([...body.messages]);
 
-    const globalSettingsRow = db.prepare("SELECT ctx_overflow_behavior, reasoning_injection_mode FROM global_settings LIMIT 1").get() as any;
+    const globalSettingsRow = db.prepare("SELECT ctx_overflow_behavior, reasoning_injection_mode, network_tools_enabled FROM global_settings LIMIT 1").get() as any;
     const defaultReasoningMode = globalSettingsRow?.reasoning_injection_mode || "all";
     const effectiveReasoningMode = settingRow?.reasoning_injection_mode || defaultReasoningMode;
 
@@ -775,10 +780,8 @@ export async function chatRoutes(app: FastifyInstance) {
       activeSkillIds: activeSkills.map(s => s.id),
       activeSkills,
     };
-    // Include all active built-in tools (filtered by router if router was active)
-    const availableBuiltInTools = builtInTools.length > 0
-      ? builtInTools
-      : builtInToolRegistry.getAvailableTools(builtInCtx);
+    // Include active built-in tools (filtered by router if router was active)
+    const availableBuiltInTools = toolsEnabled ? builtInTools : [];
 
     for (const bTool of availableBuiltInTools) {
       const params = typeof bTool.parameters === "function" ? bTool.parameters(builtInCtx) : bTool.parameters;

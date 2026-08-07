@@ -354,6 +354,7 @@ export interface GlobalSettingsRow {
   tool_routing_model: string | null;
   ctx_overflow_behavior: string;
   reasoning_injection_mode: string;
+  network_tools_enabled?: number;
 }
 
 export interface GlobalSettingsOut {
@@ -367,6 +368,7 @@ export interface GlobalSettingsOut {
   toolRoutingModel: string | null;
   ctxOverflowBehavior: CtxOverflowBehavior;
   reasoningInjectionMode: ReasoningInjectionMode;
+  networkToolsEnabled: boolean;
 }
 
 export interface GlobalSettingsWriteBody {
@@ -379,5 +381,6 @@ export interface GlobalSettingsWriteBody {
   toolRoutingModel?: string | null;
   ctxOverflowBehavior?: CtxOverflowBehavior;
   reasoningInjectionMode?: ReasoningInjectionMode;
+  networkToolsEnabled?: boolean;
   password?: string;
 }

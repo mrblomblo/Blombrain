@@ -187,16 +187,21 @@ export async function routeToolsAndSkills(
   onToken?: (text: string) => void,
   priorContext?: string
 ): Promise<ToolRoutingResult> {
+  // Check global settings for tool_routing_mode, tool_routing_model, and network_tools_enabled
+  const settingsRow = db.prepare("SELECT tool_routing_mode, tool_routing_model, network_tools_enabled FROM global_settings LIMIT 1").get() as any;
+  const allowNetwork = !!settingsRow?.network_tools_enabled;
+
   const allMcpTools = await mcpManager.getAvailableTools(excludedMcps);
   const allSkills = getAllSkills(excludedSkills).filter((s) => s.isEnabled);
-  const allBuiltInTools = builtInToolRegistry.getAvailableTools({ activeSkills: allSkills });
+  const allBuiltInTools = builtInToolRegistry.getAvailableTools(
+    { activeSkills: allSkills },
+    { allowNetwork }
+  );
 
   // Single unified token estimation (1 token ~= 4 chars)
   const totalSchemaLength = JSON.stringify(allMcpTools).length + JSON.stringify(allSkills).length + JSON.stringify(allBuiltInTools).length;
   const estimatedTokens = Math.ceil(totalSchemaLength / 4);
 
-  // Check global settings for tool_routing_mode and tool_routing_model
-  const settingsRow = db.prepare("SELECT tool_routing_mode, tool_routing_model FROM global_settings LIMIT 1").get() as any;
   const mode = settingsRow?.tool_routing_mode || "off";
   const designatedModel = settingsRow?.tool_routing_model;
 

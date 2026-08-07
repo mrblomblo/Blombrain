@@ -16,6 +16,7 @@ function rowToSettings(row: GlobalSettingsRow): GlobalSettingsOut {
     toolRoutingModel: row.tool_routing_model ?? null,
     ctxOverflowBehavior: (row.ctx_overflow_behavior as any) || "truncate_middle",
     reasoningInjectionMode: (row.reasoning_injection_mode as any) || "all",
+    networkToolsEnabled: !!row.network_tools_enabled,
   };
 }
 
@@ -64,6 +65,7 @@ export async function settingsRoutes(app: FastifyInstance) {
     const toolRoutingModel = body.toolRoutingModel !== undefined ? body.toolRoutingModel : current.tool_routing_model;
     const ctxOverflowBehavior = body.ctxOverflowBehavior !== undefined ? body.ctxOverflowBehavior : (current.ctx_overflow_behavior || "truncate_middle");
     const reasoningInjectionMode = body.reasoningInjectionMode !== undefined ? body.reasoningInjectionMode : (current.reasoning_injection_mode || "all");
+    const networkToolsEnabled = body.networkToolsEnabled !== undefined ? (body.networkToolsEnabled ? 1 : 0) : (current.network_tools_enabled ?? 0);
 
     if (body.password !== undefined) {
       if (body.password.trim() === "") {
@@ -94,9 +96,9 @@ export async function settingsRoutes(app: FastifyInstance) {
 
     db.prepare(`
       UPDATE global_settings
-      SET user_name = ?, user_avatar = ?, theme = ?, auto_name_mode = ?, auto_name_model = ?, tool_routing_mode = ?, tool_routing_model = ?, ctx_overflow_behavior = ?, reasoning_injection_mode = ?
+      SET user_name = ?, user_avatar = ?, theme = ?, auto_name_mode = ?, auto_name_model = ?, tool_routing_mode = ?, tool_routing_model = ?, ctx_overflow_behavior = ?, reasoning_injection_mode = ?, network_tools_enabled = ?
       WHERE id = 'default'
-    `).run(userName, userAvatar, theme, autoNameMode, autoNameModel, toolRoutingMode, toolRoutingModel, ctxOverflowBehavior, reasoningInjectionMode);
+    `).run(userName, userAvatar, theme, autoNameMode, autoNameModel, toolRoutingMode, toolRoutingModel, ctxOverflowBehavior, reasoningInjectionMode, networkToolsEnabled);
 
     const updated = db
       .prepare<[string], GlobalSettingsRow>("SELECT * FROM global_settings WHERE id = ?")

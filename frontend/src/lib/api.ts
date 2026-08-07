@@ -291,6 +291,8 @@ export interface StreamChatOptions {
   assistantMessageId?: string;
   attachmentIds?: string[];
   toolsEnabled?: boolean;
+  excludedMcps?: string[];
+  excludedSkills?: string[];
   signal?: AbortSignal;
   onToken: (delta: string) => void;
   onMeta: (meta: {
@@ -344,6 +346,8 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
         assistantMessageId,
         attachments: attachmentIds,
         toolsEnabled: opts.toolsEnabled,
+        excludedMcps: opts.excludedMcps,
+        excludedSkills: opts.excludedSkills,
         stream: true,
       }),
       signal,
@@ -507,6 +511,7 @@ export interface GlobalSettingsOut {
   toolRoutingModel: string | null;
   ctxOverflowBehavior: CtxOverflowBehavior;
   reasoningInjectionMode: ReasoningInjectionMode;
+  networkToolsEnabled: boolean;
 }
 
 export async function fetchGlobalSettings(): Promise<GlobalSettingsOut> {
@@ -524,6 +529,7 @@ export async function updateGlobalSettings(
     toolRoutingModel: string | null;
     ctxOverflowBehavior: CtxOverflowBehavior;
     reasoningInjectionMode: ReasoningInjectionMode;
+    networkToolsEnabled: boolean;
     password?: string;
   }>,
 ): Promise<GlobalSettingsOut> {

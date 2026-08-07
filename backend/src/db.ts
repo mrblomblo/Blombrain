@@ -133,6 +133,7 @@ db.exec(`
     user_name     TEXT NOT NULL DEFAULT 'You',
     user_avatar   TEXT,
     theme         TEXT NOT NULL DEFAULT 'autumn',
+    network_tools_enabled INTEGER NOT NULL DEFAULT 0,
     password_hash TEXT
   );
 
@@ -234,6 +235,11 @@ if (!globalSettingsCols.includes("reasoning_injection_mode")) {
 if (!globalSettingsCols.includes("password_hash")) {
   try {
     db.exec(`ALTER TABLE global_settings ADD COLUMN password_hash TEXT`);
+  } catch (e) { }
+}
+if (!globalSettingsCols.includes("network_tools_enabled")) {
+  try {
+    db.exec(`ALTER TABLE global_settings ADD COLUMN network_tools_enabled INTEGER NOT NULL DEFAULT 0`);
   } catch (e) { }
 }
 
