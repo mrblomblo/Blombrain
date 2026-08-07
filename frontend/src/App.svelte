@@ -145,10 +145,9 @@
       <div class="relative flex min-w-0 flex-1 h-full overflow-hidden">
         <!-- Main Content Pane -->
         <main
-          class="relative flex min-w-0 flex-1 flex-col h-full overflow-hidden {artifactStore.isOpen
-            ? artifactStore.isExpanded
-              ? 'hidden'
-              : 'hidden lg:flex'
+          class="relative flex min-w-0 flex-1 flex-col h-full overflow-hidden transition-all duration-300 ease-in-out {artifactStore.isOpen &&
+          !artifactStore.isExpanded
+            ? 'lg:mr-[48%]'
             : ''}"
         >
           <header
@@ -185,13 +184,13 @@
           {/if}
         </main>
 
-        <!-- Artifact Side Panel (Fullscreen on mobile, side panel on desktop) -->
+        <!-- Artifact Side Panel (Overlay expanding from right to left) -->
         {#if artifactStore.isOpen}
           <aside
             transition:panelFly={{ duration: 300 }}
-            class="w-full {artifactStore.isExpanded
-              ? ''
-              : 'lg:w-[48%]'} shrink-0 h-full overflow-hidden z-30"
+            class="absolute right-0 top-0 bottom-0 h-full overflow-hidden bg-bg transition-all duration-300 ease-in-out border-l border-line {artifactStore.isExpanded
+              ? 'w-full z-40 shadow-2xl'
+              : 'w-full lg:w-[48%] z-30'}"
           >
             <ArtifactPanel />
           </aside>

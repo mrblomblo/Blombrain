@@ -21,23 +21,33 @@
   }
 </script>
 
-<div class="flex items-center justify-center min-h-screen w-screen bg-bg text-fg px-4 select-none">
-  <div class="w-full max-w-md p-8 bg-bg-elevated/80 backdrop-blur-md rounded-2xl border border-line shadow-2xl space-y-6">
+<div
+  class="flex items-center justify-center min-h-screen w-screen bg-bg text-fg px-4 select-none"
+>
+  <div
+    class="w-full max-w-md p-8 bg-bg-elevated/80 backdrop-blur-md rounded-2xl border border-line shadow-2xl space-y-6"
+  >
     <div class="flex flex-col items-center text-center space-y-3">
-      <div class="p-4 bg-accent/10 rounded-2xl text-accent border border-accent/20">
+      <div
+        class="p-4 bg-accent/10 rounded-2xl text-accent border border-accent/20"
+      >
         <ShieldAlert size={36} />
       </div>
       <div>
         <h1 class="text-2xl font-bold tracking-tight">Access Required</h1>
         <p class="text-sm text-fg-muted mt-1">
-          This Blombrain instance is password-protected. Enter your password to continue.
+          This Blombrain instance is password-protected. Enter your password to
+          continue.
         </p>
       </div>
     </div>
 
     <form onsubmit={handleLogin} class="space-y-4">
       <div class="space-y-2">
-        <label for="password" class="block text-xs font-medium text-fg-muted uppercase tracking-wider">
+        <label
+          for="password"
+          class="block text-xs font-medium text-fg-muted uppercase tracking-wider"
+        >
           Password
         </label>
         <div class="relative">
@@ -50,12 +60,15 @@
             bind:value={password}
             placeholder="Enter password"
             disabled={loading}
-            class="w-full bg-bg border {error ? 'border-danger focus:border-danger focus:ring-danger' : 'border-line focus:border-accent focus:ring-accent'} rounded-xl py-3 pl-11 pr-4 text-sm outline-none focus:ring-1 transition-all placeholder:text-fg-muted/60"
-            autofocus
+            class="w-full bg-bg border {error
+              ? 'border-danger focus:border-danger focus:ring-danger'
+              : 'border-line focus:border-accent focus:ring-accent'} rounded-xl py-3 pl-11 pr-4 text-sm outline-none focus:ring-1 transition-all placeholder:text-fg-muted/60"
           />
         </div>
         {#if error}
-          <p class="text-xs text-danger font-medium pt-1 animate-in fade-in-50">{error}</p>
+          <p class="text-xs text-danger font-medium pt-1 animate-in fade-in-50">
+            {error}
+          </p>
         {/if}
       </div>
 
