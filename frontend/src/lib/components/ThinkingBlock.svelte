@@ -25,6 +25,12 @@
   let isOpen = $state(false);
   let userInteracted = $state(false);
 
+  function formatToolName(name: string): string {
+    if (!name) return "";
+    const parts = name.split("__");
+    return parts.length > 1 ? parts.slice(1).join("__") : name;
+  }
+
   let parsedRouterInfo = $derived.by(() => {
     if (!routerOutput) return null;
     
@@ -139,7 +145,7 @@
       <div class="mt-1.5 pl-5 flex flex-wrap items-center gap-1.5">
         {#each parsedRouterInfo.tools as tool}
           <span class="inline-flex items-center rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent border border-accent/20">
-            {tool}
+            {formatToolName(tool)}
           </span>
         {/each}
         {#each parsedRouterInfo.skills as skill}
@@ -168,7 +174,7 @@
                     <div class="flex flex-wrap gap-1">
                       {#each parsedRouterInfo.tools as tool}
                         <span class="inline-flex items-center rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent border border-accent/20">
-                          {tool}
+                          {formatToolName(tool)}
                         </span>
                       {/each}
                     </div>
