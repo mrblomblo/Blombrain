@@ -34,8 +34,13 @@ async function queryLLM(
   modelId: string,
   systemPrompt: string,
   userPrompt: string,
-  onToken?: (text: string) => void
+  onToken?: (text: string) => void,
+  signal?: AbortSignal
 ): Promise<string> {
+  if (signal?.aborted) {
+    throw new Error("Router LLM operation aborted");
+  }
+
   let targetModelId = modelId;
   const settingRow = db.prepare("SELECT * FROM model_settings WHERE id = ?").get(modelId) as any;
   if (settingRow && settingRow.is_preset && settingRow.base_model_id) {
@@ -82,6 +87,13 @@ async function queryLLM(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000); // 60-second timeout for pre-pass
 
+  const onExternalAbort = () => {
+    try { controller.abort(); } catch { }
+  };
+  if (signal) {
+    signal.addEventListener("abort", onExternalAbort, { once: true });
+  }
+
   try {
     const res = await fetch(reqConfig.url, {
       ...reqConfig.init,
@@ -98,7 +110,19 @@ async function queryLLM(
     let reasoningMode: "oob" | "inband" | null = null;
 
     await new Promise<void>((resolve, reject) => {
+      const onStreamAbort = () => {
+        try { nodeStream.destroy(); } catch { }
+        reject(new Error("Router LLM operation aborted"));
+      };
+      if (signal) {
+        signal.addEventListener("abort", onStreamAbort, { once: true });
+      }
+
       nodeStream.on("data", (chunk: Buffer) => {
+        if (signal?.aborted) {
+          try { nodeStream.destroy(); } catch { }
+          return reject(new Error("Router LLM operation aborted"));
+        }
         const events = parser(chunk);
         for (const ev of events) {
           if (ev.reasoning) {
@@ -127,15 +151,25 @@ async function queryLLM(
           textResult += "\n</think>\n";
           if (onToken) onToken("\n</think>\n");
         }
+        if (signal) signal.removeEventListener("abort", onStreamAbort);
         resolve();
       });
-      nodeStream.on("error", (err) => reject(err));
-      nodeStream.on("close", () => resolve());
+      nodeStream.on("error", (err) => {
+        if (signal) signal.removeEventListener("abort", onStreamAbort);
+        reject(err);
+      });
+      nodeStream.on("close", () => {
+        if (signal) signal.removeEventListener("abort", onStreamAbort);
+        resolve();
+      });
     });
 
     return textResult;
   } finally {
     clearTimeout(timeoutId);
+    if (signal) {
+      signal.removeEventListener("abort", onExternalAbort);
+    }
   }
 }
 
@@ -185,7 +219,8 @@ export async function routeToolsAndSkills(
   forceTools: string[] = [],
   activeModelId?: string,
   onToken?: (text: string) => void,
-  priorContext?: string
+  priorContext?: string,
+  signal?: AbortSignal
 ): Promise<ToolRoutingResult> {
   // Check global settings for tool_routing_mode, tool_routing_model, and network_tools_enabled
   const settingsRow = db.prepare("SELECT tool_routing_mode, tool_routing_model, network_tools_enabled FROM global_settings LIMIT 1").get() as any;
@@ -279,7 +314,7 @@ ${JSON.stringify(toolsCatalog, null, 2)}
 Available Skills:
 ${JSON.stringify(skillsCatalog, null, 2)}`;
 
-    const rawResponse = await queryLLM(modelToUse, systemPrompt, userPrompt, onToken);
+    const rawResponse = await queryLLM(modelToUse, systemPrompt, userPrompt, onToken, signal);
     const { tools: selectedToolNames, skills: selectedSkillNames } = parseRouterOutput(rawResponse);
 
     // Filter tools & skills, ensuring forcedTools are ALWAYS included
@@ -305,6 +340,13 @@ ${JSON.stringify(skillsCatalog, null, 2)}`;
       selectedBuiltInTools: selectedBuiltInTools,
     };
   } catch (err) {
+    if (signal?.aborted || (err instanceof Error && (err.name === "AbortError" || err.message.includes("aborted")))) {
+      return {
+        mcpTools: [],
+        selectedSkills: [],
+        selectedBuiltInTools: [],
+      };
+    }
     console.warn("[toolRouter] LLM pre-pass failed, failing open with all tools/skills:", err);
     return {
       mcpTools: allMcpTools,

@@ -543,6 +543,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const userMessageId = body.userMessageId ? String(body.userMessageId) : crypto.randomUUID();
     const userParentId = body.userParentId ? String(body.userParentId) : null;
     const assistantMessageId = body.assistantMessageId ? String(body.assistantMessageId) : crypto.randomUUID();
+    const attachmentIds = body.attachments;
 
     // Hijack response and start SSE stream early so routing progress can be emitted
     reply.hijack();
@@ -574,39 +575,147 @@ export async function chatRoutes(app: FastifyInstance) {
       })}\n\n`);
     }
 
-    // Emit routing status event
-    broadcastChunk(JSON.stringify({ type: "status", status: "routing" }));
-
     let assistantContent = "";
     let routerRawText = "";
     const userQuery = originalUserContent;
+    let currentToolExecution: { callId: string; toolName: string; args: any } | null = null;
+    let streamError: string | null = null;
+    let usageStats: { promptTokens?: number; completionTokens?: number; totalTokens?: number; durationMs?: number; thinkingTimeMs?: number } | undefined;
+    const startTime = Date.now();
+    let hasPersisted = false;
+
+    function doSaveTurn() {
+      if (hasPersisted) return;
+      hasPersisted = true;
+
+      try {
+        if (!usageStats) usageStats = {};
+        if (!usageStats.durationMs && Date.now() - startTime > 0) {
+          usageStats.durationMs = Date.now() - startTime;
+        }
+
+        if (currentToolExecution && !assistantContent.includes(currentToolExecution.callId)) {
+          const cancelledPayload = {
+            callId: currentToolExecution.callId,
+            toolName: currentToolExecution.toolName,
+            args: currentToolExecution.args,
+            status: "cancelled",
+          };
+          assistantContent += `\n<tool_execution>${JSON.stringify(cancelledPayload)}</tool_execution>\n`;
+        }
+
+        assistantContent = closeUnclosedTags(assistantContent);
+        const savedTurn = persistChatTurn({
+          conversationId,
+          model: body.model,
+          userMessageId,
+          userParentId,
+          userContent: originalUserContent,
+          assistantMessageId,
+          assistantContent,
+          assistantError: currentActiveStream.streamError ?? streamError ?? undefined,
+          assistantStats: usageStats,
+          toolsEnabled,
+        });
+
+        if (attachmentIds && Array.isArray(attachmentIds)) {
+          const updateStmt = db.prepare(`UPDATE attachments SET message_id = ?, conversation_id = ? WHERE id = ?`);
+          for (const id of attachmentIds) {
+            updateStmt.run(userMessageId, savedTurn.conversationId, id);
+          }
+        }
+
+        const metaEvent = `data: ${JSON.stringify({
+          type: "meta",
+          conversationId: savedTurn.conversationId,
+          title: savedTurn.title,
+          isNew: savedTurn.isNew,
+          userMessageId,
+          assistantMessageId,
+          stats: usageStats,
+        })}\n\n`;
+
+        for (const sub of subscribers) {
+          if (!sub.raw.writableEnded) {
+            sub.raw.write(metaEvent);
+            sub.raw.write("data: [DONE]\n\n");
+            sub.raw.end();
+          }
+        }
+      } catch (err) {
+        console.error("[blombrain] failed to persist chat turn:", err);
+      }
+    }
+
+    const currentActiveStream: ActiveStream = {
+      conversationId,
+      userMessageId,
+      userParentId,
+      assistantMessageId,
+      model: body.model,
+      originalUserContent,
+      attachmentIds,
+      assistantContent,
+      reasoningMode: null,
+      thinkingStartMs: 0,
+      usageStats: undefined,
+      streamError: null,
+      startTime,
+      isDone: false,
+      abortController,
+      subscribers,
+      doSaveTurn,
+    };
+    activeStreams.set(conversationId, currentActiveStream);
+
+    const onClientDisconnect = () => { subscribers.delete(reply); };
+    reply.raw.on("close", onClientDisconnect);
+    req.raw.on("aborted", onClientDisconnect);
+
+    // Emit routing status event
+    broadcastChunk(JSON.stringify({ type: "status", status: "routing" }));
 
     let mcpTools: any[] = [];
     let activeSkills: any[] = [];
     let builtInTools: any[] = [];
 
-    if (toolsEnabled) {
+    if (toolsEnabled && !abortController.signal.aborted) {
       const { routeToolsAndSkills, buildRecentContext } = await import("../services/toolRouter.js");
       const priorContext = buildRecentContext(body.messages);
-      const routingResult = await routeToolsAndSkills(
-        userQuery,
-        excludedMcps,
-        excludedSkills,
-        forcedTools,
-        body.model,
-        (text: string) => {
-          routerRawText += text;
-          broadcastChunk(JSON.stringify({ type: "router_token", text }));
-        },
-        priorContext,
-      );
-      mcpTools = routingResult.mcpTools ?? [];
-      activeSkills = routingResult.selectedSkills ?? [];
-      builtInTools = routingResult.selectedBuiltInTools ?? [];
+      try {
+        const routingResult = await routeToolsAndSkills(
+          userQuery,
+          excludedMcps,
+          excludedSkills,
+          forcedTools,
+          body.model,
+          (text: string) => {
+            routerRawText += text;
+            broadcastChunk(JSON.stringify({ type: "router_token", text }));
+          },
+          priorContext,
+          abortController.signal
+        );
+        mcpTools = routingResult.mcpTools ?? [];
+        activeSkills = routingResult.selectedSkills ?? [];
+        builtInTools = routingResult.selectedBuiltInTools ?? [];
+      } catch (err) {
+        if (!abortController.signal.aborted && !(err instanceof Error && (err.name === "AbortError" || err.message.includes("aborted")))) {
+          console.error("[toolRouter] Error during pre-pass routing:", err);
+        }
+      }
     }
 
     if (routerRawText.trim()) {
       assistantContent = `<router_execution>${routerRawText.trim()}</router_execution>\n` + assistantContent;
+      currentActiveStream.assistantContent = assistantContent;
+    }
+
+    if (abortController.signal.aborted) {
+      currentActiveStream.isDone = true;
+      currentActiveStream.doSaveTurn();
+      activeStreams.delete(conversationId);
+      return;
     }
 
     // Emit generating status event
@@ -697,7 +806,7 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
-    const { model: _incomingModel, conversationId: _incomingConvId, userMessageId: _umId, userParentId: _upId, assistantMessageId: _amId, attachments: attachmentIds, messages: _msgs, ...rest } = body;
+    const { model: _incomingModel, conversationId: _incomingConvId, userMessageId: _umId, userParentId: _upId, assistantMessageId: _amId, attachments: _attachments, messages: _msgs, ...rest } = body;
 
     const finalTemperature = settingRow?.temperature ?? body.temperature;
 
@@ -823,99 +932,6 @@ export async function chatRoutes(app: FastifyInstance) {
       },
     };
 
-    let streamError: string | null = null;
-    let usageStats: { promptTokens?: number; completionTokens?: number; totalTokens?: number; durationMs?: number; thinkingTimeMs?: number } | undefined;
-    const startTime = Date.now();
-    let hasPersisted = false;
-
-    function doSaveTurn() {
-      if (hasPersisted) return;
-      hasPersisted = true;
-
-      try {
-        if (!usageStats) usageStats = {};
-        if (!usageStats.durationMs && Date.now() - startTime > 0) {
-          usageStats.durationMs = Date.now() - startTime;
-        }
-
-        if (currentToolExecution && !assistantContent.includes(currentToolExecution.callId)) {
-          const cancelledPayload = {
-            callId: currentToolExecution.callId,
-            toolName: currentToolExecution.toolName,
-            args: currentToolExecution.args,
-            status: "cancelled",
-          };
-          assistantContent += `\n<tool_execution>${JSON.stringify(cancelledPayload)}</tool_execution>\n`;
-        }
-
-        assistantContent = closeUnclosedTags(assistantContent);
-        const savedTurn = persistChatTurn({
-          conversationId,
-          model: body.model,
-          userMessageId,
-          userParentId,
-          userContent: originalUserContent,
-          assistantMessageId,
-          assistantContent,
-          assistantError: streamError ?? undefined,
-          assistantStats: usageStats,
-          toolsEnabled,
-        });
-
-        if (attachmentIds && Array.isArray(attachmentIds)) {
-          const updateStmt = db.prepare(`UPDATE attachments SET message_id = ?, conversation_id = ? WHERE id = ?`);
-          for (const id of attachmentIds) {
-            updateStmt.run(userMessageId, savedTurn.conversationId, id);
-          }
-        }
-
-        const metaEvent = `data: ${JSON.stringify({
-          type: "meta",
-          conversationId: savedTurn.conversationId,
-          title: savedTurn.title,
-          isNew: savedTurn.isNew,
-          userMessageId,
-          assistantMessageId,
-          stats: usageStats,
-        })}\n\n`;
-
-        for (const sub of subscribers) {
-          if (!sub.raw.writableEnded) {
-            sub.raw.write(metaEvent);
-            sub.raw.write("data: [DONE]\n\n");
-            sub.raw.end();
-          }
-        }
-      } catch (err) {
-        console.error("[blombrain] failed to persist chat turn:", err);
-      }
-    }
-
-    const currentActiveStream: ActiveStream = {
-      conversationId,
-      userMessageId,
-      userParentId,
-      assistantMessageId,
-      model: body.model,
-      originalUserContent,
-      attachmentIds,
-      assistantContent,
-      reasoningMode: null,
-      thinkingStartMs: 0,
-      usageStats: undefined,
-      streamError: null,
-      startTime,
-      isDone: false,
-      abortController,
-      subscribers,
-      doSaveTurn,
-    };
-    activeStreams.set(conversationId, currentActiveStream);
-
-    const onClientDisconnect = () => { subscribers.delete(reply); };
-    reply.raw.on("close", onClientDisconnect);
-    req.raw.on("aborted", onClientDisconnect);
-
     // Fetch context overflow behavior settings
     const defaultBehavior = globalSettingsRow?.ctx_overflow_behavior || "truncate_middle";
     const effectiveOverflowBehavior = settingRow?.ctx_overflow_behavior || defaultBehavior;
@@ -930,7 +946,7 @@ export async function chatRoutes(app: FastifyInstance) {
     let currentMessages = [...outgoingMessages];
     let toolRound = 0;
     const executedToolCallsInTurn = new Map<string, string>();
-    let currentToolExecution: { callId: string; toolName: string; args: any } | null = null;
+    currentToolExecution = null;
 
     const { applyContextOverflowPolicy } = await import("../services/contextWindow.js");
 
