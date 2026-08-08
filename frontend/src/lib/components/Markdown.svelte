@@ -3,8 +3,8 @@
   import { fly } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
   import morphdom from "morphdom";
-  import { chatStore } from "../stores/chat.svelte";
   import { artifactStore } from "../stores/artifact.svelte";
+  import { copyToClipboard } from "../utils/clipboard";
   import { decodeBase64 } from "../markdown";
 
   interface Props {
@@ -250,7 +250,8 @@
       }
 
       if (codeToCopy) {
-        navigator.clipboard.writeText(codeToCopy).then(() => {
+        copyToClipboard(codeToCopy).then((success) => {
+          if (!success) return;
           const copyIcon = copyBtn.querySelector(".copy-icon");
           const checkIcon = copyBtn.querySelector(".check-icon");
           const btnText = copyBtn.querySelector(".btn-text");
@@ -277,7 +278,8 @@
       e.preventDefault();
       const text = inlineCode.textContent || "";
       if (text) {
-        navigator.clipboard.writeText(text).then(() => {
+        copyToClipboard(text).then((success) => {
+          if (!success) return;
           tooltip.text = "Copied!";
           tooltip.copied = true;
           updateTooltipPosition(inlineCode);

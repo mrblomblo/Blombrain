@@ -2,7 +2,7 @@
   import { Copy, Pencil, Trash2, RotateCw, Play, Check } from "@lucide/svelte";
   import type { ChatMessage } from "../types";
   import { chatStore } from "../stores/chat.svelte";
-
+  import { copyToClipboard } from "../utils/clipboard";
   import { confirmStore } from "../stores/confirmStore.svelte";
 
   interface Props {
@@ -25,7 +25,7 @@
 
   async function handleCopy() {
     try {
-      await navigator.clipboard.writeText(message.content);
+      await copyToClipboard(message.content);
       copied = true;
       setTimeout(() => (copied = false), 2000);
     } catch (e) {

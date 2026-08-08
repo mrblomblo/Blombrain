@@ -1,5 +1,6 @@
 <script lang="ts">
   import { artifactStore } from "../stores/artifact.svelte";
+  import { copyToClipboard } from "../utils/clipboard";
   import hljs from "highlight.js";
   import { fly, slide } from "svelte/transition";
   import {
@@ -182,15 +183,17 @@ document.addEventListener('submit', function(e) {
     });
   });
 
-  function handleCopy() {
+  async function handleCopy() {
     if (!artifactStore.code) return;
-    navigator.clipboard.writeText(artifactStore.code).then(() => {
+
+    const success = await copyToClipboard(artifactStore.code);
+    if (success) {
       copied = true;
       if (copyTimer) clearTimeout(copyTimer);
       copyTimer = setTimeout(() => {
         copied = false;
       }, 2000);
-    });
+    }
   }
 
   function handleDownload() {
