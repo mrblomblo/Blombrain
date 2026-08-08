@@ -966,23 +966,6 @@ export async function chatRoutes(app: FastifyInstance) {
       activeSkills,
       uploadsDir: path.join(DATA_DIR, "uploads"),
       emitEvent: (type: string, payload: Record<string, any>) => {
-        if (type === "inject_artifact_card" && payload?.filename) {
-          const filename = String(payload.filename);
-          artifactFilenamesThisTurn.add(filename);
-
-          const escaped = filename.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
-          const placeholderRegex = new RegExp(`\\[(?:artifact|present):\\s*${escaped}\\]`, "i");
-          if (placeholderRegex.test(assistantContent)) {
-            const card = buildArtifactCardTag(conversationId, filename);
-            if (card) {
-              assistantContent = assistantContent.replace(placeholderRegex, `\n${card}\n`);
-              currentActiveStream.assistantContent = assistantContent;
-              broadcastChunk(JSON.stringify({ type: "content_replace", content: assistantContent }));
-            }
-          }
-
-          return;
-        }
         broadcastChunk(JSON.stringify({ type, ...payload }));
       },
     };

@@ -2,6 +2,16 @@ import { Marked } from "marked";
 import hljs from "highlight.js";
 import DOMPurify from "dompurify";
 
+export const artifactRegistry = new Map<string, { id: string; title: string; lang: string }>();
+
+export function registerArtifact(filename: string, data: { id: string; title: string; lang: string }) {
+  artifactRegistry.set(filename.toLowerCase(), data);
+}
+
+export function clearArtifactRegistry() {
+  artifactRegistry.clear();
+}
+
 export function encodeBase64(str: string): string {
   const gBuf = (globalThis as any).Buffer;
   if (typeof gBuf !== "undefined") {
@@ -304,9 +314,23 @@ export function renderMarkdown(
   try {
     const isArtifactPreview = !!options?.isArtifactPreview;
 
+    // Step 0: Replace text placeholders with <artifact-card> tags
+    let processedContent = content.replace(
+      /\[(?:artifact|present):\s*([^\]\n]+)\]/gi,
+      (_match, rawName) => {
+        const filename = String(rawName).trim();
+        const meta = artifactRegistry.get(filename.toLowerCase());
+        if (meta) {
+          const safeTitle = String(meta.title || filename).replace(/"/g, "'");
+          return `\n<artifact-card id="${meta.id}" filename="${filename}" title="${safeTitle}" lang="${meta.lang}"></artifact-card>\n`;
+        }
+        return _match;
+      }
+    );
+
     // Step 1: pull <artifact-card> tags out BEFORE Marked can escape them.
     const extractedCards: Array<{ id: string; filename: string; title: string; lang: string }> = [];
-    let processedContent = content.replace(
+    processedContent = processedContent.replace(
       /<artifact-card\s+id="([^"]*)"\s+filename="([^"]*)"\s+title="([^"]*)"\s+lang="([^"]*)"\s*>\s*<\/artifact-card>/gi,
       (_m, id, filename, title, lang) => {
         const idx = extractedCards.length;

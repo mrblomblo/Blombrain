@@ -13,11 +13,12 @@ import {
   patchConversationTools,
 } from "../api";
 import { encodeToWav } from "../audio";
-import type { ChatMessage, ConversationSummary, AttachmentOut, ResponseStats } from "../types";
+import type { ChatMessage, ConversationSummary, AttachmentOut } from "../types";
 import { artifactStore } from "./artifact.svelte";
 import { settingsStore } from "./settings.svelte";
 import { getRandomUUID } from "../utils/uuid";
-import { parseMessageSegments, THINK_TAG_NAMES } from "../utils/segmentParser";
+import { THINK_TAG_NAMES } from "../utils/segmentParser";
+import { registerArtifact, clearArtifactRegistry } from "../markdown";
 
 const OPEN_TAGS = THINK_TAG_NAMES.map((t) => `<${t}>`);
 const CLOSE_TAGS = THINK_TAG_NAMES.map((t) => `</${t}>`);
@@ -644,7 +645,7 @@ class ChatStore {
     this.streamingConvId = this.activeConversationId;
     this.streamingAssistantId = currentAsstId;
     artifactStore.resetUserClosed();
-
+    clearArtifactRegistry();
     this.abortController = new AbortController();
     let rawBuffer = "";
 
@@ -758,9 +759,19 @@ class ChatStore {
         msg.content = rawBuffer;
       },
       onArtifactCreated: (evt) => {
+        registerArtifact(evt.filename, {
+          id: evt.artifactId,
+          title: evt.title,
+          lang: evt.language,
+        });
         artifactStore.loadArtifact(evt.artifactId, evt.conversationId, evt.filename, evt.title, evt.language);
       },
       onArtifactUpdated: (evt) => {
+        registerArtifact(evt.filename, {
+          id: evt.artifactId,
+          title: evt.title,
+          lang: evt.language,
+        });
         artifactStore.refreshArtifactContent(evt.artifactId);
       },
       onMeta: (meta) => {
@@ -895,9 +906,19 @@ class ChatStore {
         if (msg) msg.stats = meta.stats;
       },
       onArtifactCreated: (evt) => {
+        registerArtifact(evt.filename, {
+          id: evt.artifactId,
+          title: evt.title,
+          lang: evt.language,
+        });
         artifactStore.loadArtifact(evt.artifactId, evt.conversationId, evt.filename, evt.title, evt.language);
       },
       onArtifactUpdated: (evt) => {
+        registerArtifact(evt.filename, {
+          id: evt.artifactId,
+          title: evt.title,
+          lang: evt.language,
+        });
         artifactStore.refreshArtifactContent(evt.artifactId);
       },
       onDone: () => {
