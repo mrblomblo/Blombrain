@@ -425,12 +425,79 @@ check_prereqs() {
 # ---------------------------------------------------------------------------
 # Dev mode: run backend + frontend dev servers concurrently
 # ---------------------------------------------------------------------------
-on_exit() {
-  trap - INT TERM EXIT
-  [[ -n "$BACKEND_JOB" ]] && kill -TERM -- "-$BACKEND_JOB" 2>/dev/null
-  [[ -n "$FRONTEND_JOB" ]] && kill -TERM -- "-$FRONTEND_JOB" 2>/dev/null
-  [[ -n "$BACKEND_JOB" || -n "$FRONTEND_JOB" ]] && wait 2>/dev/null
+# ---------------------------------------------------------------------------
+# Shutdown / signal handling
+# ---------------------------------------------------------------------------
+CLEANUP_DONE=false
+STTY_SAVE=""
+
+save_terminal_state() {
+  if [[ -t 0 ]]; then
+    STTY_SAVE="$(stty -g 2>/dev/null)" || STTY_SAVE=""
+  fi
+}
+
+restore_terminal() {
+  [[ -t 0 ]] || return 0
+  # Non-canonical, timed read (time=1 => 0.1s) so pending bytes can be
+  # read even without a newline.
+  stty -icanon min 0 time 1 2>/dev/null || return 0
+  sleep 0.1   # give any in-flight replies a moment to arrive
+  local chunk i=0 total=0
+  while (( i++ < 40 )) && IFS= read -r -n 256 -t 1 chunk; do
+    total=$(( total + ${#chunk} ))
+  done
+  if (( total > 0 )); then
+    verbose "Discarded $total byte(s) of stale terminal replies"
+  fi
+  if [[ -n "$STTY_SAVE" ]]; then
+    stty "$STTY_SAVE" 2>/dev/null || stty sane 2>/dev/null || true
+  else
+    stty sane 2>/dev/null || true
+  fi
+  return 0
+}
+
+cleanup() {
+  [[ "$CLEANUP_DONE" == true ]] && return
+  CLEANUP_DONE=true
+
+  local jobs=()
+  [[ -n "$BACKEND_JOB" ]] && jobs+=("$BACKEND_JOB")
+  [[ -n "$FRONTEND_JOB" ]] && jobs+=("$FRONTEND_JOB")
+
+  if (( ${#jobs[@]} > 0 )); then
+    local j
+    for j in "${jobs[@]}"; do
+      kill -TERM -- "-$j" 2>/dev/null    # negative pid => whole process group
+    done
+    # Grace period: wait up to ~2s for a clean exit...
+    local deadline=$(( SECONDS + 2 )) alive=1
+    while (( alive )) && (( SECONDS < deadline )); do
+      alive=0
+      for j in "${jobs[@]}"; do
+        if kill -0 -- "-$j" 2>/dev/null; then alive=1; break; fi
+      done
+      (( alive )) && sleep 0.1
+    done
+    # ...then hard-kill anything still alive.
+    for j in "${jobs[@]}"; do
+      kill -KILL -- "-$j" 2>/dev/null
+    done
+    wait 2>/dev/null || true
+  fi
+
+  restore_terminal
   cleanup_log_formatter
+}
+
+on_signal() {
+  local sig="$1" num="$2"
+  trap '' INT TERM HUP QUIT TSTP   # don't let a second signal interrupt cleanup
+  log "Caught SIG${sig}, shutting down..."
+  cleanup
+  trap - EXIT
+  exit $(( 128 + num ))
 }
 
 run_dev() {
@@ -458,11 +525,16 @@ run_dev() {
   ) &
   FRONTEND_JOB=$!
 
-  trap on_exit INT TERM EXIT
-
   # If either process dies on its own, bring the other down too.
-  wait -n "$BACKEND_JOB" "$FRONTEND_JOB"
-  on_exit
+  local rc=0
+  wait -n "$BACKEND_JOB" "$FRONTEND_JOB" || rc=$?
+  if kill -0 "$BACKEND_JOB" 2>/dev/null; then
+    verbose "Frontend exited first; stopping backend..."
+  else
+    verbose "Backend exited first; stopping frontend..."
+  fi
+  cleanup
+  exit "$rc"
 }
 
 # ---------------------------------------------------------------------------
@@ -502,8 +574,6 @@ run_prod() {
 
   log "Starting backend (serves API + built frontend on :$BACKEND_PORT)..."
 
-  trap on_exit INT TERM EXIT
-
   (
     cd "$BACKEND_DIR" || exit 1
     export PORT="$BACKEND_PORT"
@@ -512,8 +582,10 @@ run_prod() {
   ) &
   BACKEND_JOB=$!
 
-  wait "$BACKEND_JOB"
-  on_exit
+  local rc=0
+  wait "$BACKEND_JOB" || rc=$?
+  cleanup
+  exit "$rc"
 }
 
 # ---------------------------------------------------------------------------
@@ -521,6 +593,12 @@ run_prod() {
 # ---------------------------------------------------------------------------
 check_prereqs
 write_log_formatter
+save_terminal_state
+
+for sig in INT TERM HUP QUIT TSTP; do
+  trap "on_signal $sig $(kill -l "$sig")" "$sig"
+done
+trap cleanup EXIT
 
 if [[ "$MODE" == "dev" ]]; then
   run_dev
