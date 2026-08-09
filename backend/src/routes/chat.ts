@@ -864,11 +864,11 @@ export async function chatRoutes(app: FastifyInstance) {
     if (toolsEnabled) {
       const artifactGuidance =
         `ARTIFACT TOOLS:\n` +
-        `When generating HTML web pages, SVG graphics, scripts, or markdown documents, call the \`create_artifact\` tool function.\n` +
-        `Do NOT print raw standalone HTML or SVG code inside standard markdown code blocks.\n` +
+        `When generating HTML web pages, SVG graphics, scripts, or markdown documents, call the \`create_artifact\` tool function. Only call \`create_artifact\` once per artifact.\n` +
+        `Do NOT print raw standalone HTML or SVG code inside standard markdown code blocks unless the user explicitly instructs you to do so.\n` +
         `CRITICAL: In your visible text response, you MUST output the placeholder \`[artifact: filename]\` exactly where you want the artifact card to appear.\n` +
         `Example: "Here is the interactive chart you requested:\\n[artifact: chart.svg]\\nYou can click it to view the full preview."\n` +
-        `To re-display an existing artifact, use the placeholder \`[present: filename]\` and call the \`present_artifact\` tool.\n` +
+        `To re-display an existing artifact, use the placeholder \`[present: filename]\` and call the \`present_artifact\` tool. Do not call the \`present_artifact\` tool if the \`create_artifact\` tool has already been used in the same turn.\n` +
         `To edit artifacts, use \`edit_file\` or \`write_file\`. To inspect files, use \`read_file\` or \`find_in_file\`.`;
 
       if (outgoingMessages.length > 0 && outgoingMessages[0].role === "system") {

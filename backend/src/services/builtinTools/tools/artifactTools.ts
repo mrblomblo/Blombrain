@@ -67,7 +67,7 @@ function resolveFile(convId: string, filename: string, ctx: BuiltInToolContext):
 export const createArtifactToolDef: BuiltInToolDefinition = {
   name: "create_artifact",
   category: "artifact",
-  description: "Create a new rendered artifact file (HTML page, SVG graphic, Markdown document, script, etc.). This generates an inline card in the chat for the user to click.",
+  description: "Create a new rendered artifact file (HTML page, SVG graphic, Markdown document, script, etc.).",
   parameters: {
     type: "object",
     properties: {
