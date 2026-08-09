@@ -20,12 +20,11 @@
   });
 
   let statusColorClass = $derived.by(() => {
-    if (execution?.status === "completed") return "text-accent";
+    if (execution?.status === "completed") return "text-success";
     if (execution?.status === "error") return "text-danger";
     if (execution?.status === "cancelled") return "text-fg-muted";
-    if (execution?.status === "polling" || execution?.status === "executing") {
-      return "text-accent";
-    }
+    if (execution?.status === "polling") return "text-info";
+    if (execution?.status === "executing") return "text-accent";
     return "text-fg-subtle";
   });
 </script>
@@ -47,17 +46,17 @@
             : ''}"
         />
         {#if execution.status === "polling"}
-          <Loader2
-            size={12}
-            class="animate-spin shrink-0 text-accent"
-          />
+          <Loader2 size={12} class="animate-spin shrink-0 text-accent" />
         {:else}
           <Wrench size={12} class="text-accent shrink-0" />
         {/if}
         <span class="font-semibold text-fg-subtle truncate">{displayName}</span>
       </div>
       <span
-        class="shrink-0 text-[10px] uppercase tracking-wider px-0.5 sm:px-1.5 py-0.5 rounded bg-bg-elevated border border-line/40 {statusColorClass} {(execution.status === 'polling' || execution.status === 'executing') ? 'hidden sm:flex items-center gap-1' : 'flex items-center gap-1'}"
+        class="shrink-0 text-[10px] uppercase tracking-wider px-0.5 sm:px-1.5 py-0.5 rounded bg-bg-elevated border border-line/40 {statusColorClass} {execution.status ===
+          'polling' || execution.status === 'executing'
+          ? 'hidden sm:flex items-center gap-1'
+          : 'flex items-center gap-1'}"
         title={execution.status}
       >
         {#if execution.status === "completed"}
@@ -67,10 +66,7 @@
         {:else if execution.status === "cancelled"}
           <Ban size={11} class="shrink-0 sm:hidden" />
         {:else if execution.status === "polling" || execution.status === "executing"}
-          <Loader2
-            size={11}
-            class="animate-spin shrink-0 sm:hidden"
-          />
+          <Loader2 size={11} class="animate-spin shrink-0 sm:hidden" />
         {/if}
         <span class="hidden sm:inline">{execution.status}</span>
       </span>
