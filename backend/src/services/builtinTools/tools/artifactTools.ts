@@ -143,7 +143,7 @@ export const createArtifactToolDef: BuiltInToolDefinition = {
       const cardHtml = `<artifact-card id="${artifactId}" filename="${filename}" title="${title}" lang="${language}"></artifact-card>`;
       ctx.emitEvent?.("inject_artifact_card", { html: cardHtml, filename });
 
-      return { content: `Artifact '${filename}' created and injected into the chat UI successfully.` };
+      return { content: `Artifact '${filename}' created. Display it to the user with [artifact: ${filename}].` };
     } catch (err) {
       return { content: `Failed: ${err instanceof Error ? err.message : String(err)}`, isError: true };
     }
