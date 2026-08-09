@@ -8,6 +8,7 @@
     XCircle,
     Ban,
   } from "@lucide/svelte";
+  import hljs from "highlight.js";
   import { slide } from "svelte/transition";
 
   let { execution }: { execution: ToolExecutionEvent } = $props();
@@ -30,45 +31,47 @@
 </script>
 
 {#if execution}
-  <div
-    class="my-1.5 rounded-md border border-line/60 bg-bg-muted/40 p-2 text-xs font-mono"
-  >
+  <div class="mb-2 text-xs">
     <button
       type="button"
       onclick={() => (isExpanded = !isExpanded)}
-      class="flex w-full items-center justify-between font-medium text-fg-muted hover:text-fg transition-colors"
+      class="flex w-full items-center gap-1 text-fg-muted transition-colors hover:text-fg font-medium"
     >
+      <ChevronRight
+        size={14}
+        class="shrink-0 transition-transform duration-200 {isExpanded
+          ? 'rotate-90'
+          : ''}"
+      />
       <div class="flex items-center gap-1.5 min-w-0">
-        <ChevronRight
+        <Wrench
           size={13}
-          class="shrink-0 transition-transform duration-200 {isExpanded
-            ? 'rotate-90'
-            : ''}"
+          class="shrink-0 {execution.status === 'polling' ||
+          execution.status === 'executing'
+            ? 'animate-pulse text-accent'
+            : 'text-fg-subtle'}"
         />
-        {#if execution.status === "polling"}
-          <Loader2 size={12} class="animate-spin shrink-0 text-accent" />
-        {:else}
-          <Wrench size={12} class="text-accent shrink-0" />
-        {/if}
-        <span class="font-semibold text-fg-subtle truncate">{displayName}</span>
+        <span class="truncate">{displayName}</span>
       </div>
+
       <span
-        class="shrink-0 text-[10px] uppercase tracking-wider px-0.5 sm:px-1.5 py-0.5 rounded bg-bg-elevated border border-line/40 {statusColorClass} {execution.status ===
-          'polling' || execution.status === 'executing'
-          ? 'hidden sm:flex items-center gap-1'
-          : 'flex items-center gap-1'}"
-        title={execution.status}
+        class="ml-auto shrink-0 flex items-center gap-1 text-[10px] uppercase tracking-wider text-fg-subtle"
       >
         {#if execution.status === "completed"}
-          <Check size={11} class="shrink-0 sm:hidden" />
+          <Check size={11} class="shrink-0 {statusColorClass}" />
+          <span class="hidden sm:inline">Done</span>
         {:else if execution.status === "error"}
-          <XCircle size={11} class="shrink-0 sm:hidden" />
+          <XCircle size={11} class="shrink-0 {statusColorClass}" />
+          <span class="hidden sm:inline">Error</span>
         {:else if execution.status === "cancelled"}
-          <Ban size={11} class="shrink-0 sm:hidden" />
+          <Ban size={11} class="shrink-0 {statusColorClass}" />
+          <span class="hidden sm:inline">Cancelled</span>
         {:else if execution.status === "polling" || execution.status === "executing"}
-          <Loader2 size={11} class="animate-spin shrink-0 sm:hidden" />
+          <Loader2 size={11} class="animate-spin shrink-0 {statusColorClass}" />
+          <span class="hidden sm:inline"
+            >{execution.status === "polling" ? "Polling" : "Running"}</span
+          >
         {/if}
-        <span class="hidden sm:inline">{execution.status}</span>
       </span>
     </button>
 
@@ -102,12 +105,12 @@
     {#if isExpanded}
       <div
         transition:slide={{ duration: 200 }}
-        class="mt-2 space-y-1.5 border-t border-line/40 pt-2 text-[11px]"
+        class="mt-1.5 pl-4 text-[11px] leading-relaxed text-fg-muted opacity-90 border-l-2 border-line/50 ml-1.5 py-1 space-y-1.5"
       >
         <div>
           <span class="font-semibold text-fg-subtle">Args:</span>
           <pre
-            class="mt-1 max-h-28 overflow-x-auto whitespace-pre-wrap rounded bg-bg-elevated p-1.5 text-fg-muted border border-line/30">{JSON.stringify(
+            class="mt-1 max-h-28 overflow-x-auto whitespace-pre-wrap rounded bg-bg p-1.5 text-fg font-mono">{JSON.stringify(
               execution.args,
               null,
               2,
@@ -117,14 +120,14 @@
           <div>
             <span class="font-semibold text-fg-subtle">Result:</span>
             <pre
-              class="mt-1 max-h-40 overflow-x-auto whitespace-pre-wrap rounded bg-bg-elevated p-1.5 text-fg border border-line/30">{execution.result}</pre>
+              class="mt-1 max-h-40 overflow-x-auto whitespace-pre-wrap rounded bg-bg p-1.5 text-fg font-mono">{execution.result}</pre>
           </div>
         {/if}
         {#if execution.error}
           <div class="text-danger">
             <span class="font-semibold">Error:</span>
             <pre
-              class="mt-1 max-h-28 overflow-x-auto whitespace-pre-wrap rounded bg-danger-muted/20 p-1.5 text-danger border border-danger/30">{execution.error}</pre>
+              class="mt-1 max-h-28 overflow-x-auto whitespace-pre-wrap rounded bg-danger/10 p-1.5 text-danger font-mono">{execution.error}</pre>
           </div>
         {/if}
       </div>
