@@ -842,15 +842,16 @@ export async function chatRoutes(app: FastifyInstance) {
     // Key design decisions:
     //   1. Append to the FIRST system message rather than inserting a second one.
     //      Many open-weight models (Llama/Gemma variants) degrade with multiple system messages.
-    //   2. Strip example/template sections from SKILL.md bodies before injection to prevent
-    //      the model from confusing template content with prior conversation history.
-    //   3. Add a short reminder of the user's original request just before their message
-    //      so the model cannot lose track of the actual task across tool rounds.
+    //   2. Inject skill instructions verbatim. The anchor reminder is sufficient
+    //      to prevent the model from confusing skill template content with prior
+    //      conversation history.
+    //   3. Add a short reminder of the user's original request just before their
+    //      message so the model cannot lose track of the actual task across tool rounds.
     if (activeSkills.length > 0) {
-      const { stripSkillExamples, getSkillScripts } = await import("../services/skills.js");
+      const { getSkillScripts } = await import("../services/skills.js");
 
       const skillsBlock = activeSkills.map((s) =>
-        `### Skill: ${s.name}\n${s.description}\n\nInstructions:\n${stripSkillExamples(s.instructions)}`
+        `### Skill: ${s.name}\n${s.description}\n\nInstructions:\n${s.instructions}`
       ).join("\n\n---\n\n");
 
       let scriptInstructions = "";

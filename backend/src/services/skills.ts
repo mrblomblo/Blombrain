@@ -34,47 +34,6 @@ export function parseSkillMarkdown(markdown: string): { name: string; descriptio
 }
 
 /**
- * Strip sections from a skill's instruction markdown that are likely to cause
- * context confusion when injected into a system prompt. Specifically, sections
- * headed with "example", "template", "sample", or "checklist" (case-insensitive)
- * are removed because models can mistake rendered template content for prior
- * conversation history and lose track of the actual user request.
- *
- * Only H2+ headings (##, ###, ...) are considered section boundaries.
- */
-export function stripSkillExamples(instructions: string): string {
-  const noiseHeaders = /^(example|template|sample|checklist|output example|sample output)/i;
-  const lines = instructions.split("\n");
-  const result: string[] = [];
-  let inNoisySection = false;
-  let noisySectionDepth = 0;
-
-  for (const line of lines) {
-    // Detect a markdown heading (H2+)
-    const headingMatch = line.match(/^(#{2,})\s+(.*)/);
-    if (headingMatch) {
-      const depth = headingMatch[1].length;
-      const title = headingMatch[2].trim();
-      if (noiseHeaders.test(title)) {
-        inNoisySection = true;
-        noisySectionDepth = depth;
-        continue; // skip the heading itself
-      }
-      // A heading at equal or shallower depth ends the noisy section
-      if (inNoisySection && depth <= noisySectionDepth) {
-        inNoisySection = false;
-      }
-    }
-
-    if (!inNoisySection) {
-      result.push(line);
-    }
-  }
-
-  return result.join("\n").trim();
-}
-
-/**
  * Scans a skill's directory for executable scripts.
  * - Only scans the `scripts/` subdirectory.
  * - Ignores hidden files, directories, and symlinks.
@@ -96,7 +55,7 @@ export function getSkillScripts(skillDirPath: string | null): string[] {
       if (!entry.isFile()) continue; // Ignore directories, block devices, etc.
 
       const fullPath = path.join(scriptsDir, entry.name);
-      
+
       // Reject symlinks
       const lstat = fs.lstatSync(fullPath);
       if (lstat.isSymbolicLink()) continue;
