@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronDown, ChevronRight, Brain } from "@lucide/svelte";
+  import { ChevronRight, Brain, Toolbox } from "@lucide/svelte";
   import { slide } from "svelte/transition";
   import Markdown from "./Markdown.svelte";
 
@@ -131,12 +131,21 @@
           : ''}"
       />
       <div class="flex items-center gap-1.5">
-        <Brain
-          size={13}
-          class={status === "routing" || (streaming && !thinkingDone)
-            ? "animate-pulse text-accent"
-            : "text-fg-subtle"}
-        />
+        {#if status === "routing" || isRouter}
+          <Toolbox
+            size={13}
+            class={status === "routing" || (streaming && !thinkingDone)
+              ? "animate-pulse text-accent"
+              : "text-fg-subtle"}
+          />
+        {:else}
+          <Brain
+            size={13}
+            class={status === "routing" || (streaming && !thinkingDone)
+              ? "animate-pulse text-accent"
+              : "text-fg-subtle"}
+          />
+        {/if}
         <span>
           {#if status === "routing"}
             Selecting tools & skills...
@@ -145,7 +154,7 @@
           {:else if streaming && !thinkingDone}
             Thinking
           {:else}
-            Thought process{#if thinkingDone === false}
+            Thought process {#if thinkingDone === false}
               (interrupted){/if}
           {/if}
         </span>
