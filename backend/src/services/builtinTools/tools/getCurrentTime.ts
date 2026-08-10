@@ -96,5 +96,6 @@ export const getCurrentTimeTool: BuiltInToolDefinition = {
       },
     },
   },
+  cacheable: false,
   execute: executeGetCurrentTime,
 };

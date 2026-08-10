@@ -88,6 +88,7 @@ export const getRandomValueTool: BuiltInToolDefinition = {
   name: "get_random_value",
   description:
     "Generate random values locally: UUIDs, integers, floats, hex strings, passwords, or a random choice from a list. Does not use the network.",
+  cacheable: false,
   parameters: {
     type: "object",
     properties: {

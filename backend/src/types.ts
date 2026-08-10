@@ -152,6 +152,7 @@ export interface ToolExecutionEvent {
   jobId?: string;
   elapsedMs?: number;
   attempts?: number;
+  cacheable?: boolean;
 }
 
 /** Message shape sent to the frontend. */

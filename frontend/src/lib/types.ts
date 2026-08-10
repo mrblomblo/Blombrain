@@ -143,6 +143,7 @@ export interface ToolExecutionEvent {
   jobId?: string;
   elapsedMs?: number;
   attempts?: number;
+  cacheable?: boolean;
 }
 
 export interface ChatMessage {

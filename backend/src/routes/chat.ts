@@ -1260,11 +1260,12 @@ export async function chatRoutes(app: FastifyInstance) {
           const isBuiltInTool = !!builtInTool;
           const isToolRouted = mcpTools.some((t) => t.name === tc.name) || isBuiltInTool;
           const isSkillRouted = activeSkills.some((s) => s.name === tc.name);
+          const isCacheable = !isBuiltInTool || builtInTool?.cacheable !== false;
 
           let result: { content: string; isError?: boolean };
 
           const toolCallKey = `${tc.name}::${JSON.stringify(tc.arguments)}`;
-          const isDuplicateCall = executedToolCallsInTurn.has(toolCallKey);
+          const isDuplicateCall = isCacheable && executedToolCallsInTurn.has(toolCallKey);
 
           if (!isDuplicateCall) {
             currentToolExecution = { callId, toolName: tc.name, args: tc.arguments };
@@ -1283,6 +1284,7 @@ export async function chatRoutes(app: FastifyInstance) {
               callId,
               toolName: tc.name,
               args: tc.arguments,
+              cacheable: isCacheable,
               status: "executing",
             }));
 
@@ -1317,6 +1319,7 @@ export async function chatRoutes(app: FastifyInstance) {
               callId,
               toolName: tc.name,
               args: tc.arguments,
+              cacheable: isCacheable,
               status: "executing",
             }));
 
@@ -1345,6 +1348,7 @@ export async function chatRoutes(app: FastifyInstance) {
             callId,
             toolName: tc.name,
             args: tc.arguments,
+            cacheable: isCacheable,
             ...(isCancelled ? {} : { result: result.content }),
             status,
           };

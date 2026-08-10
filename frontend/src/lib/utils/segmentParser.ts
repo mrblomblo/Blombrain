@@ -213,14 +213,15 @@ export function parseMessageSegments(
   const dedupedSegments: MessageSegment[] = [];
   for (const seg of segments) {
     if (seg.type === "tool" && seg.execution) {
-      const key = `${seg.execution.toolName}::${JSON.stringify(seg.execution.args || {})}`;
-      if (seenToolKeys.has(key)) continue;
-      seenToolKeys.add(key);
+      const isCacheable = seg.execution.cacheable !== false;
+      if (isCacheable) {
+        const key = `${seg.execution.toolName}::${JSON.stringify(seg.execution.args || {})}`;
+        if (seenToolKeys.has(key)) continue;
+        seenToolKeys.add(key);
+      }
     }
     dedupedSegments.push(seg);
   }
 
   return dedupedSegments;
 }
-
-
