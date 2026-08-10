@@ -381,23 +381,58 @@ class ChatStore {
     }
 
     try {
-      const deletedIds = new Set<string>([msgId]);
-      const queue = [msgId];
-      while (queue.length > 0) {
-        const parentId = queue.shift()!;
-        for (const m of this.messages) {
-          if (m.parentId === parentId && !deletedIds.has(m.id)) {
-            deletedIds.add(m.id);
-            queue.push(m.id);
+      const deletedIds = new Set<string>();
+
+      if (target.role === "user") {
+        const newParentId = target.parentId ?? null;
+        const childAssts = this.messages.filter(
+          (m) => m.parentId === msgId && m.role === "assistant",
+        );
+
+        deletedIds.add(msgId);
+
+        if (childAssts.length > 0) {
+          // Each assistant branch: lift its children up to the user msg's parent,
+          // then mark the assistant itself for deletion.
+          for (const asst of childAssts) {
+            for (const m of this.messages) {
+              if (m.parentId === asst.id) {
+                m.parentId = newParentId;
+              }
+            }
+            deletedIds.add(asst.id);
+          }
+        } else {
+          // No assistant branches: reparent any direct children up to the user's parent.
+          for (const m of this.messages) {
+            if (m.parentId === msgId) {
+              m.parentId = newParentId;
+            }
+          }
+        }
+      } else {
+        // Assistant message: delete it and ALL descendants (full subtree),
+        // matching the backend's recursive CTE delete.
+        deletedIds.add(msgId);
+        const queue = [msgId];
+        while (queue.length > 0) {
+          const parentId = queue.shift()!;
+          for (const m of this.messages) {
+            if (m.parentId === parentId && !deletedIds.has(m.id)) {
+              deletedIds.add(m.id);
+              queue.push(m.id);
+            }
           }
         }
       }
+
       this.messages = this.messages.filter((m) => !deletedIds.has(m.id));
 
-      // Clean up branch selections pointing at deleted messages
+      // Clean up branch selections pointing at deleted messages OR keyed by
+      // deleted parents (e.g. the deleted user msg id, or deleted assistant ids).
       const updatedSelections: Record<string, string> = {};
       for (const [pKey, childId] of Object.entries(this.branchSelections)) {
-        if (!deletedIds.has(childId)) {
+        if (!deletedIds.has(childId) && !deletedIds.has(pKey)) {
           updatedSelections[pKey] = childId;
         }
       }
