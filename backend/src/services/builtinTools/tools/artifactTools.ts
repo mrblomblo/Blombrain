@@ -138,11 +138,6 @@ export const createArtifactToolDef: BuiltInToolDefinition = {
         RETURNING id
       `).get(newId, convId, filename, language, title, filePath, stat.size, now, now) as { id: string };
 
-      const artifactId = row?.id || newId;
-
-      const cardHtml = `<artifact-card id="${artifactId}" filename="${filename}" title="${title}" lang="${language}"></artifact-card>`;
-      ctx.emitEvent?.("inject_artifact_card", { html: cardHtml, filename });
-
       return { content: `Artifact '${filename}' created. Display it to the user with [artifact: ${filename}].` };
     } catch (err) {
       return { content: `Failed: ${err instanceof Error ? err.message : String(err)}`, isError: true };
@@ -176,11 +171,6 @@ export const presentArtifactToolDef: BuiltInToolDefinition = {
     ).get(convId, filename);
 
     if (!row) return { content: `Error: '${filename}' not found.`, isError: true };
-
-    const content = fs.readFileSync(row.disk_path, "utf-8");
-    const cardHtml = `<artifact-card id="${row.id}" filename="${row.filename}" title="${row.title}" lang="${row.language}"></artifact-card>`;
-
-    ctx.emitEvent?.("inject_artifact_card", { html: cardHtml, filename: row.filename });
 
     return { content: `Artifact '${filename}' presented in the chat UI.` };
   },

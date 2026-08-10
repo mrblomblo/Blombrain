@@ -258,6 +258,7 @@ async function runGenerationPass(opts: {
   let reasoningMode: "oob" | "inband" | null = null;
   let streamError: string | undefined;
   let usageStats: any;
+  let streamedChars = 0;
 
   const pendingToolCalls = new Map<number, { id?: string; name?: string; argsText: string }>();
   const completedToolCalls: Array<{ id?: string; name: string; arguments: Record<string, any> }> = [];
@@ -289,6 +290,7 @@ async function runGenerationPass(opts: {
             reasoningMode = null;
           }
           content += ev.delta;
+          streamedChars += ev.delta.length;
         }
 
         // Accumulate tool calls (may stream in pieces)
@@ -413,6 +415,14 @@ async function runGenerationPass(opts: {
   });
 
   content = closeUnclosedTags(content);
+
+  if (!usageStats?.completionTokens && streamedChars > 0) {
+    usageStats = {
+      ...(usageStats ?? {}),
+      completionTokens: Math.ceil(streamedChars / 4)
+    };
+  }
+
   return { content, reasoning, toolCalls: completedToolCalls, usageStats, streamError, reasoningMode };
 }
 
@@ -632,7 +642,20 @@ export async function chatRoutes(app: FastifyInstance) {
     const userQuery = originalUserContent;
     let currentToolExecution: { callId: string; toolName: string; args: any } | null = null;
     let streamError: string | null = null;
-    let usageStats: { promptTokens?: number; completionTokens?: number; totalTokens?: number; durationMs?: number; thinkingTimeMs?: number } | undefined;
+    let usageStats: {
+      promptTokens?: number;
+      completionTokens?: number;
+      totalTokens?: number;
+      durationMs?: number;
+      generationMs?: number;
+      tokensPerSecond?: number;
+      thinkingTimeMs?: number;
+    } | undefined;
+
+    let totalGenerationMs = 0;
+    let totalCompletionTokens = 0;
+    let totalPromptTokens = 0;
+    let lastRawUsage: any = null;
     const startTime = Date.now();
     let hasPersisted = false;
 
@@ -644,6 +667,27 @@ export async function chatRoutes(app: FastifyInstance) {
         if (!usageStats) usageStats = {};
         if (!usageStats.durationMs && Date.now() - startTime > 0) {
           usageStats.durationMs = Date.now() - startTime;
+        }
+
+        usageStats.promptTokens = totalPromptTokens || lastRawUsage?.promptTokens;
+        usageStats.completionTokens = totalCompletionTokens || lastRawUsage?.completionTokens;
+        usageStats.totalTokens =
+          (usageStats.promptTokens ?? 0) + (usageStats.completionTokens ?? 0);
+
+        if (!usageStats.durationMs) {
+          usageStats.durationMs = Date.now() - startTime;
+        }
+
+        usageStats.generationMs = totalGenerationMs;
+        usageStats.tokensPerSecond =
+          totalGenerationMs > 0 && totalCompletionTokens > 0
+            ? Number((totalCompletionTokens / (totalGenerationMs / 1000)).toFixed(2))
+            : undefined;
+
+        if (lastRawUsage && typeof lastRawUsage === "object") {
+          for (const k of Object.keys(lastRawUsage)) {
+            if (!(k in usageStats)) (usageStats as any)[k] = lastRawUsage[k];
+          }
         }
 
         if (currentToolExecution && !assistantContent.includes(currentToolExecution.callId)) {
@@ -982,12 +1026,6 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
-    // Build OpenAI-format tool definitions, trimming names/descriptions
-    // as a safety net against trailing-space bugs in tool definitions.
-    if (mcpTools.length > 0) {
-      toolDefinitions.push(...mcpToolsToOpenAIFormat(mcpTools));
-    }
-
     for (const bTool of availableBuiltInTools) {
       const params =
         typeof bTool.parameters === "function"
@@ -1004,7 +1042,13 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     if (toolDefinitions.length > 0) {
-      extraParams.tools = toolDefinitions;
+      const seen = new Set<string>();
+      extraParams.tools = toolDefinitions.filter((t) => {
+        const name = t?.function?.name;
+        if (!name || seen.has(name)) return false;
+        seen.add(name);
+        return true;
+      });
     }
 
     const adapter = getAdapter(backend.apiType);
@@ -1037,7 +1081,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const completionReserve = settingRow?.max_tokens ?? 2048;
 
     // -----------------------------------------------------------------------
-    // 8. Agentic tool-call loop
+    // 7. Agentic tool-call loop
     // -----------------------------------------------------------------------
     const MAX_TOOL_ROUNDS = 10;
     const TOOL_TIMEOUT_MS = 120_000; // 2 minute cap per individual tool call
@@ -1067,7 +1111,10 @@ export async function chatRoutes(app: FastifyInstance) {
             behavior: effectiveOverflowBehavior,
             reason: errMsg,
           }));
-          broadcastChunk(JSON.stringify({ type: "error", error: errMsg }));
+          broadcastChunk(JSON.stringify({
+            type: "error",
+            error: { message: errMsg }
+          }));
           break;
         }
 
@@ -1107,6 +1154,7 @@ export async function chatRoutes(app: FastifyInstance) {
           extraParams: { ...extraParams, ...(toolDefinitions.length > 0 ? { tools: toolDefinitions } : {}) },
         };
 
+        const passStart = Date.now();
         const pass = await runGenerationPass({
           adapter,
           buildParams: passParams,
@@ -1114,10 +1162,22 @@ export async function chatRoutes(app: FastifyInstance) {
           onChunk: broadcastChunk,
         });
 
+        if (!pass.streamError || (pass.content || pass.reasoning || pass.toolCalls.length)) {
+          totalGenerationMs += Date.now() - passStart;
+        }
+
         if (pass.streamError) {
           streamError = pass.streamError;
         }
-        if (pass.usageStats) usageStats = pass.usageStats;
+        if (pass.usageStats) {
+          lastRawUsage = pass.usageStats;
+          if (typeof pass.usageStats.completionTokens === "number") {
+            totalCompletionTokens += pass.usageStats.completionTokens;
+          }
+          if (typeof pass.usageStats.promptTokens === "number") {
+            totalPromptTokens += pass.usageStats.promptTokens;
+          }
+        }
 
         if (pass.content) {
           assistantContent += pass.content;

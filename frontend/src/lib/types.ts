@@ -107,6 +107,8 @@ export interface ResponseStats {
   totalTokens?: number;
   durationMs?: number;
   thinkingTimeMs?: number;
+  tokensPerSecond?: number;
+  generationMs?: number;
 }
 
 export interface AttachmentOut {

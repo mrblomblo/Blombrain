@@ -310,6 +310,8 @@ export interface StreamChatOptions {
   onToolProgress?: (evt: Partial<ToolExecutionEvent> & { callId: string }) => void;
   onContentReplace?: (content: string) => void;
   onContextTrimmed?: (evt: { droppedMessageCount: number; behavior: string }) => void;
+  onContextOverflow?: (evt: { behavior: string; reason: string }) => void;
+  onToolsPruned?: (evt: { prunedCount: number; remainingCount: number; droppedToolNames: string[] }) => void;
   onArtifactCreated?: (evt: { artifactId: string; conversationId: string; filename: string; title: string; language: string }) => void;
   onArtifactUpdated?: (evt: { artifactId: string; conversationId: string; filename: string; title: string; language: string }) => void;
   onDone: () => void;
@@ -404,6 +406,14 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
               opts.onStatus?.(parsed.status);
               continue;
             }
+            if (parsed?.type === "error") {
+              const errPayload = parsed.error;
+              const errMsg = typeof errPayload === 'string'
+                ? errPayload
+                : errPayload?.message;
+              if (errMsg) onError(errMsg);
+              continue;
+            }
             if (parsed?.type === "router_token") {
               opts.onRouterToken?.(parsed.text);
               continue;
@@ -422,6 +432,14 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
             }
             if (parsed?.type === "context_trimmed") {
               opts.onContextTrimmed?.(parsed);
+              continue;
+            }
+            if (parsed?.type === "context_overflow") {
+              opts.onContextOverflow?.(parsed);
+              continue;
+            }
+            if (parsed?.type === "tools_pruned") {
+              opts.onToolsPruned?.(parsed);
               continue;
             }
             if (parsed?.type === "artifact_created") {
@@ -461,7 +479,13 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
               onToken(delta);
             }
 
-            const errMsg: string | undefined = parsed?.error?.message;
+            const rawError = parsed?.error;
+            let errMsg: string | undefined = undefined;
+            if (typeof rawError === 'string') {
+              errMsg = rawError;
+            } else if (rawError && typeof rawError.message === 'string') {
+              errMsg = rawError.message;
+            }
             if (errMsg) onError(errMsg);
           } catch {
             // Ignore malformed/partial chunks.

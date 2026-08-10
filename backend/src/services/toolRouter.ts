@@ -107,7 +107,7 @@ async function queryLLM(
     const nodeStream = Readable.fromWeb(res.body as any);
     const parser = adapter.createStreamParser();
     let textResult = "";
-    let reasoningMode: "oob" | "inband" | null = null;
+    let reasoningMode: "oob" | null = null;
 
     await new Promise<void>((resolve, reject) => {
       const onStreamAbort = () => {
@@ -197,6 +197,7 @@ export function buildRecentContext(messages: any[], maxMessages = 4): string {
       .replace(/<router_execution>[\s\S]*?<\/router_execution>/gi, "")
       .replace(/<tool_execution>[\s\S]*?<\/tool_execution>/gi, "")
       .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .replace(/<artifact-card[^>]*>[\s\S]*?<\/artifact-card>/gi, "")
       .trim();
 
     if (!text) continue;
@@ -234,8 +235,27 @@ export async function routeToolsAndSkills(
     { allowNetwork }
   );
 
+  const toolsCatalog = [
+    ...allBuiltInTools.map((t) => ({
+      name: t.name,
+      description: t.description ? t.description.trim().slice(0, 300) : "No description",
+    })),
+    ...allMcpTools.map((t) => ({
+      name: t.name,
+      description: t.description ? t.description.trim().slice(0, 300) : "No description",
+    })),
+  ];
+
+  const skillsCatalog = allSkills.map((s) => ({
+    name: s.name,
+    description: s.description ? s.description.trim().slice(0, 300) : "No description",
+  }));
+
   // Single unified token estimation (1 token ~= 4 chars)
-  const totalSchemaLength = JSON.stringify(allMcpTools).length + JSON.stringify(allSkills).length + JSON.stringify(allBuiltInTools).length;
+  const totalSchemaLength =
+    JSON.stringify(allMcpTools).length +
+    JSON.stringify(allSkills).length +
+    JSON.stringify(allBuiltInTools).length;
   const estimatedTokens = Math.ceil(totalSchemaLength / 4);
 
   const mode = settingsRow?.tool_routing_mode || "off";
@@ -243,11 +263,11 @@ export async function routeToolsAndSkills(
 
   // Determine whether to run LLM pre-pass:
   // - If mode is 'off', auto-trigger routing once tool/skill schemas would eat
-  //   more than 30% of the target model's context window (capped at 20,000
-  //   tokens as an absolute ceiling for models with very large/no limit set).
-  // - If mode is 'active_model' or 'designated_model', always run router
-  const dynamicRoutingThreshold =
-    contextLimit && contextLimit > 0 ? Math.min(20000, Math.floor(contextLimit * 0.30)) : 20000;
+  //   more than 30% of the target model's context window.
+  // - If context limit is unknown, assume a conservative 8K context to protect small models.
+  // - Capped at 20,000 tokens for models with very large/no limit set.
+  const effectiveContextLimit = contextLimit && contextLimit > 0 ? contextLimit : 8192;
+  const dynamicRoutingThreshold = Math.min(20000, Math.floor(effectiveContextLimit * 0.30));
   const shouldRoute = mode !== "off" || estimatedTokens >= dynamicRoutingThreshold;
 
   if (!shouldRoute || !userQuery.trim() || (allMcpTools.length === 0 && allSkills.length === 0 && allBuiltInTools.length === 0)) {
@@ -280,22 +300,6 @@ export async function routeToolsAndSkills(
   }
 
   try {
-    const toolsCatalog = [
-      ...allBuiltInTools.map((t) => ({
-        name: t.name,
-        description: t.description ? t.description.trim().slice(0, 300) : "No description",
-      })),
-      ...allMcpTools.map((t) => ({
-        name: t.name,
-        description: t.description ? t.description.trim().slice(0, 300) : "No description",
-      })),
-    ];
-
-    const skillsCatalog = allSkills.map((s) => ({
-      name: s.name,
-      description: s.description ? s.description.trim().slice(0, 300) : "No description",
-    }));
-
     const systemPrompt = `You are a precision AI tool and skill selector.
 Analyze the user's query along with recent conversation context, and select ONLY the tools and skills strictly required to fulfill it.
 Be conservative: if no external tools or skills are needed, return empty arrays.
@@ -344,7 +348,7 @@ ${JSON.stringify(skillsCatalog, null, 2)}`;
       selectedBuiltInTools: selectedBuiltInTools,
     };
   } catch (err) {
-    if (signal?.aborted || (err instanceof Error && (err.name === "AbortError" || err.message.includes("aborted")))) {
+    if (signal?.aborted) {
       return {
         mcpTools: [],
         selectedSkills: [],

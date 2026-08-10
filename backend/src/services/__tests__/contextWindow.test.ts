@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   estimateTokens,
-  estimateMessagesTokens,
-  estimateToolDefinitionsTokens,
   partitionMessageGroups,
   applyContextOverflowPolicy,
   filterReasoningContent,
@@ -75,8 +73,8 @@ describe("contextWindow service", () => {
 
   describe("estimateTokens", () => {
     it("estimates simple strings conservatively", () => {
-      const text = "Hello world"; // 11 chars -> ceil(11/3) + 4 = 8
-      expect(estimateTokens(text)).toBe(8);
+      const text = "Hello world"; // 11 chars -> ceil(11/4) + 4 = 7
+      expect(estimateTokens(text)).toBe(7);
     });
 
     it("handles base64 image trap without ballooning token counts", () => {
@@ -85,10 +83,10 @@ describe("contextWindow service", () => {
         { type: "text", text: "Look at this image:" },
         { type: "image_url", image_url: { url: `data:image/png;base64,${largeBase64}` } },
       ];
-      // Should be 4 + ceil(19/3) + 1024 = 1035 tokens, NOT 33,000+ tokens!
+      // Should be 4 + ceil(19/4) + 510 = 519 tokens, NOT 33,000+ tokens!
       const tokens = estimateTokens(multimodalContent);
       expect(tokens).toBeLessThan(2000);
-      expect(tokens).toBeGreaterThan(1000);
+      expect(tokens).toBeGreaterThan(400);
     });
   });
 
@@ -170,15 +168,15 @@ describe("contextWindow service", () => {
       const messages = [
         { role: "system", content: "System prompt" },
         { role: "user", content: "Initial Task: Create website" },
-        { role: "assistant", content: "Res 1 " + "X".repeat(500) },
-        { role: "user", content: "Turn 2 " + "Y".repeat(500) },
-        { role: "assistant", content: "Res 2 " + "Z".repeat(500) },
+        { role: "assistant", content: "Res 1 " + "X".repeat(2000) },
+        { role: "user", content: "Turn 2 " + "Y".repeat(2000) },
+        { role: "assistant", content: "Res 2 " + "Z".repeat(2000) },
         { role: "user", content: "Latest Query: Fix navbar" },
       ];
 
       const result = applyContextOverflowPolicy({
         messages,
-        contextLimit: 600,
+        contextLimit: 1000,
         completionReserve: 100,
         safetyReserve: 50,
         behavior: "truncate_middle",
@@ -191,7 +189,7 @@ describe("contextWindow service", () => {
       expect(resultContents).toContain("System prompt");
       expect(resultContents).toContain("Initial Task: Create website");
       expect(resultContents).toContain("Latest Query: Fix navbar");
-      expect(resultContents).not.toContain("Res 1 " + "X".repeat(500));
+      expect(resultContents).not.toContain("Res 1 " + "X".repeat(2000));
     });
 
     it("triggers impossible_fit when system prompt + query alone exceed prompt budget", () => {

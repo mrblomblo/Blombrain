@@ -758,6 +758,21 @@ class ChatStore {
         msg.thinkingDone = parsed.thinkingDone;
         msg.content = rawBuffer;
       },
+      onContextOverflow: (evt) => {
+        const msg = this.messages.find((m) => m.id === currentAsstId);
+        if (msg) {
+          msg.error = `Context Overflow: ${evt.reason}`;
+        }
+      },
+      onToolsPruned: (evt) => {
+        const msg = this.messages.find((m) => m.id === currentAsstId);
+        if (!msg) return;
+        const warning = `> [!WARNING]\n> Pruned ${evt.prunedCount} tool(s) to fit context window: ${evt.droppedToolNames.join(", ")}.\n\n`;
+        if (!rawBuffer.startsWith(warning)) {
+          rawBuffer = warning + rawBuffer;
+          msg.content = rawBuffer;
+        }
+      },
       onArtifactCreated: (evt) => {
         registerArtifact(evt.filename, {
           id: evt.artifactId,
@@ -904,6 +919,26 @@ class ChatStore {
       onMeta: (meta) => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);
         if (msg) msg.stats = meta.stats;
+      },
+      onContextOverflow: (evt) => {
+        const msg = this.messages.find((m) => m.id === asstMsg.id);
+        if (msg) {
+          msg.streaming = false;
+          msg.error = `Context Overflow: ${evt.reason}`;
+        }
+        this.isStreaming = false;
+        this.streamingConvId = null;
+        this.streamingAssistantId = null;
+        this.abortController = null;
+      },
+      onToolsPruned: (evt) => {
+        const msg = this.messages.find((m) => m.id === asstMsg.id);
+        if (!msg) return;
+        const warning = `> [!WARNING]\n> Pruned ${evt.prunedCount} tool(s) to fit context window: ${evt.droppedToolNames.join(", ")}.\n\n`;
+        if (!rawBuffer.startsWith(warning)) {
+          rawBuffer = warning + rawBuffer;
+          msg.content = rawBuffer;
+        }
       },
       onArtifactCreated: (evt) => {
         registerArtifact(evt.filename, {

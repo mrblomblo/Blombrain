@@ -10,10 +10,15 @@
   let showPopover = $state(false);
 
   let tokensPerSec = $derived.by(() => {
-    if (stats?.completionTokens && stats?.durationMs && stats.durationMs > 0) {
-      return (stats.completionTokens / (stats.durationMs / 1000)).toFixed(1);
-    }
-    return undefined;
+    const tps =
+      stats?.tokensPerSecond ??
+      (stats?.generationMs && stats?.completionTokens
+        ? stats.completionTokens / (stats.generationMs / 1000)
+        : stats?.completionTokens && stats?.durationMs && stats.durationMs > 0
+          ? stats.completionTokens / (stats.durationMs / 1000)
+          : null);
+
+    return tps ? tps.toFixed(1) : undefined;
   });
 </script>
 

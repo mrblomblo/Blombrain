@@ -77,6 +77,22 @@
     }
   });
 
+  // Compute tokens per second with fallbacks
+  let tps = $derived.by(() => {
+    const stats = message.stats;
+    if (!stats) return null;
+
+    const tps =
+      stats?.tokensPerSecond ??
+      (stats?.generationMs && stats?.completionTokens
+        ? stats.completionTokens / (stats.generationMs / 1000)
+        : stats?.completionTokens && stats?.durationMs && stats.durationMs > 0
+          ? stats.completionTokens / (stats.durationMs / 1000)
+          : null);
+
+    return tps ? tps.toFixed(1) : null;
+  });
+
   function startEdit() {
     editDraft = message.content;
     editAttachments = message.attachments ? [...message.attachments] : [];
@@ -273,13 +289,8 @@
                 {#if s.durationMs !== undefined}
                   <span>Time: {(s.durationMs / 1000).toFixed(1)}s</span>
                 {/if}
-                {#if s.completionTokens !== undefined && s.durationMs !== undefined && s.durationMs > 0}
-                  <span
-                    >Speed: {(
-                      s.completionTokens /
-                      (s.durationMs / 1000)
-                    ).toFixed(1)} tok/s</span
-                  >
+                {#if tps}
+                  <span>Speed: {tps} tok/s</span>
                 {/if}
               </div>
             {/if}

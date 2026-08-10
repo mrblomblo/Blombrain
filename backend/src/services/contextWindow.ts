@@ -50,22 +50,26 @@ export function estimateTokens(content: any): number {
   if (!content) return 0;
 
   if (typeof content === "string") {
-    return Math.ceil(content.length / 3) + 4;
+    return Math.ceil(content.length / 4) + 4;
   }
 
   if (Array.isArray(content)) {
     let tokens = 4;
     for (const item of content) {
       if (typeof item === "string") {
-        tokens += Math.ceil(item.length / 3);
+        tokens += Math.ceil(item.length / 4);
       } else if (item && typeof item === "object") {
         if (item.type === "image_url" || item.image_url) {
-          // Base64 image trap protection: Fixed 1024 token heuristic per image
-          tokens += 1024;
+          const url = item.image_url?.url ?? "";
+          if (url.startsWith("data:image/")) {
+            tokens += 510; // midpoint of typical 1-2 tile case
+          } else {
+            tokens += 765; // unknown remote; assume 3 tiles
+          }
         } else if (item.type === "text" && typeof item.text === "string") {
-          tokens += Math.ceil(item.text.length / 3);
+          tokens += Math.ceil(item.text.length / 4);
         } else {
-          tokens += Math.ceil(JSON.stringify(item).length / 3);
+          tokens += Math.ceil(JSON.stringify(item).length / 4);
         }
       }
     }
@@ -73,7 +77,7 @@ export function estimateTokens(content: any): number {
   }
 
   if (typeof content === "object") {
-    return Math.ceil(JSON.stringify(content).length / 3) + 4;
+    return Math.ceil(JSON.stringify(content).length / 4) + 4;
   }
 
   return 4;
@@ -87,11 +91,11 @@ export function estimateMessagesTokens(messages: any[]): number {
   let total = 0;
   for (const m of messages) {
     total += 4; // Header & role framing overhead
-    if (m.role) total += Math.ceil(m.role.length / 3);
+    if (m.role) total += Math.ceil(m.role.length / 4);
     total += estimateTokens(m.content);
     if (m.tool_calls) total += estimateTokens(m.tool_calls);
-    if (m.tool_call_id) total += Math.ceil(m.tool_call_id.length / 3) + 2;
-    if (m.name) total += Math.ceil(m.name.length / 3) + 2;
+    if (m.tool_call_id) total += Math.ceil(m.tool_call_id.length / 4) + 2;
+    if (m.name) total += Math.ceil(m.name.length / 4) + 2;
   }
   return total;
 }
