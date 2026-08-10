@@ -85,21 +85,25 @@ export function parseMessageSegments(
     let firstTagType: "router" | "think" | "endThink" | "tool" | null = null;
     let firstTagPos = -1;
 
-    const candidates: { type: "router" | "think" | "endThink" | "tool"; pos: number }[] = [];
-    if (nextRouter !== -1) candidates.push({ type: "router", pos: nextRouter });
-    if (nextThink !== -1) candidates.push({ type: "think", pos: nextThink });
-    if (nextTool !== -1) candidates.push({ type: "tool", pos: nextTool });
-
+    // Find the earliest tag without allocating arrays/sorting
+    if (nextRouter !== -1) {
+      firstTagType = "router";
+      firstTagPos = nextRouter;
+    }
+    if (nextThink !== -1 && (firstTagPos === -1 || nextThink < firstTagPos)) {
+      firstTagType = "think";
+      firstTagPos = nextThink;
+    }
+    if (nextTool !== -1 && (firstTagPos === -1 || nextTool < firstTagPos)) {
+      firstTagType = "tool";
+      firstTagPos = nextTool;
+    }
     // Only consider an orphan closing tag if it appears before the next opening tag
     if (nextEndThink !== -1 && (nextThink === -1 || nextEndThink < nextThink)) {
-      candidates.push({ type: "endThink", pos: nextEndThink });
-    }
-
-    candidates.sort((a, b) => a.pos - b.pos);
-
-    if (candidates.length > 0) {
-      firstTagType = candidates[0].type;
-      firstTagPos = candidates[0].pos;
+      if (firstTagPos === -1 || nextEndThink < firstTagPos) {
+        firstTagType = "endThink";
+        firstTagPos = nextEndThink;
+      }
     }
 
     // No more tags -- emit remainder as text or a streaming think block

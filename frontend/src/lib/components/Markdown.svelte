@@ -41,6 +41,7 @@
   let tooltipTimer: ReturnType<typeof setTimeout> | null = null;
   let activeInlineCodeEl: HTMLElement | null = null;
   let containerEl: HTMLDivElement | undefined = $state();
+  let observer: IntersectionObserver | null = null;
 
   /** Walk up the DOM to find the nearest scrollable ancestor. */
   function findScrollContainer(start: HTMLElement): Element | null {
@@ -51,6 +52,41 @@
       p = p.parentElement;
     }
     return null;
+  }
+
+  const instanceId = Math.random().toString(36).substring(2, 9);
+
+  function initArtifactCard(card: HTMLElement) {
+    const index = Array.from(
+      containerEl!.querySelectorAll(".artifact-card"),
+    ).indexOf(card);
+    const id =
+      card.getAttribute("data-artifact-id") || `${instanceId}-${index}`;
+    if (!card.hasAttribute("data-artifact-id")) {
+      card.setAttribute("data-artifact-id", id);
+    }
+    const isActive = artifactStore.isOpen && artifactStore.activeId === id;
+
+    const btnTexts = card.querySelectorAll<HTMLElement>(".btn-text");
+    btnTexts.forEach((span) => {
+      span.textContent = isActive ? "Close Artifact" : "View Artifact";
+    });
+
+    const clickLabel = card.querySelector<HTMLElement>(".artifact-click-label");
+    if (clickLabel) {
+      clickLabel.textContent = isActive
+        ? "Click to close artifact"
+        : "Click to view artifact in side panel";
+    }
+
+    const mobileClickLabel = card.querySelector<HTMLElement>(
+      ".artifact-mobile-click-label",
+    );
+    if (mobileClickLabel) {
+      mobileClickLabel.textContent = isActive
+        ? "Click to close artifact"
+        : "Click to view artifact";
+    }
   }
 
   /** Update container DOM incrementally using morphdom */
@@ -64,16 +100,64 @@
 
     morphdom(containerEl, tempDiv, {
       onNodeAdded: (node) => {
-        if (streaming && node.nodeType === Node.ELEMENT_NODE) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
           const el = node as HTMLElement;
-          el.classList.add("fade-in-node");
+          if (streaming) {
+            el.classList.add("fade-in-node");
+          }
+          // Observe any new sentinels
+          if (observer) {
+            if (el.classList.contains("code-sticky-sentinel")) {
+              observer.observe(el);
+            }
+            const sentinels = el.querySelectorAll<HTMLElement>(
+              ".code-sticky-sentinel",
+            );
+            sentinels.forEach((s) => observer!.observe(s));
+          }
+          // Initialize any new artifact cards
+          if (el.classList.contains("artifact-card")) {
+            initArtifactCard(el);
+          } else if (el.querySelector?.(".artifact-card")) {
+            el.querySelectorAll<HTMLElement>(".artifact-card").forEach((c) =>
+              initArtifactCard(c),
+            );
+          }
         }
         return node;
       },
       onBeforeElUpdated: (fromEl, toEl) => {
         if (!streaming) return true;
 
-        // Skip custom inline-fade text diffing inside code blocks and artifacts
+        // Preserve dynamically toggled classes on code block headers
+        if (fromEl.classList.contains("code-block-header")) {
+          toEl.classList.toggle(
+            "rounded-t-md",
+            fromEl.classList.contains("rounded-t-md"),
+          );
+        }
+
+        // Preserve dynamically toggled classes on copy buttons
+        if (fromEl.classList.contains("copy-code-btn")) {
+          toEl.classList.toggle(
+            "text-success",
+            fromEl.classList.contains("text-success"),
+          );
+          toEl.classList.toggle(
+            "border-success/40",
+            fromEl.classList.contains("border-success/40"),
+          );
+        }
+
+        // Preserve dynamically set text content on buttons/labels
+        if (
+          fromEl.classList.contains("btn-text") ||
+          fromEl.classList.contains("artifact-click-label") ||
+          fromEl.classList.contains("artifact-mobile-click-label")
+        ) {
+          toEl.textContent = fromEl.textContent;
+        }
+
         if (fromEl.closest(".code-block-wrapper, .artifact-card")) {
           return true;
         }
@@ -117,67 +201,48 @@
   });
 
   /**
-   * After the HTML content renders, set up IntersectionObservers for each
-   * code block. Each observer watches a 1px sentinel element placed just
-   * before the sticky header. When the sentinel scrolls out of the scroll
-   * container, the header is "stuck" and we remove its rounded-t-md class
-   * so it appears flat against the viewport edge. When the sentinel is
-   * visible again, the header is back at rest and we restore the rounding.
+   * Set up a single IntersectionObserver for all code block sticky headers.
+   * Runs once when the container is mounted.
    */
   $effect(() => {
-    // Track html so the effect re-runs whenever content changes.
-    const _html = html;
     if (!containerEl) return;
-
-    const observers: IntersectionObserver[] = [];
     const root = findScrollContainer(containerEl);
-
-    const setup = () => {
-      const sentinels = containerEl!.querySelectorAll<HTMLElement>(
-        ".code-sticky-sentinel",
-      );
-      sentinels.forEach((sentinel) => {
-        const wrapper = sentinel.closest<HTMLElement>(".code-block-wrapper");
-        const header =
-          wrapper?.querySelector<HTMLElement>(".code-block-header");
-        if (!header) return;
-
-        const observer = new IntersectionObserver(
-          ([entry]) => {
-            // Sentinel visible = header at rest = round top corners.
-            // Sentinel hidden  = header stuck   = flat top.
+    observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const sentinel = entry.target as HTMLElement;
+          const wrapper = sentinel.closest<HTMLElement>(".code-block-wrapper");
+          const header =
+            wrapper?.querySelector<HTMLElement>(".code-block-header");
+          if (header) {
             header.classList.toggle("rounded-t-md", entry.isIntersecting);
-          },
-          { root, threshold: 0 },
-        );
-        observer.observe(sentinel);
-        observers.push(observer);
-      });
-    };
+          }
+        }
+      },
+      { root, threshold: 0 },
+    );
 
-    const raf = requestAnimationFrame(setup);
+    const existingSentinels = containerEl.querySelectorAll<HTMLElement>(
+      ".code-sticky-sentinel",
+    );
+    existingSentinels.forEach((s) => observer!.observe(s));
+
     return () => {
-      cancelAnimationFrame(raf);
-      observers.forEach((o) => o.disconnect());
+      observer?.disconnect();
+      observer = null;
     };
   });
 
-  const instanceId = Math.random().toString(36).substring(2, 9);
-
   $effect(() => {
-    const _html = html;
     const activeId = artifactStore.activeId;
     const isOpen = artifactStore.isOpen;
     if (!containerEl) return;
 
     const artifactCards =
       containerEl.querySelectorAll<HTMLElement>(".artifact-card");
-    artifactCards.forEach((card, index) => {
-      const id =
-        card.getAttribute("data-artifact-id") || `${instanceId}-${index}`;
-      if (!card.hasAttribute("data-artifact-id")) {
-        card.setAttribute("data-artifact-id", id);
-      }
+    artifactCards.forEach((card) => {
+      const id = card.getAttribute("data-artifact-id");
+      if (!id) return;
 
       const isActive = isOpen && activeId === id;
 

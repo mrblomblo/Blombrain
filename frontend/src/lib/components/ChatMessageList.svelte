@@ -1,6 +1,7 @@
 <script lang="ts">
   import { chatStore } from "../stores/chat.svelte";
   import ChatMessage from "./ChatMessage.svelte";
+  import VirtualizedMessage from "./VirtualizedMessage.svelte";
   import ChatInput from "./ChatInput.svelte";
   import { fetchModels } from "../api";
   import { createQuery } from "@tanstack/svelte-query";
@@ -233,7 +234,9 @@
             }}
             out:slide|local={{ duration: 300, easing: quintOut }}
           >
-            <ChatMessage {message} isLast={i === activeMessages.length - 1} />
+            <VirtualizedMessage>
+              <ChatMessage {message} isLast={i === activeMessages.length - 1} />
+            </VirtualizedMessage>
           </div>
         {/each}
       </div>
