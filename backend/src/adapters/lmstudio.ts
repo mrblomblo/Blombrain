@@ -36,7 +36,7 @@ export const lmStudioAdapter: ApiAdapter = {
 
     if (userEditedCtx) {
       jitModelCache.set(jitCacheKey, { requestedCtx: safeExtraParams.num_ctx as number, timestamp: Date.now() });
-    } else if (safeExtraParams.num_ctx !== undefined) {
+    } else if (safeExtraParams.num_ctx !== undefined && cachedJit === undefined) {
       try {
         const checkRes = await fetch(`${baseUrl}/api/v1/models`, {
           signal: AbortSignal.timeout(1000),

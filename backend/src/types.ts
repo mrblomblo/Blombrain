@@ -204,7 +204,7 @@ export interface McpServerOut {
   env: Record<string, string>;
   headers: Record<string, string>;
   isEnabled: boolean;
-  status?: "connected" | "connecting" | "error" | "stopped";
+  status?: "connected" | "connecting" | "error" | "stopped" | "disabled";
   error?: string;
 }
 

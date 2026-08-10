@@ -128,7 +128,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
     const body = (req.body ?? {}) as { title?: string; model?: string; toolsEnabled?: boolean };
     const now = Date.now();
     const id = crypto.randomUUID();
-    const toolsEnabled = body.toolsEnabled !== undefined ? (body.toolsEnabled ? 1 : 0) : 0;
+    const toolsEnabled = body.toolsEnabled !== undefined ? (body.toolsEnabled ? 1 : 0) : 1;
     insertConversation.run({
       id,
       title: body.title ?? "New conversation",
@@ -657,6 +657,10 @@ export function persistChatTurn(opts: {
       });
     } else {
       updateConversationMeta.run({ id: conversationId, title: null, model, updatedAt: now });
+      db.prepare("UPDATE conversations SET tools_enabled = ? WHERE id = ?").run(
+        toolsEnabled ? 1 : 0,
+        conversationId,
+      );
       const row = getConversation.get(conversationId);
       title = row?.title ?? title;
     }

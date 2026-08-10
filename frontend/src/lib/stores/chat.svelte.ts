@@ -515,7 +515,11 @@ class ChatStore {
         let excerpt = words.slice(0, 8).join(" ");
         if (excerpt.length > 60) excerpt = excerpt.slice(0, 57) + "…";
         if (!excerpt) excerpt = "Attachment";
-        const conv = await createConversation({ title: excerpt, model: this.selectedModel ?? undefined });
+        const conv = await createConversation({
+          title: excerpt,
+          model: this.selectedModel ?? undefined,
+          toolsEnabled: this.conversationToolsEnabled,
+        });
         this.activeConversationId = conv.id;
         newConvId = conv.id;
         this.activeConversationTitle = conv.title;

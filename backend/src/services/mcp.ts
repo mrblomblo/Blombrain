@@ -38,7 +38,7 @@ class McpManager {
         env,
         headers,
         isEnabled: r.is_enabled === 1 && !excludedIds.includes(r.id),
-        status: active?.status ?? (r.is_enabled === 1 ? "stopped" : "stopped"),
+        status: active?.status ?? (r.is_enabled === 1 ? "stopped" : "disabled"),
         error: active?.error,
       };
     });
@@ -54,6 +54,11 @@ class McpManager {
     const envJson = JSON.stringify(body.env ?? {});
     const headersJson = JSON.stringify(body.headers ?? {});
     const isEnabled = body.isEnabled ?? true;
+
+    const collision = db.prepare("SELECT id FROM mcp_servers WHERE name = ? AND id != ?").get(body.name, id);
+    if (collision) {
+      throw new Error(`Server name "${body.name}" is already in use. Please choose a unique name.`);
+    }
 
     const existing = db.prepare("SELECT id FROM mcp_servers WHERE id = ?").get(id);
     if (existing) {

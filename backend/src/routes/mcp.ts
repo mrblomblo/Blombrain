@@ -13,15 +13,23 @@ export async function mcpRoutes(app: FastifyInstance) {
     if (!body.name || !body.commandOrUrl || !body.type) {
       return reply.code(400).send({ error: { message: "name, type, and commandOrUrl are required" } });
     }
-    const created = mcpManager.upsertServer(body);
-    return reply.send(created);
+    try {
+      const created = mcpManager.upsertServer(body);
+      return reply.send(created);
+    } catch (err: any) {
+      return reply.code(400).send({ error: { message: err.message } });
+    }
   });
 
   app.put("/api/mcp/:id", async (req: FastifyRequest, reply: FastifyReply) => {
     const { id } = req.params as { id: string };
     const body = req.body as McpServerWriteBody;
-    const updated = mcpManager.upsertServer({ ...body, id });
-    return reply.send(updated);
+    try {
+      const updated = mcpManager.upsertServer({ ...body, id });
+      return reply.send(updated);
+    } catch (err: any) {
+      return reply.code(400).send({ error: { message: err.message } });
+    }
   });
 
   app.delete("/api/mcp/:id", async (req: FastifyRequest, reply: FastifyReply) => {

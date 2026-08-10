@@ -218,7 +218,7 @@ export async function fetchConversation(id: string): Promise<ConversationDetail>
   const res = await apiFetch(`/api/conversations/${encodeURIComponent(id)}`);
   return jsonOrThrow<ConversationDetail>(res);
 }
-export async function createConversation(opts?: { title?: string; model?: string }): Promise<ConversationSummary> {
+export async function createConversation(opts?: { title?: string; model?: string; toolsEnabled?: boolean }): Promise<ConversationSummary> {
   const res = await apiFetch("/api/conversations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
