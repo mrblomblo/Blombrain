@@ -711,6 +711,7 @@ class ChatStore {
         model: this.selectedModel,
       };
       this.messages.push(assistantMessage);
+      this.setBranchSelection(currentUserId, currentAsstId);
     }
 
     if (!assistantMessage) return;
