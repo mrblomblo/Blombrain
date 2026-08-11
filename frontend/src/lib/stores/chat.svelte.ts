@@ -496,10 +496,17 @@ class ChatStore {
     await this.triggerAssistantResponse(userParentMsg, attachmentIds);
   }
 
-  /** Continue response */
   async continueResponse() {
     if (this.isStreaming) return;
-    await this.send("Continue");
+    if (!this.activeConversationId) return;
+
+    const currentActivePath = this.activePath;
+    const lastActiveMsg = currentActivePath.length > 0 ? currentActivePath[currentActivePath.length - 1] : undefined;
+    if (!lastActiveMsg || lastActiveMsg.role !== "assistant") return;
+
+    if (lastActiveMsg.streaming) return;
+
+    await this.triggerAssistantResponse(lastActiveMsg, undefined, { isContinue: true });
   }
 
   async send(content: string) {
@@ -650,34 +657,49 @@ class ChatStore {
       attachments?: AttachmentOut[];
     },
     attachmentIds?: string[],
+    options?: { isContinue?: boolean }
   ) {
     if (!this.selectedModel) return;
 
-    let currentUserId: string = userMsg.id;
-    let currentAsstId: string = makeId();
+    let currentUserId: string;
+    let currentAsstId: string;
+    let assistantMessage: ChatMessage | undefined;
+    let initialContent = "";
 
-    const assistantMessage: ChatMessage = {
-      id: currentAsstId,
-      parentId: currentUserId,
-      role: "assistant",
-      content: "",
-      status: "routing",
-      createdAt: Date.now(),
-      streaming: true,
-      thinkingContent: undefined,
-      thinkingDone: false,
-      thinkingTimeMs: undefined,
-      stats: undefined,
-      model: this.selectedModel,
-    };
+    if (options?.isContinue) {
+      // Resume existing assistant message
+      currentAsstId = userMsg.id;
+      assistantMessage = userMsg as ChatMessage;
+      currentUserId = assistantMessage.parentId ?? "";
+      assistantMessage.model = this.selectedModel;
+      initialContent = assistantMessage.content || "";
+    } else {
+      // Create new assistant message
+      currentUserId = userMsg.id;
+      currentAsstId = makeId();
+      assistantMessage = {
+        id: currentAsstId,
+        parentId: currentUserId,
+        role: "assistant",
+        content: "",
+        status: "routing",
+        createdAt: Date.now(),
+        streaming: true,
+        thinkingContent: undefined,
+        thinkingDone: false,
+        thinkingTimeMs: undefined,
+        stats: undefined,
+        model: this.selectedModel,
+      };
+      this.messages.push(assistantMessage);
+    }
 
-    this.messages.push(assistantMessage);
-    this.setBranchSelection(currentUserId, currentAsstId);
+    if (!assistantMessage) return;
 
     // Build model history along active path leading to userMsg
     const activePath = this.activePath;
     const historyForModel = activePath
-      .filter((m) => m.id !== currentAsstId && !m.error)
+      .filter((m) => (options?.isContinue ? !m.error : m.id !== currentAsstId && !m.error))
       .map((m) => ({ role: m.role, content: m.content }));
 
     this.isStreaming = true;
@@ -688,13 +710,24 @@ class ChatStore {
     this.abortController = new AbortController();
     let rawBuffer = "";
 
+    if (options?.isContinue) {
+      rawBuffer = assistantMessage.content || "";
+      assistantMessage.streaming = true;
+      assistantMessage.error = undefined;
+      assistantMessage.status = "generating";
+      const parsed = parseThinking(rawBuffer);
+      assistantMessage.thinkingContent = parsed.thinkingContent;
+      assistantMessage.thinkingDone = parsed.thinkingDone;
+    }
+
     await streamChatCompletion({
       model: this.selectedModel,
       messages: historyForModel,
       conversationId: this.activeConversationId,
-      userMessageId: currentUserId,
-      userParentId: userMsg.parentId ?? null,
+      userMessageId: options?.isContinue ? undefined : currentUserId,
+      userParentId: options?.isContinue ? undefined : userMsg.parentId ?? null,
       assistantMessageId: currentAsstId,
+      isContinue: options?.isContinue,
       attachmentIds,
       toolsEnabled: this.conversationToolsEnabled,
       excludedMcps: this.conversationExcludedMcps,
@@ -721,7 +754,8 @@ class ChatStore {
         const msg = this.messages.find((m) => m.id === currentAsstId);
         if (!msg) return;
         msg.routerOutput = (msg.routerOutput || "") + text;
-        rawBuffer = `<router_execution>${msg.routerOutput}</router_execution>\n`;
+        const routerBlock = `<router_execution>${msg.routerOutput}</router_execution>\n`;
+        rawBuffer = routerBlock + (options?.isContinue ? initialContent : "");
         msg.content = rawBuffer;
       },
       onToolExecution: (evt) => {

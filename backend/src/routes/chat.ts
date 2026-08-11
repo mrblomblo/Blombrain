@@ -5,20 +5,19 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { backendRegistry } from "../registry.js";
 import { persistChatTurn } from "./conversations.js";
 import db, { DATA_DIR } from "../db.js";
-import type { AttachmentRow, ModelSettingRow } from "../types.js";
+import type { AttachmentRow, MessageRow, ModelSettingRow } from "../types.js";
 import { getAdapter } from "../adapters/index.js";
 import { mcpManager } from "../services/mcp.js";
-import { getAllSkills } from "../services/skills.js";
 
 interface ChatCompletionBody {
   model: string;
   messages: Array<{ role: string; content: string | any[] }>;
   temperature?: number;
-  /** Optional: resume an existing conversation. When omitted a new one is created. */
   conversationId?: string;
   userMessageId?: string;
   userParentId?: string;
   assistantMessageId?: string;
+  isContinue?: boolean;
   attachments?: string[];
   [key: string]: unknown;
 }
@@ -220,6 +219,7 @@ async function runGenerationPass(opts: {
   buildParams: any;
   abortController: AbortController;
   onChunk: (sseChunk: string) => void;
+  stripPrefix?: string;
 }): Promise<{
   content: string;
   reasoning: string;
@@ -228,7 +228,7 @@ async function runGenerationPass(opts: {
   streamError?: string;
   reasoningMode: "oob" | "inband" | null;
 }> {
-  const { adapter, buildParams, abortController, onChunk } = opts;
+  const { adapter, buildParams, abortController, onChunk, stripPrefix } = opts;
 
   let reqConfig;
   try {
@@ -259,6 +259,8 @@ async function runGenerationPass(opts: {
   let streamError: string | undefined;
   let usageStats: any;
   let streamedChars = 0;
+  let prefixBuffer = stripPrefix ? "" : undefined;
+  const prefixToStrip = stripPrefix || "";
 
   const pendingToolCalls = new Map<number, { id?: string; name?: string; argsText: string }>();
   const completedToolCalls: Array<{ id?: string; name: string; arguments: Record<string, any> }> = [];
@@ -291,6 +293,41 @@ async function runGenerationPass(opts: {
           }
           content += ev.delta;
           streamedChars += ev.delta.length;
+
+          let deltaToSend = ev.delta;
+
+          // Strip duplicated prefix if continuing
+          if (prefixBuffer !== undefined) {
+            prefixBuffer += ev.delta;
+            if (prefixBuffer.length >= prefixToStrip.length) {
+              if (prefixBuffer.startsWith(prefixToStrip)) {
+                deltaToSend = prefixBuffer.slice(prefixToStrip.length);
+              } else {
+                deltaToSend = prefixBuffer;
+              }
+              prefixBuffer = undefined;
+            } else {
+              if (prefixToStrip.startsWith(prefixBuffer)) {
+                deltaToSend = "";
+              } else {
+                deltaToSend = prefixBuffer;
+                prefixBuffer = undefined;
+              }
+            }
+          }
+
+          if (deltaToSend) {
+            onChunk(JSON.stringify({
+              id: `chatcmpl-internal`,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              choices: [{
+                index: 0,
+                delta: { content: deltaToSend },
+                finish_reason: ev.isDone ? "stop" : null,
+              }],
+            }));
+          }
         }
 
         // Accumulate tool calls (may stream in pieces)
@@ -359,7 +396,7 @@ async function runGenerationPass(opts: {
         }
 
         // Forward content and reasoning chunks to SSE subscribers
-        if (ev.delta || ev.reasoning || ev.error) {
+        if (ev.reasoning || ev.error) {
           onChunk(JSON.stringify({
             id: `chatcmpl-internal`,
             object: "chat.completion.chunk",
@@ -367,7 +404,6 @@ async function runGenerationPass(opts: {
             choices: [{
               index: 0,
               delta: {
-                ...(ev.delta ? { content: ev.delta } : {}),
                 ...(ev.reasoning ? { reasoning_content: ev.reasoning } : {}),
               },
               finish_reason: ev.isDone ? "stop" : null,
@@ -415,6 +451,10 @@ async function runGenerationPass(opts: {
   });
 
   content = closeUnclosedTags(content);
+
+  if (stripPrefix && content.startsWith(stripPrefix)) {
+    content = content.slice(stripPrefix.length);
+  }
 
   if (!usageStats?.completionTokens && streamedChars > 0) {
     usageStats = {
@@ -586,7 +626,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
     // Extract user query for routing
     const lastUserMsg = [...body.messages].reverse().find((m) => m.role === "user");
-    const originalUserContent: string =
+    const fallbackOriginalUserContent: string =
       typeof lastUserMsg?.content === "string"
         ? lastUserMsg.content
         : Array.isArray(lastUserMsg?.content)
@@ -600,10 +640,37 @@ export async function chatRoutes(app: FastifyInstance) {
         ? (body.forceTools as string[])
         : [];
 
+    const isContinue = !!body.isContinue;
     const contextLimit = settingRow?.ctx_length ?? null;
-    const userMessageId = body.userMessageId ? String(body.userMessageId) : crypto.randomUUID();
-    const userParentId = body.userParentId ? String(body.userParentId) : null;
-    const assistantMessageId = body.assistantMessageId ? String(body.assistantMessageId) : crypto.randomUUID();
+
+    let userMessageId: string;
+    let userParentId: string | null;
+    let assistantMessageId: string;
+    let originalUserContent: string = fallbackOriginalUserContent;
+    let initialAssistantContent: string = "";
+
+    if (isContinue && body.assistantMessageId) {
+      assistantMessageId = body.assistantMessageId;
+      const existingAsst = db.prepare("SELECT * FROM messages WHERE id = ?").get(assistantMessageId) as MessageRow | undefined;
+      if (!existingAsst) {
+        return sendJsonError(reply, 400, "Cannot continue: assistant message not found.");
+      }
+      userMessageId = existingAsst.parent_id!;
+      initialAssistantContent = existingAsst.content || "";
+
+      const existingUser = db.prepare("SELECT * FROM messages WHERE id = ?").get(userMessageId) as MessageRow | undefined;
+      if (existingUser) {
+        userParentId = existingUser.parent_id ?? null;
+        originalUserContent = existingUser.content || fallbackOriginalUserContent;
+      } else {
+        userParentId = null;
+      }
+    } else {
+      userMessageId = body.userMessageId ? String(body.userMessageId) : crypto.randomUUID();
+      userParentId = body.userParentId ? String(body.userParentId) : null;
+      assistantMessageId = body.assistantMessageId ? String(body.assistantMessageId) : crypto.randomUUID();
+    }
+
     const attachmentIds = body.attachments;
 
     // Hijack response and start SSE stream early so routing progress can be emitted
@@ -636,7 +703,7 @@ export async function chatRoutes(app: FastifyInstance) {
       })}\n\n`);
     }
 
-    let assistantContent = "";
+    let assistantContent = isContinue ? initialAssistantContent : "";
     const artifactFilenamesThisTurn = new Set<string>();
     let routerRawText = "";
     const userQuery = originalUserContent;
@@ -768,14 +835,16 @@ export async function chatRoutes(app: FastifyInstance) {
     reply.raw.on("close", onClientDisconnect);
     req.raw.on("aborted", onClientDisconnect);
 
-    // Emit routing status event
-    broadcastChunk(JSON.stringify({ type: "status", status: "routing" }));
+    // Emit routing status event if not a continue request
+    if (!isContinue) {
+      broadcastChunk(JSON.stringify({ type: "status", status: "routing" }));
+    }
 
     let mcpTools: any[] = [];
     let activeSkills: any[] = [];
     let builtInTools: any[] = [];
 
-    if (toolsEnabled && !abortController.signal.aborted) {
+    if (toolsEnabled && !isContinue && !abortController.signal.aborted) {
       const { routeToolsAndSkills, buildRecentContext } = await import("../services/toolRouter.js");
       const priorContext = buildRecentContext(body.messages);
       try {
@@ -822,6 +891,10 @@ export async function chatRoutes(app: FastifyInstance) {
     // 5. Build outgoing messages
     // -----------------------------------------------------------------------
     let outgoingMessages = reconstructToolCalls([...body.messages]);
+
+    if (isContinue && outgoingMessages.length > 0 && outgoingMessages[outgoingMessages.length - 1].role === "assistant") {
+      outgoingMessages[outgoingMessages.length - 1].content = initialAssistantContent;
+    }
 
     const globalSettingsRow = db.prepare("SELECT ctx_overflow_behavior, reasoning_injection_mode, network_tools_enabled FROM global_settings LIMIT 1").get() as any;
     const defaultReasoningMode = globalSettingsRow?.reasoning_injection_mode || "all";
@@ -1161,6 +1234,7 @@ export async function chatRoutes(app: FastifyInstance) {
           buildParams: passParams,
           abortController,
           onChunk: broadcastChunk,
+          stripPrefix: isContinue && toolRound === 0 ? initialAssistantContent : undefined,
         });
 
         if (!pass.streamError || (pass.content || pass.reasoning || pass.toolCalls.length)) {

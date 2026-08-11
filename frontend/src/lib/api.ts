@@ -289,6 +289,7 @@ export interface StreamChatOptions {
   userMessageId?: string;
   userParentId?: string | null;
   assistantMessageId?: string;
+  isContinue?: boolean;
   attachmentIds?: string[];
   toolsEnabled?: boolean;
   excludedMcps?: string[];
@@ -327,6 +328,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
     userMessageId,
     userParentId,
     assistantMessageId,
+    isContinue,
     attachmentIds,
     signal,
     onToken,
@@ -348,6 +350,7 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
         userMessageId,
         userParentId,
         assistantMessageId,
+        isContinue,
         attachments: attachmentIds,
         toolsEnabled: opts.toolsEnabled,
         excludedMcps: opts.excludedMcps,

@@ -690,17 +690,30 @@ export function persistChatTurn(opts: {
       });
     }
 
-    insertMessage.run({
-      id: assistantMessageId,
-      conversationId,
-      parentId: userMessageId, // Assistant parent is always the user message
-      role: "assistant",
-      content: assistantContent,
-      error: assistantError ?? null,
-      stats: assistantStats ? JSON.stringify(assistantStats) : null,
-      model,
-      createdAt: now + 1,
-    });
+    // Check if assistantMessageId already exists (e.g. continuation case)
+    const existingAssistantMsg = db.prepare("SELECT id FROM messages WHERE id = ?").get(assistantMessageId);
+    if (!existingAssistantMsg) {
+      insertMessage.run({
+        id: assistantMessageId,
+        conversationId,
+        parentId: userMessageId,
+        role: "assistant",
+        content: assistantContent,
+        error: assistantError ?? null,
+        stats: assistantStats ? JSON.stringify(assistantStats) : null,
+        model,
+        createdAt: now + 1,
+      });
+    } else {
+      // Update existing assistant message (continuation case)
+      db.prepare("UPDATE messages SET content = ?, error = ?, stats = ?, model = ? WHERE id = ?").run(
+        assistantContent,
+        assistantError ?? null,
+        assistantStats ? JSON.stringify(assistantStats) : null,
+        model,
+        assistantMessageId
+      );
+    }
 
     return title;
   });
