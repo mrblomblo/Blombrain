@@ -58,11 +58,6 @@ export function parseMessageSegments(
 
   if (!fullRaw.trim()) return [];
 
-  // Track if this message has demonstrated reasoning behavior at all
-  const hasReasoningHistory =
-    OPEN_TAGS.some((open) => fullRaw.includes(open)) ||
-    CLOSE_TAGS.some((close) => fullRaw.includes(close));
-
   const segments: MessageSegment[] = [];
   let pos = 0;
   let segIndex = 0;
@@ -106,20 +101,16 @@ export function parseMessageSegments(
       }
     }
 
-    // No more tags -- emit remainder as text or a streaming think block
+    // No more tags -- emit remainder as text
     if (firstTagPos === -1) {
       const remainingText = fullRaw.slice(pos).trimStart();
       if (remainingText) {
-        if (lastParsedTagType === "tool" && hasReasoningHistory) {
-          segments.push({ id: `think_${segIndex++}`, type: "think", content: remainingText, isDone: false });
-        } else {
-          segments.push({ id: `text_${segIndex++}`, type: "text", content: remainingText });
-        }
+        segments.push({ id: `text_${segIndex++}`, type: "text", content: remainingText });
       }
       break;
     }
 
-    // Emit text/think for the region before the first tag
+    // Emit text for the region before the first tag
     if (firstTagPos > pos) {
       const priorText = fullRaw.slice(pos, firstTagPos).trim();
       if (priorText) {
@@ -129,9 +120,6 @@ export function parseMessageSegments(
           pos = firstTagPos + endThinkLen;
           lastParsedTagType = "think";
           continue;
-        } else if (lastParsedTagType === "tool" && hasReasoningHistory && firstTagType !== "think" && firstTagType !== "router") {
-          // Post-tool text in a reasoning message is another think block
-          segments.push({ id: `think_${segIndex++}`, type: "think", content: priorText, isDone: true });
         } else {
           segments.push({ id: `text_${segIndex++}`, type: "text", content: priorText });
         }

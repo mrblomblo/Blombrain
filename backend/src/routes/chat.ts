@@ -450,7 +450,23 @@ async function runGenerationPass(opts: {
     nodeStream.on("close", () => done());
   });
 
-  content = closeUnclosedTags(content);
+  const closedContent = closeUnclosedTags(content);
+  if (closedContent !== content) {
+    const addedSuffix = closedContent.slice(content.length);
+    if (addedSuffix) {
+      onChunk(JSON.stringify({
+        id: `chatcmpl-internal`,
+        object: "chat.completion.chunk",
+        created: Math.floor(Date.now() / 1000),
+        choices: [{
+          index: 0,
+          delta: { content: addedSuffix },
+          finish_reason: null,
+        }],
+      }));
+    }
+    content = closedContent;
+  }
 
   if (stripPrefix && content.startsWith(stripPrefix)) {
     content = content.slice(stripPrefix.length);

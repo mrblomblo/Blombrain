@@ -34,8 +34,21 @@ function makeId(): string {
  * display the ThinkingBlock the same as streamed ones.
  */
 function parseThinking(raw: string): { content: string; thinkingContent?: string; thinkingDone?: boolean } {
-  const hasOpenTag = OPEN_TAGS.some((open) => raw.includes(open));
-  if (!hasOpenTag) return { content: raw };
+  const toolExecBlocks: string[] = [];
+  const sanitizedRaw = raw.replace(/<tool_execution>[\s\S]*?<\/tool_execution>/g, (match) => {
+    const idx = toolExecBlocks.length;
+    toolExecBlocks.push(match);
+    return `__TOOL_EXEC_${idx}__`;
+  });
+
+  const hasOpenTag = OPEN_TAGS.some((open) => sanitizedRaw.includes(open));
+  if (!hasOpenTag) {
+    let content = sanitizedRaw;
+    toolExecBlocks.forEach((te, i) => {
+      content = content.replace(`__TOOL_EXEC_${i}__`, te);
+    });
+    return { content };
+  }
 
   const thinkBlocks: string[] = [];
   const contentParts: string[] = [];
@@ -46,7 +59,7 @@ function parseThinking(raw: string): { content: string; thinkingContent?: string
   const findNextOpen = (startPos: number) => {
     let earliest: { pos: number; len: number } | null = null;
     for (const open of OPEN_TAGS) {
-      const p = raw.indexOf(open, startPos);
+      const p = sanitizedRaw.indexOf(open, startPos);
       if (p !== -1 && (!earliest || p < earliest.pos)) {
         earliest = { pos: p, len: open.length };
       }
@@ -57,7 +70,7 @@ function parseThinking(raw: string): { content: string; thinkingContent?: string
   const findNextClose = (startPos: number) => {
     let earliest: { pos: number; len: number } | null = null;
     for (const close of CLOSE_TAGS) {
-      const p = raw.indexOf(close, startPos);
+      const p = sanitizedRaw.indexOf(close, startPos);
       if (p !== -1 && (!earliest || p < earliest.pos)) {
         earliest = { pos: p, len: close.length };
       }
@@ -65,14 +78,14 @@ function parseThinking(raw: string): { content: string; thinkingContent?: string
     return earliest;
   };
 
-  while (pos < raw.length) {
+  while (pos < sanitizedRaw.length) {
     if (!currentlyThinking) {
       const openInfo = findNextOpen(pos);
       if (!openInfo) {
-        contentParts.push(raw.slice(pos));
+        contentParts.push(sanitizedRaw.slice(pos));
         break;
       } else {
-        contentParts.push(raw.slice(pos, openInfo.pos));
+        contentParts.push(sanitizedRaw.slice(pos, openInfo.pos));
         currentlyThinking = true;
         currentThinkStart = openInfo.pos + openInfo.len;
         pos = currentThinkStart;
@@ -80,11 +93,11 @@ function parseThinking(raw: string): { content: string; thinkingContent?: string
     } else {
       const closeInfo = findNextClose(pos);
       if (!closeInfo) {
-        thinkBlocks.push(raw.slice(currentThinkStart));
-        pos = raw.length;
+        thinkBlocks.push(sanitizedRaw.slice(currentThinkStart));
+        pos = sanitizedRaw.length;
         break;
       } else {
-        thinkBlocks.push(raw.slice(currentThinkStart, closeInfo.pos));
+        thinkBlocks.push(sanitizedRaw.slice(currentThinkStart, closeInfo.pos));
         currentlyThinking = false;
         pos = closeInfo.pos + closeInfo.len;
       }
@@ -92,7 +105,13 @@ function parseThinking(raw: string): { content: string; thinkingContent?: string
   }
 
   const thinkingContent = thinkBlocks.length > 0 ? thinkBlocks.join("\n\n---\n\n").trim() : undefined;
-  const content = contentParts.join("").trimStart();
+  let content = contentParts.join("").trimStart();
+
+  // Restore tool execution blocks
+  toolExecBlocks.forEach((te, i) => {
+    content = content.replace(`__TOOL_EXEC_${i}__`, te);
+  });
+
   return {
     content,
     thinkingContent,
@@ -770,11 +789,12 @@ class ChatStore {
           msg.toolExecutions.push(evt);
         }
 
+        const sanitizedBuffer = rawBuffer.replace(/<tool_execution>[\s\S]*?<\/tool_execution>/g, "");
         let thinkStartCount = 0;
         let thinkEndCount = 0;
         for (const tag of THINK_TAG_NAMES) {
-          thinkStartCount += (rawBuffer.match(new RegExp(`<${tag}>`, "gi")) || []).length;
-          thinkEndCount += (rawBuffer.match(new RegExp(`</${tag}>`, "gi")) || []).length;
+          thinkStartCount += (sanitizedBuffer.match(new RegExp(`<${tag}>`, "gi")) || []).length;
+          thinkEndCount += (sanitizedBuffer.match(new RegExp(`</${tag}>`, "gi")) || []).length;
         }
         if (thinkStartCount > thinkEndCount) {
           rawBuffer += "\n</think>\n";
