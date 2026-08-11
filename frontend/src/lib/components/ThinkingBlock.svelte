@@ -118,7 +118,7 @@
 </script>
 
 {#if status === "routing" || isRouter || thinkingContent !== undefined}
-  <div class="mb-2 text-xs">
+  <div class="my-1 text-xs">
     <button
       type="button"
       onclick={toggleOpen}

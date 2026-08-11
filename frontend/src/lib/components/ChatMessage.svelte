@@ -12,7 +12,7 @@
   import MessageActions from "./MessageActions.svelte";
   import Markdown from "./Markdown.svelte";
   import Button from "./ui/Button.svelte";
-  import { fly, fade } from "svelte/transition";
+  import { fly } from "svelte/transition";
   import type { AttachmentOut } from "../types";
   import { parseMessageSegments } from "../utils/segmentParser";
 
@@ -57,6 +57,16 @@
       message.content &&
       (message.content.includes("```") || message.content.includes("<pre>"))
     ),
+  );
+
+  let hasThinkingOrTool = $derived(
+    (message.role === "assistant" && message.status === "routing") ||
+      parsedSegments.some(
+        (s) =>
+          s.type === "router" ||
+          s.type === "think" ||
+          (s.type === "tool" && !!s.execution),
+      ),
   );
 
   // Edit Mode state
@@ -491,6 +501,7 @@
     {:else if message.content || message.thinkingContent || message.error || message.streaming}
       <div
         class="relative rounded-2xl p-3 text-sm leading-relaxed max-w-full break-words
+          {hasThinkingOrTool ? 'pt-2' : ''}
           {message.role === 'user'
           ? 'bg-accent-muted/90 text-fg rounded-tr-xs'
           : 'bg-bg-elevated border border-line/60 text-fg rounded-tl-xs shadow-xs'}

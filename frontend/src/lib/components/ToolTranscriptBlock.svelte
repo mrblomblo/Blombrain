@@ -8,7 +8,6 @@
     XCircle,
     Ban,
   } from "@lucide/svelte";
-  import hljs from "highlight.js";
   import { slide } from "svelte/transition";
 
   let { execution }: { execution: ToolExecutionEvent } = $props();
@@ -31,7 +30,7 @@
 </script>
 
 {#if execution}
-  <div class="mb-2 text-xs">
+  <div class="my-1 text-xs">
     <button
       type="button"
       onclick={() => (isExpanded = !isExpanded)}
