@@ -10,6 +10,7 @@
   } from "../../api";
   import type { SkillInfo, SkillWriteBody } from "../../types";
   import Button from "../ui/Button.svelte";
+  import ToggleSwitch from "../ui/ToggleSwitch.svelte";
   import {
     Plus,
     Trash2,
@@ -43,9 +44,26 @@
   let instructions = $state("");
   let dirPath = $state("");
   let sourceUrl = $state("");
+  let isEnabled = $state(true);
 
   let formError = $state<string | null>(null);
   let formBusy = $state(false);
+
+  const IGNORED_UPLOAD_DIRS = new Set([
+    "node_modules",
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "dist",
+    "build",
+    ".next",
+    ".svelte-kit",
+    "target",
+  ]);
+  const MAX_SKILL_UPLOAD_FILES = 200;
+  const MAX_SKILL_UPLOAD_DEPTH = 5;
+  const MAX_SKILL_UPLOAD_BYTES = 25 * 1024 * 1024;
 
   function resetForm() {
     activeMode = "list";
@@ -58,6 +76,7 @@
     instructions = "";
     dirPath = "";
     sourceUrl = "";
+    isEnabled = true;
     formError = null;
     formBusy = false;
   }
@@ -69,19 +88,42 @@
     instructions = skill.instructions;
     dirPath = skill.dirPath || "";
     sourceUrl = skill.sourceUrl || "";
+    isEnabled = skill.isEnabled;
     activeMode = "manual";
     formError = null;
+  }
+
+  async function handleToggleEnabled(skill: SkillInfo, checked: boolean) {
+    try {
+      await updateSkill(skill.id, {
+        name: skill.name,
+        description: skill.description,
+        instructions: skill.instructions,
+        dirPath: skill.dirPath || undefined,
+        sourceUrl: skill.sourceUrl || undefined,
+        isEnabled: checked,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["skills"] });
+    } catch (err: any) {
+      formError = err?.message || "Failed to update skill state";
+    }
   }
 
   async function getFilesFromDataTransfer(dataTransfer: DataTransfer): Promise<{ file: File; relativePath: string }[]> {
     const items = Array.from(dataTransfer.items);
     const results: { file: File; relativePath: string }[] = [];
 
-    async function scanEntry(entry: any, pathSoFar: string = "") {
+    async function scanEntry(entry: any, pathSoFar: string = "", depth: number = 0) {
+      if (depth > MAX_SKILL_UPLOAD_DEPTH || results.length > MAX_SKILL_UPLOAD_FILES) {
+        return;
+      }
       if (entry.isFile) {
         const file = await new Promise<File>((resolve, reject) => entry.file(resolve, reject));
         results.push({ file, relativePath: pathSoFar ? `${pathSoFar}/${file.name}` : file.name });
       } else if (entry.isDirectory) {
+        if (IGNORED_UPLOAD_DIRS.has(entry.name)) {
+          return;
+        }
         const reader = entry.createReader();
         const entries = await new Promise<any[]>((resolve, reject) => {
           const allEntries: any[] = [];
@@ -98,7 +140,7 @@
           readNext();
         });
         for (const child of entries) {
-          await scanEntry(child, pathSoFar ? `${pathSoFar}/${entry.name}` : entry.name);
+          await scanEntry(child, pathSoFar ? `${pathSoFar}/${entry.name}` : entry.name, depth + 1);
         }
       }
     }
@@ -106,7 +148,7 @@
     const webkitEntries = items.map((item) => item.webkitGetAsEntry()).filter(Boolean);
     if (webkitEntries.length > 0) {
       for (const entry of webkitEntries) {
-        await scanEntry(entry, "");
+        await scanEntry(entry, "", 0);
       }
     } else {
       const files = Array.from(dataTransfer.files);
@@ -154,10 +196,42 @@
   }
 
   async function processUploadedFiles(items: { file: File; relativePath: string }[]) {
-    formBusy = true;
     formError = null;
+    const filtered = items.filter((item) => {
+      const parts = item.relativePath.replace(/\\/g, "/").split("/");
+      if (parts.length > MAX_SKILL_UPLOAD_DEPTH + 1) return false;
+      return !parts.some((p) => IGNORED_UPLOAD_DIRS.has(p));
+    });
+
+    if (filtered.length === 0) {
+      formError = "No valid skill files found in the selected folder.";
+      return;
+    }
+
+    if (filtered.length > MAX_SKILL_UPLOAD_FILES) {
+      formError = `Skill folder contains too many files (${filtered.length}). Maximum allowed is ${MAX_SKILL_UPLOAD_FILES}.`;
+      return;
+    }
+
+    const hasSkillMd = filtered.some((item) => {
+      const base = item.relativePath.replace(/\\/g, "/").split("/").pop() || "";
+      return base.toLowerCase() === "skill.md";
+    });
+
+    if (!hasSkillMd) {
+      formError = "Selected folder does not contain a SKILL.md file.";
+      return;
+    }
+
+    const totalBytes = filtered.reduce((acc, item) => acc + item.file.size, 0);
+    if (totalBytes > MAX_SKILL_UPLOAD_BYTES) {
+      formError = "Skill folder exceeds the 25 MB upload limit.";
+      return;
+    }
+
+    formBusy = true;
     try {
-      await uploadSkillFiles(items);
+      await uploadSkillFiles(filtered);
       await queryClient.invalidateQueries({ queryKey: ["skills"] });
       resetForm();
     } catch (err: any) {
@@ -201,6 +275,7 @@
         instructions: instructions.trim(),
         dirPath: dirPath.trim() || undefined,
         sourceUrl: sourceUrl.trim() || undefined,
+        isEnabled,
       };
 
       if (editingId) {
@@ -517,6 +592,13 @@
             <div>
               <div class="flex items-center gap-2">
                 <span class="font-medium text-sm text-fg">{skill.name}</span>
+                {#if !skill.isEnabled}
+                  <span
+                    class="rounded bg-bg-inset px-1.5 py-0.5 text-[10px] font-medium text-fg-subtle"
+                  >
+                    Disabled
+                  </span>
+                {/if}
               </div>
               <p class="text-xs text-fg-subtle truncate max-w-md mt-0.5">
                 {skill.description}
@@ -525,9 +607,16 @@
           </div>
 
           <div class="flex items-center gap-2">
+            <ToggleSwitch
+              id="skill-enable-{skill.id}"
+              checked={skill.isEnabled}
+              onchange={(checked) => handleToggleEnabled(skill, checked)}
+              label="Enable {skill.name}"
+            />
             <Button
               variant="ghost"
               size="sm"
+              aria-label="Preview {skill.name}"
               onclick={() => (previewSkill = skill)}
             >
               <Eye size={14} class="mr-1" /> Preview
@@ -535,6 +624,7 @@
             <Button
               variant="default"
               size="sm"
+              aria-label="Edit {skill.name}"
               onclick={() => startEdit(skill)}
             >
               Edit

@@ -27,11 +27,16 @@ export const openAIAdapter: ApiAdapter = {
       stream_options: { include_usage: true, ...(extraParams.stream_options ?? {}) },
     };
 
-    // `max_tokens` is deprecated in favor of `max_completion_tokens`, and is flatly
-    // incompatible with reasoning models (o-series, gpt-5.x). Translate it
-    // automatically so callers configured with the legacy field still work
-    // against reasoning models, unless the new field was already supplied.
-    if (body.max_tokens !== undefined && body.max_completion_tokens === undefined) {
+    // `max_tokens` is deprecated on official OpenAI reasoning models (o-series, gpt-5.x)
+    // in favor of `max_completion_tokens`, whereas local OpenAI-compatible servers
+    // (llama.cpp, vLLM, KoboldCpp, etc.) still expect `max_tokens`.
+    const isOfficialOpenAI = backend.baseUrl.toLowerCase().includes("api.openai.com");
+    const isOpenAIReasoningModel = /^(?:o[134](?:[-_]|$)|gpt-5)/i.test(modelId);
+    if (
+      (isOfficialOpenAI || isOpenAIReasoningModel) &&
+      body.max_tokens !== undefined &&
+      body.max_completion_tokens === undefined
+    ) {
       body.max_completion_tokens = body.max_tokens;
       delete body.max_tokens;
     }

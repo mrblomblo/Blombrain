@@ -108,6 +108,14 @@ export function estimateToolDefinitionsTokens(toolDefinitions?: any[]): number {
   return Math.ceil(JSON.stringify(toolDefinitions).length / 3) + 16;
 }
 
+export const SKILL_ANCHOR_REMINDER_PREFIX = "Reminder:";
+
+function isAnchorReminderMessage(msg: any): boolean {
+  if (!msg || msg.role !== "system") return false;
+  if (msg._isSkillAnchorReminder) return true;
+  return typeof msg.content === "string" && msg.content.startsWith(SKILL_ANCHOR_REMINDER_PREFIX);
+}
+
 /**
  * Partitions a list of messages into atomic MessageGroups.
  * Ensures tool-call chains (assistant tool_calls + matching tool results + continuations)
@@ -124,12 +132,7 @@ export function partitionMessageGroups(messages: any[]): MessageGroup[] {
   while (i < messages.length && messages[i].role === "system") {
     // Stop if this system message is a reminder right before the first user message
     const nextMsg = messages[i + 1];
-    if (
-      nextMsg &&
-      nextMsg.role === "user" &&
-      typeof messages[i].content === "string" &&
-      messages[i].content.startsWith("Reminder:")
-    ) {
+    if (nextMsg && nextMsg.role === "user" && isAnchorReminderMessage(messages[i])) {
       break;
     }
     systemMsgs.push(messages[i]);
@@ -154,9 +157,7 @@ export function partitionMessageGroups(messages: any[]): MessageGroup[] {
     // Check if system reminder + first user message
     if (
       !foundFirstUser &&
-      current.role === "system" &&
-      typeof current.content === "string" &&
-      current.content.startsWith("Reminder:") &&
+      isAnchorReminderMessage(current) &&
       i + 1 < messages.length &&
       messages[i + 1].role === "user"
     ) {
@@ -535,8 +536,7 @@ export function filterReasoningContent(
 
   const stripTags = (str: string): string => {
     return str
-      .replace(/<think>[\s\S]*?<\/think>/gi, "")
-      .replace(/<thought>[\s\S]*?<\/thought>/gi, "")
+      .replace(/<(?:think|thought|reason|reasoning)>[\s\S]*?<\/(?:think|thought|reason|reasoning)>/gi, "")
       .trim();
   };
 

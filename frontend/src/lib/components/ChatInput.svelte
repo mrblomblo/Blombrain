@@ -89,6 +89,21 @@
 
   let isDragging = $state(false);
   let dragCounter = 0;
+  let uploadError = $state<string | null>(null);
+
+  function getFileRejectionReason(file: File): string {
+    const mimeType = file.type.toLowerCase();
+    if (mimeType.startsWith("image/") && !selectedModelInfo?.canImage) {
+      return `"${file.name}" rejected (image input is not enabled for the selected model).`;
+    }
+    if (mimeType.startsWith("audio/") && !selectedModelInfo?.canAudio) {
+      return `"${file.name}" rejected (audio input is not enabled for the selected model).`;
+    }
+    if (mimeType.startsWith("video/") && !selectedModelInfo?.canVideo) {
+      return `"${file.name}" rejected (video input is not enabled for the selected model).`;
+    }
+    return `"${file.name}" has an unsupported file type.`;
+  }
 
   function isFileAllowed(file: File): boolean {
     if (!allowedAccepts) return false;
@@ -142,15 +157,31 @@
     if (isUploading) return;
     if (!e.dataTransfer?.files || e.dataTransfer.files.length === 0) return;
 
-    const files = Array.from(e.dataTransfer.files).filter(isFileAllowed);
-    if (files.length === 0) return;
+    const allFiles = Array.from(e.dataTransfer.files);
+    const allowed: File[] = [];
+    const rejectedReasons: string[] = [];
+    for (const file of allFiles) {
+      if (isFileAllowed(file)) {
+        allowed.push(file);
+      } else {
+        rejectedReasons.push(getFileRejectionReason(file));
+      }
+    }
+
+    if (rejectedReasons.length > 0) {
+      uploadError = rejectedReasons.join(" ");
+    } else {
+      uploadError = null;
+    }
+
+    if (allowed.length === 0) return;
 
     isUploading = true;
-    for (const file of files) {
+    for (const file of allowed) {
       try {
         await chatStore.addAttachment(file);
       } catch (err) {
-        alert("Failed to upload " + file.name);
+        uploadError = `Failed to upload "${file.name}": ${(err as Error).message || "Unknown error"}`;
       }
     }
     isUploading = false;
@@ -160,12 +191,29 @@
     const input = e.target as HTMLInputElement;
     if (!input.files || input.files.length === 0) return;
 
+    const allFiles = Array.from(input.files);
+    const allowed: File[] = [];
+    const rejectedReasons: string[] = [];
+    for (const file of allFiles) {
+      if (isFileAllowed(file)) {
+        allowed.push(file);
+      } else {
+        rejectedReasons.push(getFileRejectionReason(file));
+      }
+    }
+
+    if (rejectedReasons.length > 0) {
+      uploadError = rejectedReasons.join(" ");
+    } else {
+      uploadError = null;
+    }
+
     isUploading = true;
-    for (const file of Array.from(input.files)) {
+    for (const file of allowed) {
       try {
         await chatStore.addAttachment(file);
       } catch (err) {
-        alert("Failed to upload " + file.name);
+        uploadError = `Failed to upload "${file.name}": ${(err as Error).message || "Unknown error"}`;
       }
     }
     isUploading = false;
@@ -182,6 +230,23 @@
   <div
     class="relative z-10 mx-auto flex max-w-3xl lg:max-w-4xl xl:max-w-5xl flex-col gap-2"
   >
+    {#if uploadError}
+      <div
+        role="alert"
+        class="flex items-center justify-between gap-2 rounded-lg border border-danger/40 bg-danger/10 px-3 py-1.5 text-xs text-danger"
+      >
+        <span>{uploadError}</span>
+        <button
+          type="button"
+          onclick={() => (uploadError = null)}
+          aria-label="Dismiss upload error"
+          class="shrink-0 rounded-sm p-0.5 hover:bg-danger/20 cursor-pointer"
+        >
+          <X size={13} />
+        </button>
+      </div>
+    {/if}
+
     <!-- Attachment Thumbnails -->
     {#if chatStore.pendingAttachments.length > 0}
       <div class="flex flex-wrap gap-2 px-1">
@@ -195,12 +260,20 @@
               onclick={() => (chatStore.selectedAttachment = att)}
               class="h-full w-full flex items-center justify-center cursor-pointer hover:opacity-90 transition-opacity"
             >
-              {#if att.mimeType.startsWith("image/") || att.mimeType.startsWith("video/")}
+              {#if att.mimeType.startsWith("image/")}
                 <img
                   src={serveUploadUrl(att.id)}
                   alt={att.originalName}
                   class="h-full w-full object-cover"
                 />
+              {:else if att.mimeType.startsWith("video/")}
+                <!-- svelte-ignore a11y_media_has_caption -->
+                <video
+                  src={serveUploadUrl(att.id)}
+                  class="h-full w-full object-cover pointer-events-none"
+                  muted
+                  preload="metadata"
+                ></video>
               {:else if att.mimeType.startsWith("audio/")}
                 <div class="text-[9px] text-fg-subtle font-mono">Audio</div>
               {:else}

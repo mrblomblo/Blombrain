@@ -5,6 +5,7 @@
   import ChatInput from "./ChatInput.svelte";
   import { fetchModels } from "../api";
   import { createQuery } from "@tanstack/svelte-query";
+  import { ArrowDown } from "@lucide/svelte";
 
   import { flip } from "svelte/animate";
   import { slide, fade, fly } from "svelte/transition";
@@ -31,6 +32,7 @@
   let activeMessages = $derived(chatStore.activePath);
   let lastConversationId = $state<string | null>(null);
   let userHasScrolledUp = $state(false);
+  let editingMessageIds = $state<Record<string, boolean>>({});
   let lastScrollTop = 0;
   let touchStartY = 0;
   let isUserInteracting = false;
@@ -124,11 +126,11 @@
     lastScrollTop = scrollEl.scrollTop;
   }
 
-  // Observe element resizing (Markdown parsing, code blocks, artifacts) to prevent scroll detachment
+  // Observe element resizing during streaming to prevent scroll detachment without yanking historical interactions
   $effect(() => {
     if (!innerContentEl) return;
     const observer = new ResizeObserver(() => {
-      if (!userHasScrolledUp && scrollEl) {
+      if (chatStore.isStreaming && !userHasScrolledUp && scrollEl) {
         scrollToBottom(true);
       }
     });
@@ -234,12 +236,44 @@
             }}
             out:slide|local={{ duration: 300, easing: quintOut }}
           >
-            <VirtualizedMessage>
-              <ChatMessage {message} isLast={i === activeMessages.length - 1} />
+            <VirtualizedMessage
+              keepMounted={Boolean(
+                message.streaming || editingMessageIds[message.id],
+              )}
+            >
+              <ChatMessage
+                {message}
+                isLast={i === activeMessages.length - 1}
+                onEditingChange={(editing) => {
+                  editingMessageIds[message.id] = editing;
+                }}
+              />
             </VirtualizedMessage>
           </div>
         {/each}
       </div>
     {/key}
+
+    {#if userHasScrolledUp}
+      <div
+        transition:fade={{ duration: 150 }}
+        class="sticky z-30 flex justify-center pointer-events-none"
+        style="bottom: {bottomPadding + 8}px;"
+      >
+        <button
+          type="button"
+          onclick={() => {
+            userHasScrolledUp = false;
+            scrollToBottom(false);
+          }}
+          aria-label="Scroll to bottom"
+          title="Jump to latest message"
+          class="pointer-events-auto flex items-center gap-1.5 rounded-full border border-line bg-bg-elevated/95 px-3 py-1.5 text-xs font-medium text-fg shadow-md backdrop-blur-sm hover:border-accent hover:text-accent transition-all cursor-pointer"
+        >
+          <ArrowDown size={13} />
+          <span>Jump to bottom</span>
+        </button>
+      </div>
+    {/if}
   {/if}
 </div>

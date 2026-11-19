@@ -1,10 +1,27 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import fs from "node:fs";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import db from "../db.js";
-import type { GlobalSettingsRow, GlobalSettingsOut, GlobalSettingsWriteBody } from "../types.js";
+import type { GlobalSettingsRow, GlobalSettingsOut, GlobalSettingsWriteBody, AttachmentRow } from "../types.js";
+
+function isSecureRequest(req: FastifyRequest): boolean {
+  if (req.protocol === "https") return true;
+  const proto = req.headers["x-forwarded-proto"];
+  if (typeof proto === "string" && proto.split(",")[0].trim().toLowerCase() === "https") {
+    return true;
+  }
+  return false;
+}
 
 function rowToSettings(row: GlobalSettingsRow): GlobalSettingsOut {
+  let disabledBuiltInTools: string[] = [];
+  if (row.disabled_builtin_tools) {
+    try {
+      const parsed = JSON.parse(row.disabled_builtin_tools);
+      if (Array.isArray(parsed)) disabledBuiltInTools = parsed.map(String);
+    } catch { }
+  }
   return {
     id: row.id,
     userName: row.user_name,
@@ -18,6 +35,7 @@ function rowToSettings(row: GlobalSettingsRow): GlobalSettingsOut {
     reasoningInjectionMode: (row.reasoning_injection_mode as any) || "all",
     networkToolsEnabled: !!row.network_tools_enabled,
     artifactNetworkEnabled: !!row.artifact_network_enabled,
+    disabledBuiltInTools,
   };
 }
 
@@ -68,6 +86,31 @@ export async function settingsRoutes(app: FastifyInstance) {
     const reasoningInjectionMode = body.reasoningInjectionMode !== undefined ? body.reasoningInjectionMode : (current.reasoning_injection_mode || "all");
     const networkToolsEnabled = body.networkToolsEnabled !== undefined ? (body.networkToolsEnabled ? 1 : 0) : (current.network_tools_enabled ?? 0);
     const artifactNetworkEnabled = body.artifactNetworkEnabled !== undefined ? (body.artifactNetworkEnabled ? 1 : 0) : (current.artifact_network_enabled ?? 0);
+    const disabledBuiltInTools =
+      body.disabledBuiltInTools !== undefined
+        ? JSON.stringify(body.disabledBuiltInTools)
+        : (current.disabled_builtin_tools ?? "[]");
+
+    // Mark new avatar attachment as purpose = 'avatar', and clean up old avatar if replaced
+    if (body.userAvatar !== undefined && body.userAvatar !== current.user_avatar) {
+      if (body.userAvatar && body.userAvatar.startsWith("/api/uploads/")) {
+        const newAvatarId = decodeURIComponent(body.userAvatar.replace("/api/uploads/", ""));
+        db.prepare("UPDATE attachments SET purpose = 'avatar' WHERE id = ?").run(newAvatarId);
+      }
+      if (current.user_avatar && current.user_avatar.startsWith("/api/uploads/")) {
+        const oldAvatarId = decodeURIComponent(current.user_avatar.replace("/api/uploads/", ""));
+        const stillUsedByModel = db.prepare("SELECT 1 FROM model_settings WHERE icon = ?").get(current.user_avatar);
+        if (!stillUsedByModel) {
+          const oldRow = db.prepare("SELECT * FROM attachments WHERE id = ? AND message_id IS NULL").get(oldAvatarId) as AttachmentRow | undefined;
+          if (oldRow) {
+            try {
+              if (fs.existsSync(oldRow.disk_path)) fs.unlinkSync(oldRow.disk_path);
+            } catch { }
+            db.prepare("DELETE FROM attachments WHERE id = ?").run(oldAvatarId);
+          }
+        }
+      }
+    }
 
     if (body.password !== undefined) {
       if (body.password.trim() === "") {
@@ -89,7 +132,7 @@ export async function settingsRoutes(app: FastifyInstance) {
         reply.setCookie("blombrain_token", token, {
           path: "/",
           httpOnly: true,
-          secure: req.protocol === "https",
+          secure: isSecureRequest(req),
           sameSite: "lax",
           maxAge: 60 * 60 * 24 * 7,
         });
@@ -98,9 +141,9 @@ export async function settingsRoutes(app: FastifyInstance) {
 
     db.prepare(`
       UPDATE global_settings
-      SET user_name = ?, user_avatar = ?, theme = ?, auto_name_mode = ?, auto_name_model = ?, tool_routing_mode = ?, tool_routing_model = ?, ctx_overflow_behavior = ?, reasoning_injection_mode = ?, network_tools_enabled = ?, artifact_network_enabled = ?
+      SET user_name = ?, user_avatar = ?, theme = ?, auto_name_mode = ?, auto_name_model = ?, tool_routing_mode = ?, tool_routing_model = ?, ctx_overflow_behavior = ?, reasoning_injection_mode = ?, network_tools_enabled = ?, artifact_network_enabled = ?, disabled_builtin_tools = ?
       WHERE id = 'default'
-    `).run(userName, userAvatar, theme, autoNameMode, autoNameModel, toolRoutingMode, toolRoutingModel, ctxOverflowBehavior, reasoningInjectionMode, networkToolsEnabled, artifactNetworkEnabled);
+    `).run(userName, userAvatar, theme, autoNameMode, autoNameModel, toolRoutingMode, toolRoutingModel, ctxOverflowBehavior, reasoningInjectionMode, networkToolsEnabled, artifactNetworkEnabled, disabledBuiltInTools);
 
     const updated = db
       .prepare<[string], GlobalSettingsRow>("SELECT * FROM global_settings WHERE id = ?")

@@ -20,6 +20,32 @@
     maxWidth = "max-w-md",
   }: Props = $props();
 
+  let dialogEl: HTMLDivElement | undefined = $state();
+  let previousFocusedElement: HTMLElement | null = null;
+
+  $effect(() => {
+    if (isOpen) {
+      if (typeof document !== "undefined") {
+        previousFocusedElement = document.activeElement as HTMLElement | null;
+      }
+      requestAnimationFrame(() => {
+        if (
+          dialogEl &&
+          typeof document !== "undefined" &&
+          !dialogEl.contains(document.activeElement)
+        ) {
+          dialogEl.focus();
+        }
+      });
+    } else if (previousFocusedElement) {
+      const toRestore = previousFocusedElement;
+      previousFocusedElement = null;
+      requestAnimationFrame(() => {
+        toRestore?.focus?.();
+      });
+    }
+  });
+
   function handleBackdropClick(e: MouseEvent) {
     if (e.target === e.currentTarget) {
       onclose();
@@ -36,6 +62,7 @@
 {#if isOpen}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
+    bind:this={dialogEl}
     role="dialog"
     aria-modal="true"
     aria-label={title || "Modal"}

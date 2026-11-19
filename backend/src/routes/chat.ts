@@ -4,20 +4,23 @@ import path from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { backendRegistry } from "../registry.js";
 import { persistChatTurn } from "./conversations.js";
+import { assignAttachmentsToConversation } from "./uploads.js";
 import db, { DATA_DIR } from "../db.js";
 import type { AttachmentRow, MessageRow, ModelSettingRow } from "../types.js";
 import { getAdapter } from "../adapters/index.js";
 import { mcpManager } from "../services/mcp.js";
+import { extractDocumentText } from "../services/documentExtractor.js";
 
 interface ChatCompletionBody {
   model: string;
-  messages: Array<{ role: string; content: string | any[] }>;
+  messages: Array<{ id?: string; role: string; content: string | any[]; attachments?: string[] }>;
   temperature?: number;
   conversationId?: string;
   userMessageId?: string;
   userParentId?: string;
   assistantMessageId?: string;
   isContinue?: boolean;
+  isReconnect?: boolean;
   attachments?: string[];
   [key: string]: unknown;
 }
@@ -80,7 +83,9 @@ function reconstructToolCalls(messages: any[]): any[] {
         });
         for (const e of toolExecs) {
           let finalContent = e.result || "";
-          if (e.status === "error") {
+          if (e.status === "cancelled") {
+            finalContent = "[Tool execution was cancelled by the user.]";
+          } else if (e.status === "error") {
             finalContent = `[Error executing tool: ${e.result}]\n\nINSTRUCTION: The tool call failed. Analyze the error carefully. If it is a parameter validation or usage error, try calling the tool again with corrected arguments. If the error is unrecoverable (e.g., API limits, missing credentials), inform the user about the failure.`;
           }
           reconstructed.push({
@@ -101,9 +106,20 @@ function reconstructToolCalls(messages: any[]): any[] {
   return reconstructed;
 }
 
-function extractTextToolCalls(text: string): { cleanContent: string; toolCalls: any[] } {
+function extractTextToolCalls(
+  text: string,
+  allowedToolNames?: Set<string>
+): { cleanContent: string; toolCalls: any[] } {
   let cleanContent = text;
   const toolCalls: any[] = [];
+
+  // Protect fenced code blocks and inline code so tool syntax discussed in prose/code is not executed
+  const codePlaceholders: string[] = [];
+  cleanContent = cleanContent.replace(/```[\s\S]*?```|`[^`\n]+`/g, (match) => {
+    const idx = codePlaceholders.length;
+    codePlaceholders.push(match);
+    return `__CODE_BLOCK_${idx}__`;
+  });
 
   // Strip common internal junk tokens
   cleanContent = cleanContent.replace(/<\|?channel\|?>/gi, "");
@@ -113,12 +129,15 @@ function extractTextToolCalls(text: string): { cleanContent: string; toolCalls: 
   cleanContent = cleanContent.replace(xmlRegex, (match: string, attrString: string) => {
     try {
       const toolName = "execute_skill_script";
+      if (allowedToolNames && !allowedToolNames.has(toolName)) {
+        return match;
+      }
       const args: any = {};
       const attrRegex = /([a-zA-Z0-9_-]+)=("[^"]*"|'[^']*'|[[^\]]*])/g;
       let attrMatch;
       while ((attrMatch = attrRegex.exec(attrString)) !== null) {
         const key = attrMatch[1];
-        let valStr = attrMatch[2];
+        const valStr = attrMatch[2];
         if (valStr.startsWith('"') || valStr.startsWith("'")) {
           args[key] = valStr.slice(1, -1);
         } else if (valStr.startsWith("[")) {
@@ -143,11 +162,14 @@ function extractTextToolCalls(text: string): { cleanContent: string; toolCalls: 
   const rawTagRegex = /<\|?tool_call\|?>\s*call:([a-zA-Z0-9_-]+)\s*(\{[\s\S]*?\})\s*<\|?\/?tool_call\|?>?(?:<\|?tool_response\|?>?)?/gi;
   cleanContent = cleanContent.replace(rawTagRegex, (match: string, toolName: string, jsonArgs: string) => {
     try {
+      if (allowedToolNames && !allowedToolNames.has(toolName)) {
+        return match;
+      }
       let sanitizedJson = jsonArgs;
       const strings: string[] = [];
 
       // 1. Extract strings, escaping them safely and replacing with placeholders
-      sanitizedJson = sanitizedJson.replace(/<\|"\|>([\s\S]*?)<\|"\|>/g, (m: string, innerText: string) => {
+      sanitizedJson = sanitizedJson.replace(/<\|"\|>([\s\S]*?)<\|"\|>/g, (_m: string, innerText: string) => {
         strings.push(innerText);
         return `"__STR_${strings.length - 1}__"`;
       });
@@ -156,7 +178,7 @@ function extractTextToolCalls(text: string): { cleanContent: string; toolCalls: 
       sanitizedJson = sanitizedJson.replace(/([{,]\s*)([a-zA-Z0-9_-]+)\s*:/g, '$1"$2":');
 
       // 3. Put strings back with proper JSON escaping
-      sanitizedJson = sanitizedJson.replace(/"__STR_(\d+)__"/g, (m: string, idxStr: string) => {
+      sanitizedJson = sanitizedJson.replace(/"__STR_(\d+)__"/g, (_m: string, idxStr: string) => {
         const text = strings[parseInt(idxStr, 10)];
         let escaped = text.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
         escaped = escaped.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t");
@@ -174,6 +196,11 @@ function extractTextToolCalls(text: string): { cleanContent: string; toolCalls: 
       console.warn("[chat] Failed to parse raw tool_call tag:", e);
     }
     return match;
+  });
+
+  // Restore protected code blocks
+  codePlaceholders.forEach((block, idx) => {
+    cleanContent = cleanContent.replace(`__CODE_BLOCK_${idx}__`, block);
   });
 
   return { cleanContent: cleanContent.trim(), toolCalls };
@@ -546,12 +573,6 @@ export async function chatRoutes(app: FastifyInstance) {
       stream.streamError = "Operation aborted";
       stream.abortController.abort();
       stream.doSaveTurn();
-      for (const sub of stream.subscribers) {
-        if (!sub.raw.writableEnded) {
-          sub.raw.write("data: [DONE]\n\n");
-          sub.raw.end();
-        }
-      }
       activeStreams.delete(conversationId);
     }
     return reply.send({ success: true });
@@ -600,6 +621,39 @@ export async function chatRoutes(app: FastifyInstance) {
       const onDisconnect = () => { existingStream.subscribers.delete(reply); };
       reply.raw.on("close", onDisconnect);
       req.raw.on("aborted", onDisconnect);
+      return;
+    }
+
+    // If this was strictly a reconnect attempt and the stream already finished, return persisted message without starting a duplicate generation
+    if (body.isReconnect) {
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+      if (body.assistantMessageId) {
+        const savedAsst = db.prepare("SELECT * FROM messages WHERE id = ?").get(body.assistantMessageId) as MessageRow | undefined;
+        const convRow = db.prepare("SELECT title FROM conversations WHERE id = ?").get(conversationId) as { title?: string } | undefined;
+        if (savedAsst) {
+          reply.raw.write(`data: ${JSON.stringify({
+            type: "meta",
+            conversationId,
+            title: convRow?.title || "Chat",
+            isNew: false,
+            isReconnect: true,
+            userMessageId: savedAsst.parent_id ?? "",
+            assistantMessageId: savedAsst.id,
+            stats: savedAsst.stats ? JSON.parse(savedAsst.stats) : undefined,
+          })}\n\n`);
+          reply.raw.write(`data: ${JSON.stringify({
+            type: "content_replace",
+            content: savedAsst.content || "",
+          })}\n\n`);
+        }
+      }
+      reply.raw.write("data: [DONE]\n\n");
+      reply.raw.end();
       return;
     }
 
@@ -657,7 +711,7 @@ export async function chatRoutes(app: FastifyInstance) {
         : [];
 
     const isContinue = !!body.isContinue;
-    const contextLimit = settingRow?.ctx_length ?? null;
+    let contextLimit = settingRow?.ctx_length ?? null;
 
     let userMessageId: string;
     let userParentId: string | null;
@@ -798,10 +852,7 @@ export async function chatRoutes(app: FastifyInstance) {
         });
 
         if (attachmentIds && Array.isArray(attachmentIds)) {
-          const updateStmt = db.prepare(`UPDATE attachments SET message_id = ?, conversation_id = ? WHERE id = ?`);
-          for (const id of attachmentIds) {
-            updateStmt.run(userMessageId, savedTurn.conversationId, id);
-          }
+          assignAttachmentsToConversation(attachmentIds, savedTurn.conversationId, userMessageId);
         }
 
         const metaEvent = `data: ${JSON.stringify({
@@ -988,6 +1039,7 @@ export async function chatRoutes(app: FastifyInstance) {
       if (firstUserIdx !== -1) {
         outgoingMessages.splice(firstUserIdx, 0, {
           role: "system",
+          _isSkillAnchorReminder: true,
           content: `Reminder: the user's actual request for this turn is: "${truncatedRequest}". Apply the skill instructions above to address this request directly.`,
         });
       }
@@ -1003,7 +1055,7 @@ export async function chatRoutes(app: FastifyInstance) {
         `CRITICAL: In your visible text response, you MUST output the placeholder \`[artifact: filename]\` exactly where you want the artifact card to appear.\n` +
         `Example: "Here is the interactive chart you requested:\\n[artifact: chart.svg]\\nYou can click it to view the full preview."\n` +
         `To re-display an existing artifact, use the placeholder \`[present: filename]\` and call the \`present_artifact\` tool. Do not call the \`present_artifact\` tool if the \`create_artifact\` tool has already been used in the same turn.\n` +
-        `To edit artifacts, use \`edit_file\` or \`write_file\`. To inspect files, use \`read_file\` or \`find_in_file\`.`;
+        `To edit artifacts, use \`edit_file\` or \`write_file\`. To inspect files, use \`list_files\`, \`read_file\`, or \`find_in_file\`.`;
 
       if (outgoingMessages.length > 0 && outgoingMessages[0].role === "system") {
         outgoingMessages[0] = {
@@ -1019,51 +1071,116 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const finalTemperature = settingRow?.temperature ?? body.temperature;
 
-    // Process file attachments
-    const contentParts: any[] = [];
-    if (lastUserMsg && typeof lastUserMsg.content === "string") {
-      contentParts.push({ type: "text", text: lastUserMsg.content });
-    } else if (lastUserMsg && Array.isArray(lastUserMsg.content)) {
-      contentParts.push(...lastUserMsg.content);
+    // Helper to embed attachments (images, audio, video, extracted PDF/DOCX/code/text) into a user message
+    const selectAttachmentById = db.prepare<[string], AttachmentRow>("SELECT * FROM attachments WHERE id = ?");
+    const selectAttachmentsByMessageId = db.prepare<[string], AttachmentRow>("SELECT * FROM attachments WHERE message_id = ? ORDER BY created_at ASC");
+
+    function deriveAudioFormat(mimeType: string, originalName: string): string {
+      const lowerMime = mimeType.toLowerCase();
+      const ext = path.extname(originalName).toLowerCase().replace(".", "");
+      if (lowerMime.includes("mp3") || lowerMime.includes("mpeg") || ext === "mp3") return "mp3";
+      if (lowerMime.includes("ogg") || ext === "ogg") return "ogg";
+      if (lowerMime.includes("flac") || ext === "flac") return "flac";
+      if (lowerMime.includes("webm") || ext === "webm") return "webm";
+      if (lowerMime.includes("mp4") || lowerMime.includes("m4a") || ext === "m4a") return "m4a";
+      return "wav";
     }
 
-    const dbAttachments: AttachmentRow[] = [];
-    if (attachmentIds && Array.isArray(attachmentIds)) {
-      for (const id of attachmentIds) {
-        const row = db.prepare(`SELECT * FROM attachments WHERE id = ?`).get(id) as AttachmentRow | undefined;
-        if (row && fs.existsSync(row.disk_path)) {
-          dbAttachments.push(row);
-          const fileData = fs.readFileSync(row.disk_path);
-          const base64 = fileData.toString("base64");
+    function applyAttachmentsToUserMessage(targetMsg: any, rows: AttachmentRow[]) {
+      if (!targetMsg || rows.length === 0) return;
 
-          if (row.mime_type.startsWith("image/")) {
-            contentParts.push({ type: "image_url", image_url: { url: `data:${row.mime_type};base64,${base64}` } });
-          } else if (row.mime_type.startsWith("video/")) {
-            contentParts.push({ type: "image_url", image_url: { url: `data:${row.mime_type};base64,${base64}` } });
-          } else if (row.mime_type.startsWith("audio/")) {
-            contentParts.push({ type: "input_audio", input_audio: { data: base64, format: "wav" } });
-          } else {
-            try {
-              const textContent = fileData.toString("utf-8");
-              const sanitizedText = textContent.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
-              const ext = path.extname(row.original_name).replace(".", "") || "text";
-              contentParts.push({
+      const parts: any[] = [];
+      if (typeof targetMsg.content === "string") {
+        parts.push({ type: "text", text: targetMsg.content });
+      } else if (Array.isArray(targetMsg.content)) {
+        parts.push(...targetMsg.content);
+      }
+
+      for (const row of rows) {
+        if (!row || !fs.existsSync(row.disk_path)) continue;
+
+        if (row.mime_type.startsWith("image/") || row.mime_type.startsWith("video/")) {
+          const base64 = fs.readFileSync(row.disk_path).toString("base64");
+          parts.push({ type: "image_url", image_url: { url: `data:${row.mime_type};base64,${base64}` } });
+        } else if (row.mime_type.startsWith("audio/")) {
+          const base64 = fs.readFileSync(row.disk_path).toString("base64");
+          const audioFormat = deriveAudioFormat(row.mime_type, row.original_name);
+          parts.push({ type: "input_audio", input_audio: { data: base64, format: audioFormat } });
+        } else {
+          try {
+            const extracted = extractDocumentText(row.disk_path, row.original_name, row.mime_type);
+            if (extracted.isBinary) {
+              parts.push({
                 type: "text",
-                text: `\n\n--- Attached Document: ${row.original_name} ---\n\`\`\`${ext}\n${sanitizedText}\n\`\`\``,
+                text: `\n\n--- Attached File: ${row.original_name} (${row.mime_type}, binary file) ---`,
               });
-            } catch {
-              contentParts.push({ type: "text", text: `\n\n--- Attached File: ${row.original_name} (binary attachment) ---` });
+            } else {
+              const ext =
+                extracted.format === "pdf" || extracted.format === "docx"
+                  ? "text"
+                  : path.extname(row.original_name).replace(".", "") || "text";
+              parts.push({
+                type: "text",
+                text: `\n\n--- Attached Document: ${row.original_name} ---\n\`\`\`${ext}\n${extracted.text}\n\`\`\``,
+              });
             }
+          } catch {
+            parts.push({
+              type: "text",
+              text: `\n\n--- Attached File: ${row.original_name} (binary attachment) ---`,
+            });
           }
         }
       }
+
+      if (parts.length === 1 && parts[0].type === "text") {
+        targetMsg.content = parts[0].text;
+      } else if (parts.length > 0) {
+        targetMsg.content = parts;
+      }
     }
 
-    if (lastUserMsg && contentParts.length > 0) {
-      if (contentParts.length === 1 && contentParts[0].type === "text") {
-        lastUserMsg.content = contentParts[0].text;
-      } else {
-        lastUserMsg.content = contentParts;
+    // Process attachments for all user messages in outgoingMessages (including historical turns)
+    const lastOutgoingUserMsg = [...outgoingMessages].reverse().find((m) => m.role === "user");
+    for (const msg of outgoingMessages) {
+      if (msg.role !== "user") continue;
+
+      const isCurrentUserTurn = msg === lastOutgoingUserMsg;
+      const collectedById = new Map<string, AttachmentRow>();
+
+      // 1. If message has a persisted message ID, fetch its attachments from DB
+      if (typeof msg.id === "string" && msg.id) {
+        for (const r of selectAttachmentsByMessageId.all(msg.id)) {
+          collectedById.set(r.id, r);
+        }
+      }
+
+      // 2. If message carries explicit attachment IDs array
+      if (Array.isArray(msg.attachments)) {
+        for (const attId of msg.attachments) {
+          if (typeof attId === "string" && !collectedById.has(attId)) {
+            const r = selectAttachmentById.get(attId);
+            if (r) collectedById.set(r.id, r);
+          }
+        }
+      }
+
+      // 3. For the latest user turn, also include top-level body.attachments
+      if (isCurrentUserTurn && Array.isArray(attachmentIds)) {
+        for (const attId of attachmentIds) {
+          if (typeof attId === "string" && !collectedById.has(attId)) {
+            const r = selectAttachmentById.get(attId);
+            if (r) collectedById.set(r.id, r);
+          }
+        }
+      }
+
+      // Strip internal id/attachments fields before sending to LLM adapter
+      delete msg.id;
+      delete msg.attachments;
+
+      if (collectedById.size > 0) {
+        applyAttachmentsToUserMessage(msg, Array.from(collectedById.values()));
       }
     }
 
@@ -1100,6 +1217,9 @@ export async function chatRoutes(app: FastifyInstance) {
       activeSkills,
       uploadsDir: path.join(DATA_DIR, "uploads"),
       emitEvent: (type: string, payload: Record<string, any>) => {
+        if ((type === "artifact_created" || type === "artifact_updated") && typeof payload.filename === "string") {
+          artifactFilenamesThisTurn.add(payload.filename);
+        }
         broadcastChunk(JSON.stringify({ type, ...payload }));
       },
     };
@@ -1150,17 +1270,19 @@ export async function chatRoutes(app: FastifyInstance) {
       temperature: finalTemperature,
       onConfigFix: (fixes: Record<string, any>) => {
         try {
-          if (fixes.ctx_length !== undefined) {
-            const existing = db.prepare("SELECT id FROM model_settings WHERE id = ?").get(body.model);
-            if (existing) {
-              db.prepare("UPDATE model_settings SET ctx_length = ? WHERE id = ?").run(fixes.ctx_length, body.model);
-            } else {
+          if (typeof fixes.ctx_length === "number" && fixes.ctx_length > 0) {
+            contextLimit = fixes.ctx_length;
+            const existing = db.prepare("SELECT id, ctx_length FROM model_settings WHERE id = ?").get(body.model) as { id: string; ctx_length: number | null } | undefined;
+            if (!existing) {
               db.prepare("INSERT INTO model_settings (id, is_preset, ctx_length) VALUES (?, 0, ?)").run(body.model, fixes.ctx_length);
+              console.log(`[blombrain] Auto-populated unset ctx_length for model ${body.model} to ${fixes.ctx_length}`);
+            } else if (existing.ctx_length === null || existing.ctx_length === undefined) {
+              db.prepare("UPDATE model_settings SET ctx_length = ? WHERE id = ?").run(fixes.ctx_length, body.model);
+              console.log(`[blombrain] Auto-populated unset ctx_length for model ${body.model} to ${fixes.ctx_length}`);
             }
-            console.log(`[blombrain] Auto-corrected ctx_length for model ${body.model} to ${fixes.ctx_length}`);
           }
         } catch (err) {
-          console.error("[blombrain] Failed to persist auto-corrected model settings:", err);
+          console.error("[blombrain] Failed to persist auto-detected model settings:", err);
         }
       },
     };
@@ -1178,6 +1300,7 @@ export async function chatRoutes(app: FastifyInstance) {
     let currentMessages = [...outgoingMessages];
     let toolRound = 0;
     const executedToolCallsInTurn = new Map<string, string>();
+    let lastRoundToolCallKeys = new Set<string>();
     currentToolExecution = null;
 
     const { applyContextOverflowPolicy } = await import("../services/contextWindow.js");
@@ -1278,10 +1401,13 @@ export async function chatRoutes(app: FastifyInstance) {
         // Fallback: If model outputted text tool call tags (XML or raw tags) instead of structured tool_calls
         if (pass.toolCalls.length === 0 && (pass.content || pass.reasoning)) {
           let foundFallback = false;
-          let fallbackCalls: any[] = [];
+          const fallbackCalls: any[] = [];
+          const allowedNames = new Set<string>(
+            toolDefinitions.map((t) => t?.function?.name).filter(Boolean)
+          );
 
           if (pass.content) {
-            const fallback = extractTextToolCalls(pass.content);
+            const fallback = extractTextToolCalls(pass.content, allowedNames);
             if (fallback.toolCalls.length > 0) {
               foundFallback = true;
               fallbackCalls.push(...fallback.toolCalls);
@@ -1293,7 +1419,7 @@ export async function chatRoutes(app: FastifyInstance) {
           }
 
           if (pass.reasoning) {
-            const fallback = extractTextToolCalls(pass.reasoning);
+            const fallback = extractTextToolCalls(pass.reasoning, allowedNames);
             if (fallback.toolCalls.length > 0) {
               foundFallback = true;
               fallbackCalls.push(...fallback.toolCalls);
@@ -1318,7 +1444,24 @@ export async function chatRoutes(app: FastifyInstance) {
         }
 
         // No tool calls -- generation is complete
-        if (pass.toolCalls.length === 0 || toolRound >= MAX_TOOL_ROUNDS) {
+        if (pass.toolCalls.length === 0) {
+          break;
+        }
+
+        if (toolRound >= MAX_TOOL_ROUNDS) {
+          const limitNotice = `\n\n> [!WARNING]\n> Reached the maximum limit of ${MAX_TOOL_ROUNDS} tool execution rounds for this turn.\n`;
+          assistantContent += limitNotice;
+          currentActiveStream.assistantContent = assistantContent;
+          broadcastChunk(JSON.stringify({
+            id: `chatcmpl-internal`,
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            choices: [{
+              index: 0,
+              delta: { content: limitNotice },
+              finish_reason: "stop",
+            }],
+          }));
           break;
         }
 
@@ -1326,6 +1469,7 @@ export async function chatRoutes(app: FastifyInstance) {
         // Execute tool calls and continue the loop
         // ----------------------------------------------------------------
         toolRound++;
+        const currentRoundToolCallKeys = new Set<string>();
 
         // Append assistant message with tool calls to the conversation
         currentMessages.push({
@@ -1355,7 +1499,13 @@ export async function chatRoutes(app: FastifyInstance) {
           let result: { content: string; isError?: boolean };
 
           const toolCallKey = `${tc.name}::${JSON.stringify(tc.arguments)}`;
-          const isDuplicateCall = isCacheable && executedToolCallsInTurn.has(toolCallKey);
+          currentRoundToolCallKeys.add(toolCallKey);
+          // For built-in pure tools (isBuiltInTool && isCacheable), cache across the turn.
+          // For external MCP tools, only suppress if called identically in consecutive rounds (loop prevention).
+          const isDuplicateCall =
+            isCacheable &&
+            executedToolCallsInTurn.has(toolCallKey) &&
+            (isBuiltInTool || lastRoundToolCallKeys.has(toolCallKey));
 
           if (!isDuplicateCall) {
             currentToolExecution = { callId, toolName: tc.name, args: tc.arguments };
@@ -1479,6 +1629,7 @@ export async function chatRoutes(app: FastifyInstance) {
           } as any);
         }
 
+        lastRoundToolCallKeys = currentRoundToolCallKeys;
         // Reset content accumulator for the next pass
         currentActiveStream.assistantContent = assistantContent;
       }

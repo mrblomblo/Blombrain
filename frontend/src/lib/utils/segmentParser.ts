@@ -217,3 +217,74 @@ export function parseMessageSegments(
 
   return dedupedSegments;
 }
+
+/**
+ * Strips internal `<router_execution>`, `<think>`, and `<tool_execution>` blocks,
+ * converting `<artifact-card>` tags back to `[artifact: filename]` placeholders.
+ * Used for clean clipboard copying and message editing.
+ */
+export function getCleanVisibleText(rawContent: string, fallbackThinking?: string): string {
+  if (!rawContent) return fallbackThinking ?? "";
+
+  let cleaned = rawContent
+    .replace(/<router_execution>[\s\S]*?<\/router_execution>/gi, "")
+    .replace(/<tool_execution>[\s\S]*?<\/tool_execution>/gi, "")
+    .replace(/<(?:think|thought|reason|reasoning)>[\s\S]*?<\/(?:think|thought|reason|reasoning)>/gi, "")
+    .replace(/<(?:think|thought|reason|reasoning)>[\s\S]*$/gi, "")
+    .replace(
+      /<artifact-card\s+[^>]*?filename="([^"]*)"[^>]*?>\s*<\/artifact-card>/gi,
+      "[artifact: $1]",
+    )
+    .trim();
+
+  if (!cleaned && fallbackThinking) {
+    return fallbackThinking.trim();
+  }
+  return cleaned;
+}
+
+/**
+ * Reconstructs the stored assistant message content after the user edits the visible text,
+ * preserving `<router_execution>`, `<think>`, and `<tool_execution>` blocks in place
+ * without duplicating thinking blocks or destroying tool execution history.
+ */
+export function reconstructEditedMessageContent(
+  originalRawContent: string,
+  newVisibleText: string,
+  loadedThinkingContent?: string,
+): string {
+  const raw = originalRawContent || "";
+  const preservedPrefixBlocks: string[] = [];
+
+  const routerMatches = raw.match(/<router_execution>[\s\S]*?<\/router_execution>/gi);
+  if (routerMatches) {
+    preservedPrefixBlocks.push(...routerMatches);
+  }
+
+  const thinkMatches = raw.match(
+    /<(?:think|thought|reason|reasoning)>[\s\S]*?<\/(?:think|thought|reason|reasoning)>/gi,
+  );
+  if (thinkMatches && thinkMatches.length > 0) {
+    preservedPrefixBlocks.push(...thinkMatches);
+  } else if (loadedThinkingContent && !/<(?:think|thought|reason|reasoning)>/i.test(newVisibleText)) {
+    preservedPrefixBlocks.push(`<think>\n${loadedThinkingContent}\n</think>`);
+  }
+
+  const toolMatches = raw.match(/<tool_execution>[\s\S]*?<\/tool_execution>/gi);
+  if (toolMatches) {
+    preservedPrefixBlocks.push(...toolMatches);
+  }
+
+  // Strip any internal tags if the user pasted them into newVisibleText to prevent duplication
+  const cleanUserEdit = newVisibleText
+    .replace(/<router_execution>[\s\S]*?<\/router_execution>/gi, "")
+    .replace(/<tool_execution>[\s\S]*?<\/tool_execution>/gi, "")
+    .replace(/<(?:think|thought|reason|reasoning)>[\s\S]*?<\/(?:think|thought|reason|reasoning)>/gi, "")
+    .trim();
+
+  if (preservedPrefixBlocks.length === 0) {
+    return cleanUserEdit;
+  }
+
+  return `${preservedPrefixBlocks.join("\n")}\n${cleanUserEdit}`;
+}

@@ -13,6 +13,7 @@ class SettingsStore {
   reasoningInjectionMode = $state<ReasoningInjectionMode>("all");
   networkToolsEnabled = $state<boolean>(false);
   artifactNetworkEnabled = $state<boolean>(false);
+  disabledBuiltInTools = $state<string[]>([]);
   loaded = $state(false);
 
   async init() {
@@ -29,6 +30,7 @@ class SettingsStore {
       this.reasoningInjectionMode = data.reasoningInjectionMode ?? "all";
       this.networkToolsEnabled = !!data.networkToolsEnabled;
       this.artifactNetworkEnabled = !!data.artifactNetworkEnabled;
+      this.disabledBuiltInTools = Array.isArray(data.disabledBuiltInTools) ? data.disabledBuiltInTools : [];
       themeStore.set(this.theme);
       this.loaded = true;
     } catch (err) {
@@ -49,9 +51,25 @@ class SettingsStore {
       reasoningInjectionMode: ReasoningInjectionMode;
       networkToolsEnabled: boolean;
       artifactNetworkEnabled: boolean;
+      disabledBuiltInTools: string[];
       password?: string;
     }>,
   ) {
+    const prev = {
+      userName: this.userName,
+      userAvatar: this.userAvatar,
+      theme: this.theme,
+      autoNameMode: this.autoNameMode,
+      autoNameModel: this.autoNameModel,
+      toolRoutingMode: this.toolRoutingMode,
+      toolRoutingModel: this.toolRoutingModel,
+      ctxOverflowBehavior: this.ctxOverflowBehavior,
+      reasoningInjectionMode: this.reasoningInjectionMode,
+      networkToolsEnabled: this.networkToolsEnabled,
+      artifactNetworkEnabled: this.artifactNetworkEnabled,
+      disabledBuiltInTools: [...this.disabledBuiltInTools],
+    };
+
     if (patch.userName !== undefined) this.userName = patch.userName;
     if (patch.userAvatar !== undefined) this.userAvatar = patch.userAvatar;
     if (patch.theme !== undefined) {
@@ -66,6 +84,7 @@ class SettingsStore {
     if (patch.reasoningInjectionMode !== undefined) this.reasoningInjectionMode = patch.reasoningInjectionMode;
     if (patch.networkToolsEnabled !== undefined) this.networkToolsEnabled = patch.networkToolsEnabled;
     if (patch.artifactNetworkEnabled !== undefined) this.artifactNetworkEnabled = patch.artifactNetworkEnabled;
+    if (patch.disabledBuiltInTools !== undefined) this.disabledBuiltInTools = patch.disabledBuiltInTools;
 
     try {
       await updateGlobalSettings({
@@ -80,9 +99,23 @@ class SettingsStore {
         reasoningInjectionMode: patch.reasoningInjectionMode,
         networkToolsEnabled: patch.networkToolsEnabled,
         artifactNetworkEnabled: patch.artifactNetworkEnabled,
+        disabledBuiltInTools: patch.disabledBuiltInTools,
         password: patch.password,
       });
     } catch (err) {
+      this.userName = prev.userName;
+      this.userAvatar = prev.userAvatar;
+      this.theme = prev.theme;
+      themeStore.set(prev.theme);
+      this.autoNameMode = prev.autoNameMode;
+      this.autoNameModel = prev.autoNameModel;
+      this.toolRoutingMode = prev.toolRoutingMode;
+      this.toolRoutingModel = prev.toolRoutingModel;
+      this.ctxOverflowBehavior = prev.ctxOverflowBehavior;
+      this.reasoningInjectionMode = prev.reasoningInjectionMode;
+      this.networkToolsEnabled = prev.networkToolsEnabled;
+      this.artifactNetworkEnabled = prev.artifactNetworkEnabled;
+      this.disabledBuiltInTools = prev.disabledBuiltInTools;
       console.error("Failed to persist settings to server:", err);
       throw err;
     }

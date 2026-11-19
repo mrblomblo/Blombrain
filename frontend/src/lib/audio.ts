@@ -9,9 +9,14 @@ export async function encodeToWav(file: File): Promise<File> {
 
   const arrayBuffer = await file.arrayBuffer();
 
-  // Use OfflineAudioContext to decode the audio data
+  // Decode the audio data and ensure the AudioContext is closed to avoid hitting browser instance limits
   const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+  let audioBuffer: AudioBuffer;
+  try {
+    audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+  } finally {
+    await audioCtx.close().catch(() => {});
+  }
 
   const wavBuffer = audioBufferToWav(audioBuffer);
 
@@ -95,4 +100,70 @@ function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
   }
 
   return arrayBuffer;
+}
+
+/**
+ * Resizes and compresses an uploaded avatar/icon image on the client side
+ * so profile/model icons stay compact (max 256x256 WebP/PNG).
+ */
+export async function resizeImageForIcon(file: File, maxDimension = 256): Promise<File> {
+  if (!file.type.startsWith("image/") || file.type === "image/svg+xml" || file.type === "image/gif") {
+    return file;
+  }
+
+  return new Promise<File>((resolve) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      let { width, height } = img;
+      if (width <= maxDimension && height <= maxDimension && file.size <= 150 * 1024) {
+        resolve(file);
+        return;
+      }
+
+      if (width > height) {
+        if (width > maxDimension) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        }
+      } else {
+        if (height > maxDimension) {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, width);
+      canvas.height = Math.max(1, height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(file);
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            resolve(file);
+            return;
+          }
+          const baseName = file.name.replace(/\.[^.]+$/, "");
+          resolve(new File([blob], `${baseName}.webp`, { type: "image/webp" }));
+        },
+        "image/webp",
+        0.88,
+      );
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(file);
+    };
+
+    img.src = objectUrl;
+  });
 }

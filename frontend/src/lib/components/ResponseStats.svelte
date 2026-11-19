@@ -8,6 +8,27 @@
   const { stats }: Props = $props();
 
   let showPopover = $state(false);
+  let containerEl: HTMLDivElement | undefined = $state();
+
+  $effect(() => {
+    if (!showPopover) return;
+    function handleOutsideClick(e: MouseEvent) {
+      if (containerEl && !containerEl.contains(e.target as Node)) {
+        showPopover = false;
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        showPopover = false;
+      }
+    }
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  });
 
   let tokensPerSec = $derived.by(() => {
     const tps =
@@ -23,13 +44,14 @@
 </script>
 
 {#if stats && (stats.totalTokens || stats.durationMs)}
-  <div class="relative inline-block">
+  <div bind:this={containerEl} class="relative inline-block">
     <button
       type="button"
       onclick={() => (showPopover = !showPopover)}
       onmouseenter={() => (showPopover = true)}
       onmouseleave={() => (showPopover = false)}
       aria-label="Generation details and statistics"
+      aria-expanded={showPopover}
       class="flex h-6 w-6 items-center justify-center rounded text-fg-subtle transition-colors hover:bg-bg-hover hover:text-fg"
     >
       <Info size={13} />

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Upload } from "@lucide/svelte";
   import { uploadFile, serveUploadUrl } from "../../api";
+  import { resizeImageForIcon } from "../../audio";
   import { settingsStore } from "../../stores/settings.svelte";
   import { checkAuth } from "../../stores/auth.svelte";
   import ThemeSwitcher from "../ThemeSwitcher.svelte";
@@ -18,7 +19,8 @@
     formError = null;
 
     try {
-      const upload = await uploadFile(file);
+      const resized = await resizeImageForIcon(file, 256);
+      const upload = await uploadFile(resized, null, "avatar");
       const avatarUrl = serveUploadUrl(upload.id);
       await settingsStore.update({ userAvatar: avatarUrl });
     } catch (err) {

@@ -63,6 +63,34 @@
     draggedIndex = null;
   }
 
+  function handleTouchStart(index: number) {
+    draggedIndex = index;
+  }
+
+  function handleTouchMove(e: TouchEvent) {
+    if (draggedIndex === null || e.touches.length === 0) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const targetEl = document.elementFromPoint(
+      touch.clientX,
+      touch.clientY,
+    ) as HTMLElement | null;
+    const rowEl = targetEl?.closest("[data-reorder-index]") as HTMLElement | null;
+    if (!rowEl) return;
+    const overIndex = Number(rowEl.dataset.reorderIndex);
+    if (Number.isNaN(overIndex) || overIndex === draggedIndex) return;
+
+    const updated = [...items];
+    const [moved] = updated.splice(draggedIndex, 1);
+    updated.splice(overIndex, 0, moved);
+    draggedIndex = overIndex;
+    items = updated;
+  }
+
+  function handleTouchEnd() {
+    draggedIndex = null;
+  }
+
   function moveItem(index: number, direction: "up" | "down") {
     const targetIndex = direction === "up" ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= items.length) return;
@@ -166,6 +194,7 @@
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             animate:flip={{ duration: 250, easing: quintOut }}
+            data-reorder-index={index}
             draggable="true"
             ondragstart={(e) => handleDragStart(index, e)}
             ondragover={(e) => handleDragOver(index, e)}
@@ -178,7 +207,10 @@
             <div class="flex items-center gap-3 min-w-0 flex-1">
               <!-- Drag Handle Icon -->
               <div
-                class="cursor-grab text-fg-subtle hover:text-fg active:cursor-grabbing"
+                ontouchstart={() => handleTouchStart(index)}
+                ontouchmove={handleTouchMove}
+                ontouchend={handleTouchEnd}
+                class="cursor-grab text-fg-subtle hover:text-fg active:cursor-grabbing touch-none"
               >
                 <GripVertical size={16} />
               </div>

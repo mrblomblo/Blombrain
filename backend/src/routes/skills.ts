@@ -14,6 +14,16 @@ import {
 } from "../services/skills.js";
 import type { SkillWriteBody } from "../types.js";
 
+const IGNORED_SKILL_PATH_SEGMENTS = new Set([
+  "node_modules",
+  ".git",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".DS_Store",
+]);
+const MAX_SKILL_FILES = 200;
+
 export async function skillRoutes(app: FastifyInstance) {
   app.get("/api/skills", async (_req: FastifyRequest, reply: FastifyReply) => {
     const skills = getAllSkills();
@@ -30,11 +40,26 @@ export async function skillRoutes(app: FastifyInstance) {
       for await (const part of parts) {
         if (part.type !== "file") continue;
 
-        let relPath = part.filename.replace(/\\/g, "/").replace(/^\/+/, "");
-        if (!relPath) continue;
+        const relPath = part.filename.replace(/\\/g, "/").replace(/^\/+/, "");
+        if (!relPath) {
+          part.file.resume();
+          continue;
+        }
+
+        const segments = relPath.split("/").filter(Boolean);
+        if (segments.some((seg) => IGNORED_SKILL_PATH_SEGMENTS.has(seg))) {
+          part.file.resume();
+          continue;
+        }
+
+        if (fileCount >= MAX_SKILL_FILES) {
+          part.file.resume();
+          throw new Error(`Skill folder exceeds the maximum limit of ${MAX_SKILL_FILES} files.`);
+        }
 
         const targetFilePath = path.join(destDir, relPath);
         if (!path.resolve(targetFilePath).startsWith(path.resolve(destDir))) {
+          part.file.resume();
           continue;
         }
 
@@ -44,7 +69,7 @@ export async function skillRoutes(app: FastifyInstance) {
       }
     } catch (err: any) {
       fs.rmSync(destDir, { recursive: true, force: true });
-      return reply.code(500).send({ error: { message: `Upload failed: ${err?.message || String(err)}` } });
+      return reply.code(400).send({ error: { message: `Upload failed: ${err?.message || String(err)}` } });
     }
 
     if (fileCount === 0) {

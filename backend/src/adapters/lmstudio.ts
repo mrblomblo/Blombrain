@@ -2,10 +2,12 @@ import type { ApiAdapter, BuildRequestParams, RequestConfig, StreamEvent } from 
 import { openAIAdapter } from "./openai.js";
 
 interface JitCacheEntry {
-  requestedCtx: number;
+  requestedCtx: number | null;
+  detectedCtx: number | null;
   timestamp: number;
 }
 
+const JIT_CACHE_TTL_MS = 60_000;
 const jitModelCache = new Map<string, JitCacheEntry>();
 
 function buildJitCacheKey(baseUrl: string, rawModelId: string): string {
@@ -24,19 +26,20 @@ export const lmStudioAdapter: ApiAdapter = {
     const baseUrl = backend.baseUrl.replace(/\/$/, "");
     const cleanModelId = modelId.replace(/:\d+$/, "");
 
-    // 1. JIT Context-Length Detection
+    // 1. JIT Context-Length Detection (cached with TTL so we don't hit /api/v1/models on every turn)
     const jitCacheKey = buildJitCacheKey(baseUrl, modelId);
     const cachedJit = jitModelCache.get(jitCacheKey);
     const safeExtraParams = { ...(extraParams || {}) };
+    const now = Date.now();
+    const requestedCtx = typeof safeExtraParams.num_ctx === "number" ? safeExtraParams.num_ctx : null;
 
-    const userEditedCtx =
-      safeExtraParams.num_ctx !== undefined &&
+    const isCacheFresh =
       cachedJit !== undefined &&
-      cachedJit.requestedCtx !== safeExtraParams.num_ctx;
+      now - cachedJit.timestamp < JIT_CACHE_TTL_MS &&
+      cachedJit.requestedCtx === requestedCtx;
 
-    if (userEditedCtx) {
-      jitModelCache.set(jitCacheKey, { requestedCtx: safeExtraParams.num_ctx as number, timestamp: Date.now() });
-    } else if (safeExtraParams.num_ctx !== undefined && cachedJit === undefined) {
+    if (!isCacheFresh) {
+      let detectedCtx: number | null = null;
       try {
         const checkRes = await fetch(`${baseUrl}/api/v1/models`, {
           signal: AbortSignal.timeout(1000),
@@ -54,11 +57,11 @@ export const lmStudioAdapter: ApiAdapter = {
               const instance = matchingModel.loaded_instances[0];
               const nCtx = instance?.config?.context_length;
               if (typeof nCtx === "number") {
-                if (nCtx !== safeExtraParams.num_ctx) {
-                  console.log(`[blombrain] Auto-detected LM Studio loaded n_ctx=${nCtx} (requested ${safeExtraParams.num_ctx})`);
+                detectedCtx = nCtx;
+                if (requestedCtx !== nCtx) {
+                  console.log(`[blombrain] Auto-detected LM Studio loaded n_ctx=${nCtx} (configured ${requestedCtx ?? "unset"})`);
                   if (onConfigFix) onConfigFix({ ctx_length: nCtx });
                 }
-                jitModelCache.set(jitCacheKey, { requestedCtx: nCtx, timestamp: Date.now() });
               }
             }
           }
@@ -66,6 +69,11 @@ export const lmStudioAdapter: ApiAdapter = {
       } catch {
         // Proceed if fetch times out
       }
+      jitModelCache.set(jitCacheKey, {
+        requestedCtx: detectedCtx ?? requestedCtx,
+        detectedCtx,
+        timestamp: now,
+      });
     }
 
     // 2. Clean up params for the OpenAI Compatible endpoint

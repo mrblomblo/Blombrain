@@ -17,26 +17,37 @@ class ConfirmStore {
   isOpen = $state(false);
   options = $state<ConfirmOptions>({ message: "" });
   private resolveFn: ((value: boolean) => void) | null = null;
+  private queue: Array<{ options: ConfirmOptions; resolve: (value: boolean) => void }> = [];
 
   confirm(opts: string | ConfirmOptions): Promise<boolean> {
-    if (typeof opts === "string") {
-      this.options = { message: opts };
-    } else {
-      this.options = opts;
-    }
-
-    this.isOpen = true;
+    const normalized: ConfirmOptions = typeof opts === "string" ? { message: opts } : opts;
 
     return new Promise<boolean>((resolve) => {
-      this.resolveFn = resolve;
+      if (this.isOpen && this.resolveFn) {
+        this.queue.push({ options: normalized, resolve });
+      } else {
+        this.options = normalized;
+        this.resolveFn = resolve;
+        this.isOpen = true;
+      }
     });
   }
 
   handleResolve(result: boolean) {
-    this.isOpen = false;
-    if (this.resolveFn) {
-      this.resolveFn(result);
-      this.resolveFn = null;
+    const currentResolve = this.resolveFn;
+    this.resolveFn = null;
+
+    if (this.queue.length > 0) {
+      const next = this.queue.shift()!;
+      this.options = next.options;
+      this.resolveFn = next.resolve;
+      this.isOpen = true;
+    } else {
+      this.isOpen = false;
+    }
+
+    if (currentResolve) {
+      currentResolve(result);
     }
   }
 }

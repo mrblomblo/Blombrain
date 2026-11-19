@@ -316,23 +316,25 @@ export interface ModelSettingWriteBody {
 
 export interface AttachmentRow {
   id: string;
-  conversation_id: string;
+  conversation_id: string | null;
   message_id: string | null;
   original_name: string;
   mime_type: string;
   disk_path: string;
   size_bytes: number;
   created_at: number;
+  purpose?: string;
 }
 
 export interface AttachmentOut {
   id: string;
-  conversationId: string;
+  conversationId: string | null;
   messageId: string | null;
   originalName: string;
   mimeType: string;
   sizeBytes: number;
   createdAt: number;
+  purpose?: string;
 }
 
 export interface ArtifactRow {
@@ -380,6 +382,7 @@ export interface GlobalSettingsRow {
   reasoning_injection_mode: string;
   network_tools_enabled?: number;
   artifact_network_enabled?: number;
+  disabled_builtin_tools?: string;
 }
 
 export interface GlobalSettingsOut {
@@ -395,6 +398,7 @@ export interface GlobalSettingsOut {
   reasoningInjectionMode: ReasoningInjectionMode;
   networkToolsEnabled: boolean;
   artifactNetworkEnabled: boolean;
+  disabledBuiltInTools: string[];
 }
 
 export interface GlobalSettingsWriteBody {
@@ -409,5 +413,6 @@ export interface GlobalSettingsWriteBody {
   reasoningInjectionMode?: ReasoningInjectionMode;
   networkToolsEnabled?: boolean;
   artifactNetworkEnabled?: boolean;
+  disabledBuiltInTools?: string[];
   password?: string;
 }

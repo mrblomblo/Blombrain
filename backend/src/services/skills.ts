@@ -34,16 +34,57 @@ export function parseSkillMarkdown(markdown: string): { name: string; descriptio
 }
 
 /**
+ * Locates the `scripts/` directory for a skill, checking:
+ * 1. `path.join(skillDirPath, "scripts")`
+ * 2. If `skillDirPath` is inside `DATA_DIR/skills/<id>/...`, the top-level `DATA_DIR/skills/<id>/scripts`
+ * 3. Any immediate subdirectory containing a `scripts/` folder
+ */
+export function resolveSkillScriptsDir(skillDirPath: string | null): string | null {
+  if (!skillDirPath || !fs.existsSync(skillDirPath)) return null;
+
+  const directScripts = path.join(skillDirPath, "scripts");
+  if (fs.existsSync(directScripts) && fs.statSync(directScripts).isDirectory()) {
+    return directScripts;
+  }
+
+  const managedSkillsRoot = path.resolve(DATA_DIR, "skills");
+  const resolvedSkillDir = path.resolve(skillDirPath);
+  if (resolvedSkillDir.startsWith(managedSkillsRoot + path.sep)) {
+    const rel = path.relative(managedSkillsRoot, resolvedSkillDir);
+    const skillRootId = rel.split(path.sep)[0];
+    if (skillRootId) {
+      const rootScripts = path.join(managedSkillsRoot, skillRootId, "scripts");
+      if (fs.existsSync(rootScripts) && fs.statSync(rootScripts).isDirectory()) {
+        return rootScripts;
+      }
+    }
+  }
+
+  try {
+    const entries = fs.readdirSync(skillDirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.name.startsWith(".")) {
+        const nestedScripts = path.join(skillDirPath, entry.name, "scripts");
+        if (fs.existsSync(nestedScripts) && fs.statSync(nestedScripts).isDirectory()) {
+          return nestedScripts;
+        }
+      }
+    }
+  } catch { }
+
+  return null;
+}
+
+/**
  * Scans a skill's directory for executable scripts.
- * - Only scans the `scripts/` subdirectory.
+ * - Scans the resolved `scripts/` subdirectory.
  * - Ignores hidden files, directories, and symlinks.
  * - Restricts to known extensions: .sh, .py, .js, .mjs, .cjs
  * - Returns an array of relative filenames.
  */
 export function getSkillScripts(skillDirPath: string | null): string[] {
-  if (!skillDirPath) return [];
-  const scriptsDir = path.join(skillDirPath, "scripts");
-  if (!fs.existsSync(scriptsDir)) return [];
+  const scriptsDir = resolveSkillScriptsDir(skillDirPath);
+  if (!scriptsDir) return [];
 
   const allowedExtensions = new Set([".sh", ".py", ".js", ".mjs", ".cjs"]);
   const results: string[] = [];
@@ -108,9 +149,15 @@ export function upsertSkill(body: SkillWriteBody): SkillOut {
   const content = body.instructions;
   const hash = computeContentHash(content);
   const now = Date.now();
-  const isEnabled = body.isEnabled ?? true;
 
-  const existing = db.prepare("SELECT id FROM skills WHERE id = ?").get(id);
+  const existing = db.prepare("SELECT * FROM skills WHERE id = ?").get(id) as SkillRow | undefined;
+  const isEnabled =
+    body.isEnabled !== undefined
+      ? body.isEnabled
+      : existing
+        ? existing.is_enabled === 1
+        : true;
+
   if (existing) {
     db.prepare(`
       UPDATE skills
@@ -120,8 +167,8 @@ export function upsertSkill(body: SkillWriteBody): SkillOut {
       body.name,
       body.description,
       body.instructions,
-      body.dirPath ?? null,
-      body.sourceUrl ?? null,
+      body.dirPath !== undefined ? (body.dirPath || null) : existing.dir_path,
+      body.sourceUrl !== undefined ? (body.sourceUrl || null) : existing.source_url,
       hash,
       isEnabled ? 1 : 0,
       id
@@ -147,7 +194,26 @@ export function upsertSkill(body: SkillWriteBody): SkillOut {
 }
 
 export function deleteSkill(id: string): boolean {
+  const existing = db.prepare("SELECT * FROM skills WHERE id = ?").get(id) as SkillRow | undefined;
   const res = db.prepare("DELETE FROM skills WHERE id = ?").run(id);
+
+  // Clean up managed skill directory on disk
+  const managedRoot = path.resolve(DATA_DIR, "skills");
+  const skillRootDir = path.join(managedRoot, id);
+  try {
+    if (fs.existsSync(skillRootDir)) {
+      fs.rmSync(skillRootDir, { recursive: true, force: true });
+    }
+    if (existing?.dir_path) {
+      const resolvedDir = path.resolve(existing.dir_path);
+      if (resolvedDir.startsWith(managedRoot + path.sep) && fs.existsSync(resolvedDir)) {
+        fs.rmSync(resolvedDir, { recursive: true, force: true });
+      }
+    }
+  } catch (err) {
+    console.warn(`[skills] Failed to delete disk directory for skill ${id}:`, err);
+  }
+
   return res.changes > 0;
 }
 
@@ -162,16 +228,20 @@ export function importSkillFromDirectory(sourcePath: string): SkillOut {
     throw new Error(`Path is not a directory: ${resolvedPath}`);
   }
 
-  const skillMdPath = path.join(resolvedPath, "SKILL.md");
+  let skillMdPath: string | null = path.join(resolvedPath, "SKILL.md");
   if (!fs.existsSync(skillMdPath)) {
+    skillMdPath = findSkillMdRecursively(resolvedPath);
+  }
+  if (!skillMdPath || !fs.existsSync(skillMdPath)) {
     throw new Error(`SKILL.md file not found in ${resolvedPath}`);
   }
 
   const markdownContent = fs.readFileSync(skillMdPath, "utf-8");
   const parsed = parseSkillMarkdown(markdownContent);
 
-  const name = parsed.name.trim() || path.basename(resolvedPath);
-  const description = parsed.description.trim() || `Imported skill from ${path.basename(resolvedPath)}`;
+  const skillSourceRoot = path.dirname(skillMdPath);
+  const name = parsed.name.trim() || path.basename(skillSourceRoot);
+  const description = parsed.description.trim() || `Imported skill from ${path.basename(skillSourceRoot)}`;
   const instructions = parsed.instructions.trim();
 
   if (!instructions) {
@@ -182,7 +252,16 @@ export function importSkillFromDirectory(sourcePath: string): SkillOut {
   const destDir = path.join(DATA_DIR, "skills", id);
 
   fs.mkdirSync(destDir, { recursive: true });
-  fs.cpSync(resolvedPath, destDir, { recursive: true });
+  fs.cpSync(skillSourceRoot, destDir, { recursive: true });
+
+  // If scripts/ was at the top of resolvedPath rather than skillSourceRoot, copy it too
+  if (skillSourceRoot !== resolvedPath) {
+    const outerScripts = path.join(resolvedPath, "scripts");
+    const innerScripts = path.join(destDir, "scripts");
+    if (fs.existsSync(outerScripts) && !fs.existsSync(innerScripts)) {
+      fs.cpSync(outerScripts, innerScripts, { recursive: true });
+    }
+  }
 
   return upsertSkill({
     id,

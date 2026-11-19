@@ -1,18 +1,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { backendRegistry } from "../registry.js";
 import type { BackendInfo, BackendWriteBody, ResolvedBackend } from "../types.js";
-
-async function pingBackend(backend: ResolvedBackend): Promise<BackendInfo["status"]> {
-  try {
-    const res = await fetch(`${backend.baseUrl}/v1/models`, {
-      signal: AbortSignal.timeout(2000),
-      headers: backend.apiKey ? { Authorization: `Bearer ${backend.apiKey}` } : undefined,
-    });
-    return res.ok ? "online" : "offline";
-  } catch {
-    return "offline";
-  }
-}
+import { getAllAdaptersInfo } from "../adapters/index.js";
+import {
+  getBackendStatus,
+  syncSingleBackend,
+  clearBackendStatus,
+} from "../services/modelSync.js";
 
 function toBackendInfo(b: ResolvedBackend, status: BackendInfo["status"] = "unknown"): BackendInfo {
   return {
@@ -26,18 +20,25 @@ function toBackendInfo(b: ResolvedBackend, status: BackendInfo["status"] = "unkn
   };
 }
 
-import { getAllAdaptersInfo } from "../adapters/index.js";
-
 export async function backendsRoutes(app: FastifyInstance) {
   /** GET /api/backends/protocols -- list supported API adapter protocols. */
   app.get("/api/backends/protocols", async () => {
     return getAllAdaptersInfo();
   });
 
-  /** GET /api/backends -- list all backends with live status ping. */
-  app.get("/api/backends", async () => {
+  /** GET /api/backends -- list all backends using cached sync status (or ping if not yet synced). */
+  app.get("/api/backends", async (req: FastifyRequest) => {
     const backends = backendRegistry.getAll();
-    const statuses = await Promise.all(backends.map(pingBackend));
+    const forceLive = (req.query as { refresh?: string } | undefined)?.refresh === "1";
+    const statuses = await Promise.all(
+      backends.map(async (b) => {
+        const cached = getBackendStatus(b.id);
+        if (!forceLive && cached !== "unknown") {
+          return cached;
+        }
+        return syncSingleBackend(b);
+      })
+    );
     return backends.map((b, i) => toBackendInfo(b, statuses[i]));
   });
 
@@ -62,7 +63,7 @@ export async function backendsRoutes(app: FastifyInstance) {
 
     try {
       const created = backendRegistry.add(body as BackendWriteBody & { id: string });
-      const status = await pingBackend(created);
+      const status = await syncSingleBackend(created);
       return reply.code(201).send(toBackendInfo(created, status));
     } catch (err) {
       return reply
@@ -94,7 +95,7 @@ export async function backendsRoutes(app: FastifyInstance) {
     if (!updated) {
       return reply.code(404).send({ error: { message: `Backend "${id}" not found.` } });
     }
-    const status = await pingBackend(updated);
+    const status = await syncSingleBackend(updated);
     return toBackendInfo(updated, status);
   });
 
@@ -105,6 +106,7 @@ export async function backendsRoutes(app: FastifyInstance) {
     if (!removed) {
       return reply.code(404).send({ error: { message: `Backend "${id}" not found.` } });
     }
+    clearBackendStatus(id);
     return reply.code(204).send();
   });
 }

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { chatStore } from "../stores/chat.svelte";
   import { themeStore } from "../theme.svelte";
-  import { serveUploadUrl, apiFetch } from "../api";
+  import { serveUploadUrl, fetchUploadText } from "../api";
   import { X, Download, FileText, ExternalLink } from "@lucide/svelte";
   import { fade, scale } from "svelte/transition";
   import hljs from "highlight.js";
@@ -13,6 +13,16 @@
   let textContent = $state<string | null>(null);
   let highlightedHtml = $state<string | null>(null);
   let isLoadingText = $state(false);
+  let isBinary = $state(false);
+  let showExtractedPdfText = $state(false);
+
+  let isPdf = $derived(
+    Boolean(
+      attachment &&
+        (attachment.mimeType === "application/pdf" ||
+          attachment.originalName.toLowerCase().endsWith(".pdf")),
+    ),
+  );
 
   function isCodeFile(filename: string): boolean {
     const lower = filename.toLowerCase();
@@ -77,25 +87,31 @@
 
   $effect(() => {
     const att = chatStore.selectedAttachment;
+    showExtractedPdfText = false;
     if (!att || isMediaAttachment(att)) {
       textContent = null;
       highlightedHtml = null;
       isLoadingText = false;
+      isBinary = false;
       return;
     }
 
-    // Fetch text for non-media files
+    // Fetch extracted text / binary status for non-media files
     isLoadingText = true;
-    const url = serveUploadUrl(att.id);
+    isBinary = false;
 
-    apiFetch(url)
-      .then((res) => res.text())
-      .then((text) => {
-        textContent = text;
-        try {
-          const res = hljs.highlightAuto(text);
-          highlightedHtml = res.value;
-        } catch (e) {
+    fetchUploadText(att.id)
+      .then((res) => {
+        isBinary = Boolean(res.isBinary);
+        textContent = res.text;
+        if (res.text && isCodeFile(att.originalName) && res.text.length < 100_000) {
+          try {
+            const hl = hljs.highlightAuto(res.text);
+            highlightedHtml = hl.value;
+          } catch (e) {
+            highlightedHtml = null;
+          }
+        } else {
           highlightedHtml = null;
         }
       })
@@ -165,9 +181,17 @@
         </div>
 
         <div class="flex items-center gap-2">
+          {#if isPdf && textContent}
+            <button
+              type="button"
+              onclick={() => (showExtractedPdfText = !showExtractedPdfText)}
+              class="rounded-lg border border-line bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted hover:bg-bg-hover hover:text-fg transition-colors cursor-pointer"
+            >
+              {showExtractedPdfText ? "PDF Preview" : "Extracted Text"}
+            </button>
+          {/if}
           <a
-            href={serveUploadUrl(attachment.id)}
-            target="_blank"
+            href={serveUploadUrl(attachment.id, true)}
             download={attachment.originalName}
             title="Download file"
             class="flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-bg text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg"
@@ -198,7 +222,13 @@
       <div class="modal-body flex-1 overflow-auto bg-bg">
         <div class="w-full">
           {#if !isMediaAttachment(attachment)}
-            {#if isLoadingText}
+            {#if isPdf && !showExtractedPdfText}
+              <iframe
+                src={serveUploadUrl(attachment.id)}
+                title={attachment.originalName}
+                class="w-full h-[75vh] border-0 bg-bg-inset"
+              ></iframe>
+            {:else if isLoadingText}
               <div
                 class="flex h-48 w-full items-center justify-center gap-2 text-xs text-fg-muted font-mono"
               >
@@ -207,12 +237,25 @@
               </div>
             {:else if highlightedHtml}
               <pre
-                class="w-full overflow-x-auto text-xs font-mono leading-relaxed"><code
+                class="w-full p-5 overflow-x-auto text-xs font-mono leading-relaxed"><code
                   class="hljs bg-transparent">{@html highlightedHtml}</code
                 ></pre>
             {:else if textContent !== null}
               <pre
-                class="w-full rounded-xl border border-line overflow-x-auto text-xs font-mono leading-relaxed text-fg whitespace-pre-wrap shadow-sm">{textContent}</pre>
+                class="w-full p-5 overflow-x-auto text-xs font-mono leading-relaxed text-fg whitespace-pre-wrap">{textContent}</pre>
+            {:else if isBinary}
+              <div
+                class="flex flex-col items-center justify-center gap-2 py-16 px-6 text-center text-xs text-fg-muted"
+              >
+                <FileText size={28} class="text-fg-subtle opacity-60" />
+                <p class="font-medium text-fg">
+                  Preview unavailable for this binary file
+                </p>
+                <p class="text-fg-subtle max-w-sm">
+                  This file format cannot be displayed as plain text. Use the
+                  Download button above to open it on your device.
+                </p>
+              </div>
             {/if}
           {:else if attachment.mimeType.startsWith("image/")}
             <div

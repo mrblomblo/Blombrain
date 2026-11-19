@@ -33,18 +33,20 @@ export const THEME_LABELS: Record<ThemeName, string> = Object.fromEntries(
 
 const STORAGE_KEY = "blombrain:theme";
 
-function readInitialTheme(): ThemeName {
+function readInitialTheme(): { theme: ThemeName; hadStored: boolean } {
   if (typeof localStorage !== "undefined") {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored && (THEMES as readonly string[]).includes(stored)) {
-      return stored as ThemeName;
+      return { theme: stored as ThemeName, hadStored: true };
     }
   }
-  return "autumn";
+  return { theme: "autumn", hadStored: false };
 }
 
 class ThemeStore {
-  current = $state<ThemeName>(readInitialTheme());
+  private initial = readInitialTheme();
+  current = $state<ThemeName>(this.initial.theme);
+  private canPersist = this.initial.hadStored;
 
   constructor() {
     if (typeof document === "undefined") return;
@@ -52,7 +54,9 @@ class ThemeStore {
     $effect.root(() => {
       $effect(() => {
         document.documentElement.dataset.theme = this.current;
-        localStorage.setItem(STORAGE_KEY, this.current);
+        if (this.canPersist) {
+          localStorage.setItem(STORAGE_KEY, this.current);
+        }
       });
     });
 
@@ -60,16 +64,19 @@ class ThemeStore {
   }
 
   async init() {
-    if (typeof localStorage !== "undefined" && localStorage.getItem(STORAGE_KEY)) {
+    if (this.initial.hadStored) {
       return;
     }
     try {
       const data = await fetchInstanceInfo();
       if (data.theme && (THEMES as readonly string[]).includes(data.theme)) {
         this.set(data.theme as ThemeName);
+      } else {
+        this.canPersist = true;
       }
     } catch (e) {
       console.error("Failed to fetch instance info theme:", e);
+      this.canPersist = true;
     }
   }
 
@@ -78,7 +85,11 @@ class ThemeStore {
   }
 
   set(theme: ThemeName) {
+    this.canPersist = true;
     this.current = theme;
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(STORAGE_KEY, theme);
+    }
   }
 }
 

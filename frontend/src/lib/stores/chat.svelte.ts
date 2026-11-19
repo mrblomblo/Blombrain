@@ -17,7 +17,7 @@ import type { ChatMessage, ConversationSummary, AttachmentOut } from "../types";
 import { artifactStore } from "./artifact.svelte";
 import { settingsStore } from "./settings.svelte";
 import { getRandomUUID } from "../utils/uuid";
-import { THINK_TAG_NAMES } from "../utils/segmentParser";
+import { THINK_TAG_NAMES, reconstructEditedMessageContent } from "../utils/segmentParser";
 import { registerArtifact, clearArtifactRegistry } from "../markdown";
 
 const OPEN_TAGS = THINK_TAG_NAMES.map((t) => `<${t}>`);
@@ -142,6 +142,8 @@ class ChatStore {
   conversationExcludedMcps = $state<string[]>([]);
   /** Skill IDs currently excluded for this conversation. */
   conversationExcludedSkills = $state<string[]>([]);
+  /** Tool/Skill names explicitly pinned/forced by the user for routing. */
+  conversationForcedTools = $state<string[]>([]);
   /** Whether tool/skill injection is enabled for this conversation. */
   conversationToolsEnabled = $state<boolean>(true);
 
@@ -279,6 +281,7 @@ class ChatStore {
       this.pendingAttachments = [];
       this.conversationExcludedMcps = detail.excludedMcps ?? [];
       this.conversationExcludedSkills = detail.excludedSkills ?? [];
+      this.conversationForcedTools = [];
       this.conversationToolsEnabled = detail.toolsEnabled !== undefined ? detail.toolsEnabled : true;
       if (detail.model) this.selectedModel = detail.model;
       this.loadBranchSelections(detail.id);
@@ -309,6 +312,7 @@ class ChatStore {
     this.selectedModel = null;
     this.conversationExcludedMcps = [];
     this.conversationExcludedSkills = [];
+    this.conversationForcedTools = [];
     this.conversationToolsEnabled = true;
     this.streamingConvId = null;
     this.streamingAssistantId = null;
@@ -366,21 +370,36 @@ class ChatStore {
     }
   }
 
+  /**
+   * Toggle a specific tool or skill name in/out of the forced/pinned tools list for routing.
+   */
+  toggleForcedTool(toolOrSkillName: string) {
+    this.conversationForcedTools = this.conversationForcedTools.includes(toolOrSkillName)
+      ? this.conversationForcedTools.filter((n) => n !== toolOrSkillName)
+      : [...this.conversationForcedTools, toolOrSkillName];
+  }
+
   /** Edit a message content in place (Save option) */
   async editMessage(msgId: string, newContent: string, attachmentIds?: string[]) {
     if (!this.activeConversationId) return;
     const msg = this.messages.find((m) => m.id === msgId);
     if (!msg) return;
 
-    msg.content = newContent;
-    const contentToSave = msg.thinkingContent
-      ? `<think>\n${msg.thinkingContent}\n</think>\n${newContent}`
-      : newContent;
+    const contentToSave =
+      msg.role === "assistant"
+        ? reconstructEditedMessageContent(msg.content, newContent, msg.thinkingContent)
+        : newContent;
+
+    msg.content = contentToSave;
+    if (msg.role === "assistant") {
+      const parsed = parseThinking(contentToSave);
+      msg.thinkingContent = parsed.thinkingContent;
+      msg.thinkingDone = parsed.thinkingDone;
+    }
 
     try {
       const updated = await patchMessage(this.activeConversationId, msgId, contentToSave, attachmentIds);
       msg.attachments = updated.attachments;
-      artifactStore.close();
     } catch (err) {
       console.error("[chatStore] failed to edit message:", err);
     }
@@ -392,6 +411,19 @@ class ChatStore {
     const convId = this.activeConversationId;
     const target = this.messages.find((m) => m.id === msgId);
     if (!target) return;
+
+    // Snapshot active continuation survivor before deleting/reparenting
+    const priorActivePath = this.activePath;
+    const targetIdxInPath = priorActivePath.findIndex((m) => m.id === msgId);
+    let activeContinuationSurvivorId: string | undefined;
+    if (target.role === "user" && targetIdxInPath !== -1) {
+      const nextInPath = priorActivePath[targetIdxInPath + 1];
+      if (nextInPath?.role === "assistant") {
+        activeContinuationSurvivorId = priorActivePath[targetIdxInPath + 2]?.id;
+      } else if (nextInPath) {
+        activeContinuationSurvivorId = nextInPath.id;
+      }
+    }
 
     try {
       await apiDeleteMessage(convId, msgId);
@@ -455,6 +487,17 @@ class ChatStore {
           updatedSelections[pKey] = childId;
         }
       }
+
+      // Preserve the active branch continuation for reparented children
+      if (
+        target.role === "user" &&
+        activeContinuationSurvivorId &&
+        !deletedIds.has(activeContinuationSurvivorId)
+      ) {
+        const pKey = target.parentId ?? "ROOT";
+        updatedSelections[pKey] = activeContinuationSurvivorId;
+      }
+
       this.branchSelections = updatedSelections;
       this.saveBranchSelections();
 
@@ -467,7 +510,6 @@ class ChatStore {
         this.newConversation();
       }
 
-      artifactStore.close();
       _invalidateConversations?.();
     } catch (err) {
       console.error("[chatStore] failed to process local message deletion:", err);
@@ -492,7 +534,6 @@ class ChatStore {
       };
       this.messages.push(newMsgObj);
       this.setBranchSelection(newBranchUserMsg.parentId ?? null, newBranchUserMsg.id);
-      artifactStore.close();
 
       const branchAttachmentIds = newBranchUserMsg.attachments?.map((a) => a.id) ?? attachmentIds;
       await this.triggerAssistantResponse(newMsgObj, branchAttachmentIds);
@@ -501,8 +542,8 @@ class ChatStore {
     }
   }
 
-  /** Regenerate an assistant response */
-  async regenerate(assistantMsgId: string) {
+  /** Regenerate an assistant response (optionally using a specific model override) */
+  async regenerate(assistantMsgId: string, modelOverride?: string) {
     if (this.isStreaming || !this.activeConversationId) return;
     const asstMsg = this.messages.find((m) => m.id === assistantMsgId);
     if (!asstMsg || asstMsg.role !== "assistant") return;
@@ -510,22 +551,27 @@ class ChatStore {
     const userParentMsg = this.messages.find((m) => m.id === asstMsg.parentId);
     if (!userParentMsg) return;
 
-    artifactStore.close();
+    if (modelOverride) {
+      this.setModel(modelOverride);
+    }
     const attachmentIds = userParentMsg.attachments?.map((a) => a.id);
     await this.triggerAssistantResponse(userParentMsg, attachmentIds);
   }
 
-  async continueResponse() {
+  async continueResponse(assistantMsgId?: string) {
     if (this.isStreaming) return;
     if (!this.activeConversationId) return;
 
     const currentActivePath = this.activePath;
-    const lastActiveMsg = currentActivePath.length > 0 ? currentActivePath[currentActivePath.length - 1] : undefined;
-    if (!lastActiveMsg || lastActiveMsg.role !== "assistant") return;
+    const targetMsg = assistantMsgId
+      ? currentActivePath.find((m) => m.id === assistantMsgId) ??
+        this.messages.find((m) => m.id === assistantMsgId)
+      : currentActivePath[currentActivePath.length - 1];
+    if (!targetMsg || targetMsg.role !== "assistant") return;
 
-    if (lastActiveMsg.streaming) return;
+    if (targetMsg.streaming) return;
 
-    await this.triggerAssistantResponse(lastActiveMsg, undefined, { isContinue: true });
+    await this.triggerAssistantResponse(targetMsg, undefined, { isContinue: true });
   }
 
   async send(content: string) {
@@ -621,6 +667,12 @@ class ChatStore {
       targetModelId = settingsStore.autoNameModel;
     }
 
+    if (this.autoNameController) {
+      this.autoNameController.abort();
+    }
+    const controller = new AbortController();
+    this.autoNameController = controller;
+
     const applyTitle = (title: string) => {
       if (title) {
         if (this.activeConversationId === conversationId) {
@@ -630,36 +682,60 @@ class ChatStore {
       }
     };
 
-    const performAutoName = async () => {
-      // Small 50ms delay so the main chat completion request hits the network first
-      await new Promise((r) => setTimeout(r, 50));
+    const sameBackend = targetModelId.split(":")[0] === activeModelId.split(":")[0];
 
-      // 1. Try parallel attempt first
+    const waitForStreamFinish = async () => {
+      if (!this.isStreaming) return;
+      await new Promise<void>((resolve) => {
+        const checkDone = setInterval(() => {
+          if (!this.isStreaming || controller.signal.aborted) {
+            clearInterval(checkDone);
+            resolve();
+          }
+        }, 250);
+      });
+    };
+
+    const performAutoName = async () => {
+      // When targeting the same backend as the active chat stream, wait for the main
+      // response to finish first so local single-model servers don't queue or thrash KV cache.
+      if (sameBackend) {
+        await waitForStreamFinish();
+        if (controller.signal.aborted) return;
+        try {
+          const res = await autoNameConversation(conversationId, userContent, targetModelId, controller.signal);
+          applyTitle(res.title);
+        } catch (err) {
+          if (!controller.signal.aborted) {
+            console.error("[chatStore] Auto-naming failed:", err);
+          }
+        }
+        return;
+      }
+
+      // Separate designated backend: try parallel attempt after a 50ms head-start
+      await new Promise((r) => setTimeout(r, 50));
+      if (controller.signal.aborted) return;
+
       try {
-        const res = await autoNameConversation(conversationId, userContent, targetModelId, this.autoNameController?.signal);
+        const res = await autoNameConversation(conversationId, userContent, targetModelId, controller.signal);
         applyTitle(res.title);
         return;
       } catch (err) {
+        if (controller.signal.aborted) return;
         console.info("[chatStore] Parallel auto-naming failed/rejected, will retry after response completes:", err);
       }
 
-      // 2. If parallel failed, wait for main response stream to finish, then retry sequentially
-      if (this.isStreaming) {
-        await new Promise<void>((resolve) => {
-          const checkDone = setInterval(() => {
-            if (!this.isStreaming) {
-              clearInterval(checkDone);
-              resolve();
-            }
-          }, 250);
-        });
-      }
+      await waitForStreamFinish();
+      if (controller.signal.aborted) return;
 
       try {
-        const res = await autoNameConversation(conversationId, userContent, targetModelId, this.autoNameController?.signal);
+        const res = await autoNameConversation(conversationId, userContent, targetModelId, controller.signal);
         applyTitle(res.title);
       } catch (fallbackErr) {
-        console.error("[chatStore] Sequential auto-naming failed:", fallbackErr);
+        if (!controller.signal.aborted) {
+          console.error("[chatStore] Sequential auto-naming failed:", fallbackErr);
+        }
       }
     };
 
@@ -716,11 +792,22 @@ class ChatStore {
 
     if (!assistantMessage) return;
 
-    // Build model history along active path leading to userMsg
+    // Build model history along active path leading to userMsg (or target assistant message on continue)
     const activePath = this.activePath;
-    const historyForModel = activePath
+    const asstIdxInPath = activePath.findIndex((m) => m.id === currentAsstId);
+    const relevantPath =
+      options?.isContinue && asstIdxInPath !== -1
+        ? activePath.slice(0, asstIdxInPath + 1)
+        : activePath;
+
+    const historyForModel = relevantPath
       .filter((m) => (options?.isContinue ? !m.error : m.id !== currentAsstId && !m.error))
-      .map((m) => ({ role: m.role, content: m.content }));
+      .map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        attachments: m.attachments?.map((a) => a.id),
+      }));
 
     this.isStreaming = true;
     this.streamingConvId = this.activeConversationId;
@@ -752,6 +839,7 @@ class ChatStore {
       toolsEnabled: this.conversationToolsEnabled,
       excludedMcps: this.conversationExcludedMcps,
       excludedSkills: this.conversationExcludedSkills,
+      forcedTools: this.conversationForcedTools,
       signal: this.abortController.signal,
       onToken: (delta) => {
         const msg = this.messages.find((m) => m.id === currentAsstId);
@@ -851,6 +939,15 @@ class ChatStore {
         msg.thinkingContent = parsed.thinkingContent;
         msg.thinkingDone = parsed.thinkingDone;
         msg.content = rawBuffer;
+      },
+      onContextTrimmed: (evt) => {
+        const msg = this.messages.find((m) => m.id === currentAsstId);
+        if (!msg) return;
+        const note = `> [!NOTE]\n> Trimmed ${evt.droppedMessageCount} older message(s) (${evt.behavior}) to fit context window.\n\n`;
+        if (!rawBuffer.includes(note)) {
+          rawBuffer = note + rawBuffer;
+          msg.content = rawBuffer;
+        }
       },
       onContextOverflow: (evt) => {
         const msg = this.messages.find((m) => m.id === currentAsstId);
@@ -984,9 +1081,11 @@ class ChatStore {
       messages: historyForModel,
       conversationId: this.activeConversationId,
       assistantMessageId: asstMsg.id,
+      isReconnect: true,
       toolsEnabled: this.conversationToolsEnabled,
       excludedMcps: this.conversationExcludedMcps,
       excludedSkills: this.conversationExcludedSkills,
+      forcedTools: this.conversationForcedTools,
       signal: this.abortController.signal,
       onToken: (delta) => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);
@@ -1013,6 +1112,15 @@ class ChatStore {
       onMeta: (meta) => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);
         if (msg) msg.stats = meta.stats;
+      },
+      onContextTrimmed: (evt) => {
+        const msg = this.messages.find((m) => m.id === asstMsg.id);
+        if (!msg) return;
+        const note = `> [!NOTE]\n> Trimmed ${evt.droppedMessageCount} older message(s) (${evt.behavior}) to fit context window.\n\n`;
+        if (!rawBuffer.includes(note)) {
+          rawBuffer = note + rawBuffer;
+          msg.content = rawBuffer;
+        }
       },
       onContextOverflow: (evt) => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);
@@ -1121,6 +1229,7 @@ class ChatStore {
     this.activeConversationTitle = "New conversation";
     this.pendingAttachments = [];
     this.branchSelections = {};
+    this.conversationForcedTools = [];
     this.streamingConvId = null;
     this.streamingAssistantId = null;
     artifactStore.close();

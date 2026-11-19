@@ -1,10 +1,21 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { mcpManager } from "../services/mcp.js";
+import { builtInToolRegistry } from "../services/builtinTools/index.js";
 import type { McpServerWriteBody } from "../types.js";
 
 export async function mcpRoutes(app: FastifyInstance) {
+  app.get("/api/builtin-tools", async (_req: FastifyRequest, reply: FastifyReply) => {
+    const tools = builtInToolRegistry.getAllTools().map((t) => ({
+      name: t.name,
+      description: t.description,
+      category: t.category ?? "utility",
+      requiresNetwork: Boolean(t.requiresNetwork),
+    }));
+    return reply.send(tools);
+  });
+
   app.get("/api/mcp", async (_req: FastifyRequest, reply: FastifyReply) => {
-    const servers = mcpManager.getAllServers();
+    const servers = mcpManager.getAllServers([], { maskSecrets: true });
     return reply.send(servers);
   });
 
@@ -30,6 +41,15 @@ export async function mcpRoutes(app: FastifyInstance) {
     } catch (err: any) {
       return reply.code(400).send({ error: { message: err.message } });
     }
+  });
+
+  app.post("/api/mcp/:id/reconnect", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const reconnected = await mcpManager.reconnectServer(id);
+    if (!reconnected) {
+      return reply.code(404).send({ error: { message: "MCP server not found" } });
+    }
+    return reply.send(reconnected);
   });
 
   app.delete("/api/mcp/:id", async (req: FastifyRequest, reply: FastifyReply) => {

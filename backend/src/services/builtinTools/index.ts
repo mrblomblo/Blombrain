@@ -18,6 +18,7 @@ import { getWeatherTool } from "./tools/getWeather.js";
 import { searchWikipediaTool } from "./tools/searchWikipedia.js";
 import {
   createArtifactToolDef,
+  listFilesToolDef,
   readFileToolDef,
   writeFileToolDef,
   editFileToolDef,
@@ -49,6 +50,7 @@ class BuiltInToolRegistry {
     this.register(getWeatherTool);
     this.register(searchWikipediaTool);
     this.register(createArtifactToolDef);
+    this.register(listFilesToolDef);
     this.register(readFileToolDef);
     this.register(writeFileToolDef);
     this.register(editFileToolDef);
@@ -72,7 +74,11 @@ class BuiltInToolRegistry {
     ctx: BuiltInToolContext = {},
     options?: ToolVisibilityOptions
   ): BuiltInToolDefinition[] {
+    const disabledSet = options?.disabledTools ? new Set(options.disabledTools) : null;
     return this.getAllTools().filter((t) => {
+      if (disabledSet && disabledSet.has(t.name)) {
+        return false;
+      }
       if (t.requiresNetwork && !options?.allowNetwork) {
         return false;
       }

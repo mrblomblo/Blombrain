@@ -224,7 +224,7 @@ marked.use({
       return `<img src="${escapeHtml(href)}" alt="${escapeHtml(text)}"${titleAttr} class="max-w-full rounded-md my-2" />`;
     },
     code(this: any, { text, lang }: { text: string; lang?: string }) {
-      const isArtifactPreview = !!(this.options as any)?.isArtifactPreview;
+      const isStreaming = !!(this.options as any)?.isStreaming;
       const rawLang = (lang || "").trim().split(/\s+/)[0].toLowerCase();
       const validLang = hljs.getLanguage(rawLang) ? rawLang : "";
       const displayLang = validLang || rawLang || "code";
@@ -236,7 +236,7 @@ marked.use({
         } catch {
           highlightedCode = escapeHtml(text);
         }
-      } else if (text) {
+      } else if (text && !isStreaming && text.length < 25000) {
         try {
           highlightedCode = hljs.highlightAuto(text).value;
         } catch {
@@ -308,11 +308,12 @@ marked.use({
 
 export function renderMarkdown(
   content: string,
-  options?: { isArtifactPreview?: boolean }
+  options?: { isArtifactPreview?: boolean; isStreaming?: boolean }
 ): string {
   if (!content) return "";
   try {
     const isArtifactPreview = !!options?.isArtifactPreview;
+    const isStreaming = !!options?.isStreaming;
 
     // Step 0: Replace text placeholders with <artifact-card> tags
     let processedContent = content.replace(
@@ -340,7 +341,7 @@ export function renderMarkdown(
     );
 
     // Step 2: normal markdown pass.
-    const rawHtml = (marked.parse(processedContent, { isArtifactPreview } as any) as unknown) as string;
+    const rawHtml = (marked.parse(processedContent, { isArtifactPreview, isStreaming } as any) as unknown) as string;
 
     // Step 3: swap tokens for the real card markup.
     let finalHtml = rawHtml;

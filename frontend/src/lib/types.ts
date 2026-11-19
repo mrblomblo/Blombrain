@@ -215,8 +215,15 @@ export interface McpServerInfo {
   env: Record<string, string>;
   headers: Record<string, string>;
   isEnabled: boolean;
-  status?: "connected" | "connecting" | "error" | "stopped";
+  status?: "connected" | "connecting" | "error" | "stopped" | "disabled";
   error?: string;
+}
+
+export interface BuiltInToolInfo {
+  name: string;
+  description: string;
+  category: string;
+  requiresNetwork: boolean;
 }
 
 export interface McpServerWriteBody {

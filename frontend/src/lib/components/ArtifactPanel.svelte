@@ -1,5 +1,6 @@
 <script lang="ts">
   import { artifactStore } from "../stores/artifact.svelte";
+  import { themeStore } from "../theme.svelte";
   import { copyToClipboard } from "../utils/clipboard";
   import hljs from "highlight.js";
   import { fly, slide } from "svelte/transition";
@@ -95,7 +96,15 @@ document.addEventListener('submit', function(e) {
     const HEAD_INJECTIONS = `${CSP_META}\n${INTERCEPTOR_SCRIPT}`;
 
     if (artifactStore.language === "svg") {
-      return `<!DOCTYPE html><html><head><meta charset="utf-8"/>${HEAD_INJECTIONS}<style>body{margin:0;padding:24px;display:flex;align-items:center;justify-content:center;min-height:100vh;background-color:#0d0f12;color:#e1e7ec;box-sizing:border-box;}svg{max-width:100%;height:auto;}</style></head><body>${code}</body></html>`;
+      themeStore.current;
+      let bgColor = "#161210";
+      let fgColor = "#ede0d0";
+      if (typeof document !== "undefined") {
+        const rootStyle = getComputedStyle(document.documentElement);
+        bgColor = rootStyle.getPropertyValue("--bg").trim() || bgColor;
+        fgColor = rootStyle.getPropertyValue("--fg").trim() || fgColor;
+      }
+      return `<!DOCTYPE html><html><head><meta charset="utf-8"/>${HEAD_INJECTIONS}<style>body{margin:0;padding:24px;display:flex;align-items:center;justify-content:center;min-height:100vh;background-color:${bgColor};color:${fgColor};box-sizing:border-box;}svg{max-width:100%;height:auto;}</style></head><body>${code}</body></html>`;
     }
 
     if (/<head[^>]*>/i.test(code)) {

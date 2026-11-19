@@ -1,14 +1,32 @@
 <script lang="ts">
+  import { createQuery } from "@tanstack/svelte-query";
   import {
     type AutoNameMode,
     type ToolRoutingMode,
     type CtxOverflowBehavior,
     type ReasoningInjectionMode,
+    fetchBuiltInTools,
   } from "../../api";
   import { settingsStore } from "../../stores/settings.svelte";
   import Dropdown, { type DropdownOption } from "../ui/Dropdown.svelte";
   import ModelDropdown from "../ui/ModelDropdown.svelte";
   import ToggleSwitch from "../ui/ToggleSwitch.svelte";
+
+  const builtInToolsQuery = createQuery(() => ({
+    queryKey: ["builtinTools"],
+    queryFn: fetchBuiltInTools,
+    staleTime: 60_000,
+  }));
+
+  function toggleBuiltInTool(toolName: string, enabled: boolean) {
+    const current = new Set(settingsStore.disabledBuiltInTools);
+    if (enabled) {
+      current.delete(toolName);
+    } else {
+      current.add(toolName);
+    }
+    settingsStore.update({ disabledBuiltInTools: Array.from(current) });
+  }
 
   const modeOptions: DropdownOption[] = [
     { label: "First Words (Extract 8 words locally)", value: "first_words" },
@@ -257,23 +275,59 @@
     </div>
 
     <!-- Built-in Network Tools -->
-    <div class="flex items-center justify-between gap-4">
-      <div>
-        <h4 class="text-xs font-semibold text-fg">
-          Network-Dependent Built-in Tools
-        </h4>
-        <p class="text-[11px] text-fg-subtle mt-0.5">
-          Allow built-in tools that require network access to be available to
-          models. Disabled by default.
-        </p>
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <h4 class="text-xs font-semibold text-fg">
+            Network-Dependent Built-in Tools
+          </h4>
+          <p class="text-[11px] text-fg-subtle mt-0.5">
+            Allow built-in tools that require network access to be available to
+            models. Disabled by default.
+          </p>
+        </div>
+        <ToggleSwitch
+          id="network-tools-enable-toggle"
+          checked={settingsStore.networkToolsEnabled}
+          onchange={(checked) =>
+            settingsStore.update({ networkToolsEnabled: checked })}
+          label="Toggle network-dependent built-in tools"
+        />
       </div>
-      <ToggleSwitch
-        id="network-tools-enable-toggle"
-        checked={settingsStore.networkToolsEnabled}
-        onchange={(checked) =>
-          settingsStore.update({ networkToolsEnabled: checked })}
-        label="Toggle network-dependent built-in tools"
-      />
+
+      {#if settingsStore.networkToolsEnabled && builtInToolsQuery.data}
+        {@const networkTools = builtInToolsQuery.data.filter(
+          (t) => t.requiresNetwork,
+        )}
+        {#if networkTools.length > 0}
+          <div class="ml-2 flex flex-col gap-2 rounded-lg border border-line bg-bg p-3">
+            <span class="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
+              Individual Network Tools
+            </span>
+            {#each networkTools as tool (tool.name)}
+              {@const isToolEnabled = !settingsStore.disabledBuiltInTools.includes(
+                tool.name,
+              )}
+              <div class="flex items-center justify-between gap-3 py-1">
+                <div class="min-w-0">
+                  <div class="text-xs font-mono font-medium text-fg">
+                    {tool.name}
+                  </div>
+                  <div class="text-[11px] text-fg-subtle truncate max-w-md">
+                    {tool.description}
+                  </div>
+                </div>
+                <ToggleSwitch
+                  id="builtin-tool-{tool.name}"
+                  checked={isToolEnabled}
+                  onchange={(checked) => toggleBuiltInTool(tool.name, checked)}
+                  label="Enable {tool.name}"
+                />
+              </div>
+            {/each}
+          </div>
+        {/if}
+      {/if}
     </div>
 
     <div class="h-px bg-line/60"></div>

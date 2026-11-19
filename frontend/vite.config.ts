@@ -8,7 +8,7 @@ export default defineConfig({
   plugins: [svelte(), tailwindcss()],
   resolve: {
     alias: {
-      '$lib': path.resolve(__dirname, './src/lib'),
+      '$lib': path.resolve(import.meta.dirname, './src/lib'),
     },
   },
   server: {

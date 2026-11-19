@@ -10,6 +10,7 @@
     ChevronUp,
     MoreHorizontal,
     Pencil,
+    Search,
   } from "@lucide/svelte";
   import {
     fetchBackends,
@@ -57,6 +58,20 @@
   let renameConv = $state<ConversationSummary | null>(null);
   let renameInputValue = $state("");
   let openDropdownId = $state<string | null>(null);
+  let searchQuery = $state("");
+  let visibleLimit = $state(40);
+  let sidebarError = $state<string | null>(null);
+
+  let filteredConversations = $derived.by(() => {
+    const list = convsQuery.data ?? [];
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((c) => c.title.toLowerCase().includes(q));
+  });
+
+  let visibleConversations = $derived(
+    filteredConversations.slice(0, visibleLimit),
+  );
 
   function handleSelectConv(conv: ConversationSummary) {
     if (chatStore.isStreaming) return;
@@ -81,12 +96,18 @@
     const conv = renameConv;
     renameConv = null;
 
-    if (newTitle && newTitle.trim() !== "" && newTitle !== conv.title) {
+    const trimmed = newTitle.trim();
+    if (trimmed && trimmed !== conv.title) {
       try {
-        await updateConversation(conv.id, { title: newTitle.trim() });
+        sidebarError = null;
+        await updateConversation(conv.id, { title: trimmed });
+        if (chatStore.activeConversationId === conv.id) {
+          chatStore.activeConversationTitle = trimmed;
+        }
         await queryClient.invalidateQueries({ queryKey: ["conversations"] });
       } catch (err) {
         console.error("Failed to rename conversation", err);
+        sidebarError = `Failed to rename conversation: ${(err as Error).message || "Unknown error"}`;
       }
     }
   }
@@ -236,11 +257,58 @@
   >
     <!-- Conversations -->
     <div class="flex-1 overflow-y-auto overscroll-contain px-2 py-1 w-64">
-      <p
-        class="mb-1.5 px-2 text-[11px] font-semibold tracking-wider text-fg-subtle uppercase"
-      >
-        Conversations
-      </p>
+      <div class="mb-1.5 flex items-center justify-between px-2">
+        <p
+          class="text-[11px] font-semibold tracking-wider text-fg-subtle uppercase"
+        >
+          Conversations
+        </p>
+        {#if (convsQuery.data ?? []).length > 0}
+          <span class="text-[10px] font-mono text-fg-subtle">
+            {(convsQuery.data ?? []).length}
+          </span>
+        {/if}
+      </div>
+
+      {#if sidebarError}
+        <div
+          role="alert"
+          class="mx-1 mb-2 flex items-center justify-between gap-1.5 rounded-md border border-danger/40 bg-danger/10 px-2 py-1 text-[11px] text-danger"
+        >
+          <span class="truncate">{sidebarError}</span>
+          <button
+            type="button"
+            onclick={() => (sidebarError = null)}
+            aria-label="Dismiss error"
+            class="shrink-0 hover:opacity-80 cursor-pointer"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      {/if}
+
+      {#if (convsQuery.data ?? []).length > 4 || searchQuery.trim() !== ""}
+        <div class="mx-1 mb-2 flex items-center gap-1.5 rounded-lg border border-line bg-bg px-2.5 py-1">
+          <Search size={12} class="text-fg-subtle shrink-0" />
+          <input
+            type="text"
+            bind:value={searchQuery}
+            placeholder="Filter conversations…"
+            aria-label="Filter conversations"
+            class="w-full bg-transparent text-xs text-fg placeholder:text-fg-subtle focus:outline-none"
+          />
+          {#if searchQuery}
+            <button
+              type="button"
+              onclick={() => (searchQuery = "")}
+              aria-label="Clear filter"
+              class="text-fg-subtle hover:text-fg cursor-pointer"
+            >
+              <X size={11} />
+            </button>
+          {/if}
+        </div>
+      {/if}
 
       {#if convsQuery.isLoading}
         <p class="px-2 text-xs text-fg-muted">Loading…</p>
@@ -252,9 +320,13 @@
         >
           No conversations yet. Send a message to start one.
         </p>
+      {:else if filteredConversations.length === 0}
+        <p class="px-2 py-2 text-xs text-fg-subtle">
+          No conversations match "{searchQuery}".
+        </p>
       {:else}
         <ul class="flex flex-col gap-0.5">
-          {#each convsQuery.data ?? [] as conv (conv.id)}
+          {#each visibleConversations as conv (conv.id)}
             {@const isActive = chatStore.activeConversationId === conv.id}
             {@const isMenuOpen = openDropdownId === conv.id}
             {@const isDisabled = chatStore.isStreaming && !isActive}
@@ -330,6 +402,7 @@
                     resetOnSelect={true}
                     showCheckmark={false}
                     unstyledTrigger={true}
+                    ariaLabel="Actions for {conv.title}"
                     buttonClass="rounded p-0.5 text-fg-subtle transition-all cursor-pointer hover:text-fg disabled:pointer-events-none disabled:opacity-50"
                     disabled={deletingId === conv.id || chatStore.isStreaming}
                   >
@@ -342,6 +415,15 @@
             </li>
           {/each}
         </ul>
+        {#if filteredConversations.length > visibleLimit}
+          <button
+            type="button"
+            onclick={() => (visibleLimit += 40)}
+            class="mt-1.5 w-full rounded-lg border border-line bg-bg py-1.5 text-center text-[11px] font-medium text-fg-muted hover:bg-bg-elevated hover:text-fg transition-colors cursor-pointer"
+          >
+            Show more ({filteredConversations.length - visibleLimit} remaining)
+          </button>
+        {/if}
       {/if}
     </div>
 

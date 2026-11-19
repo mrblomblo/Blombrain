@@ -14,11 +14,12 @@
 
   let isOpen = $state(false);
   let searchQuery = $state("");
+  let highlightedIndex = $state(0);
 
-  // Visible (non-hidden, non-orphaned) models
+  // Visible (non-hidden, non-offline, non-orphaned) models
   const visibleModels = $derived.by(() => {
     const models = modelsQuery.data ?? [];
-    return models.filter((m) => !m.isHidden && !m.isOrphaned);
+    return models.filter((m) => !m.isHidden && !m.isOffline && !m.isOrphaned);
   });
 
   // Filtered by search query
@@ -34,11 +35,24 @@
     );
   });
 
-  // Auto-select default model when starting or if no model is selected
+  // Auto-select default model when starting or if selected model becomes unavailable
   $effect(() => {
-    if (visibleModels.length > 0 && !chatStore.selectedModel) {
+    if (
+      visibleModels.length > 0 &&
+      (!chatStore.selectedModel ||
+        !visibleModels.some((m) => m.id === chatStore.selectedModel))
+    ) {
       const defaultModel = visibleModels.find((m) => m.isDefault);
       chatStore.setModel(defaultModel ? defaultModel.id : visibleModels[0].id);
+    }
+  });
+
+  $effect(() => {
+    if (isOpen) {
+      const idx = filteredModels.findIndex(
+        (m) => m.id === chatStore.selectedModel,
+      );
+      highlightedIndex = idx >= 0 ? idx : 0;
     }
   });
 
@@ -61,11 +75,34 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") isOpen = false;
+    if (!isOpen) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      isOpen = false;
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (filteredModels.length > 0) {
+        highlightedIndex = (highlightedIndex + 1) % filteredModels.length;
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (filteredModels.length > 0) {
+        highlightedIndex =
+          (highlightedIndex - 1 + filteredModels.length) %
+          filteredModels.length;
+      }
+    } else if (
+      e.key === "Enter" &&
+      highlightedIndex >= 0 &&
+      highlightedIndex < filteredModels.length
+    ) {
+      e.preventDefault();
+      selectModel(filteredModels[highlightedIndex].id);
+    }
   }
 
   function focusInput(node: HTMLInputElement) {
-    setTimeout(() => node.focus(), 0);
+    node.focus();
   }
 </script>
 
@@ -82,6 +119,9 @@
     <!-- Trigger Button -->
     <button
       type="button"
+      aria-haspopup="listbox"
+      aria-expanded={isOpen}
+      aria-label="Select AI model"
       onclick={() => (isOpen = !isOpen)}
       class="flex h-8 items-center gap-2 rounded-lg border border-line bg-bg-elevated px-2.5 text-xs text-fg transition-colors cursor-pointer hover:bg-bg-hover hover:border-line-strong"
     >
@@ -138,20 +178,29 @@
         {/if}
 
         <!-- Model List -->
-        <div class="max-h-64 overflow-y-auto p-1.5 space-y-1">
+        <div
+          role="listbox"
+          aria-label="Available AI models"
+          class="max-h-64 overflow-y-auto p-1.5 space-y-1"
+        >
           {#if filteredModels.length === 0}
             <div class="px-3 py-4 text-center text-xs text-fg-subtle">
               No matching models found
             </div>
           {:else}
-            {#each filteredModels as model (model.id)}
+            {#each filteredModels as model, idx (model.id)}
               <button
                 type="button"
+                role="option"
+                aria-selected={model.id === chatStore.selectedModel}
+                onmouseenter={() => (highlightedIndex = idx)}
                 onclick={() => selectModel(model.id)}
                 class="w-full flex items-center justify-between gap-2.5 rounded-md px-2.5 py-2 text-left text-xs transition-colors cursor-pointer {model.id ===
                 chatStore.selectedModel
                   ? 'bg-accent/15 text-accent font-medium hover:bg-accent/20'
-                  : 'hover:bg-bg-hover text-fg'}"
+                  : idx === highlightedIndex
+                    ? 'bg-bg-hover text-fg'
+                    : 'hover:bg-bg-hover text-fg'}"
               >
                 <div class="flex items-center gap-2.5 min-w-0 flex-1">
                   {#if model.icon}

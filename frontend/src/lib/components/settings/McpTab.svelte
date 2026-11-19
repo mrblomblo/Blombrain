@@ -5,10 +5,12 @@
     createMcpServer,
     updateMcpServer,
     deleteMcpServer,
+    reconnectMcpServer,
   } from "../../api";
   import type { McpServerInfo, McpServerWriteBody } from "../../types";
   import Button from "../ui/Button.svelte";
   import Dropdown, { type DropdownOption } from "../ui/Dropdown.svelte";
+  import ToggleSwitch from "../ui/ToggleSwitch.svelte";
   import {
     Plus,
     Trash2,
@@ -40,9 +42,11 @@
   let argsText = $state("");
   let envText = $state("");
   let headersText = $state("");
+  let isEnabled = $state(true);
 
   let formError = $state<string | null>(null);
   let formBusy = $state(false);
+  let reconnectingId = $state<string | null>(null);
 
   function resetForm() {
     isAdding = false;
@@ -53,6 +57,7 @@
     argsText = "";
     envText = "";
     headersText = "";
+    isEnabled = true;
     formError = null;
     formBusy = false;
   }
@@ -65,8 +70,38 @@
     argsText = (server.args || []).join(" ");
     envText = JSON.stringify(server.env || {}, null, 2);
     headersText = JSON.stringify(server.headers || {}, null, 2);
+    isEnabled = server.isEnabled;
     isAdding = true;
     formError = null;
+  }
+
+  async function handleToggleEnabled(server: McpServerInfo, checked: boolean) {
+    try {
+      await updateMcpServer(server.id, {
+        name: server.name,
+        type: server.type,
+        commandOrUrl: server.commandOrUrl,
+        args: server.args,
+        env: server.env,
+        headers: server.headers,
+        isEnabled: checked,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["mcpServers"] });
+    } catch (err: any) {
+      formError = err?.message || "Failed to update server state";
+    }
+  }
+
+  async function handleReconnect(server: McpServerInfo) {
+    reconnectingId = server.id;
+    try {
+      await reconnectMcpServer(server.id);
+      await queryClient.invalidateQueries({ queryKey: ["mcpServers"] });
+    } catch (err: any) {
+      formError = err?.message || "Failed to reconnect server";
+    } finally {
+      reconnectingId = null;
+    }
   }
 
   async function handleSave() {
@@ -110,6 +145,7 @@
         args: parsedArgs,
         env: parsedEnv,
         headers: parsedHeaders,
+        isEnabled,
       };
 
       if (editingId) {
@@ -262,6 +298,11 @@
             placeholder={`{ "API_KEY": "secret" }`}
             class="w-full rounded-md border border-line bg-bg p-2 text-xs font-mono text-fg focus:outline-none focus:border-accent"
           ></textarea>
+          {#if editingId}
+            <p class="mt-1 text-[11px] text-fg-subtle">
+              Saved secret values are masked as "••••••••". Leave masked values unchanged to keep existing secrets.
+            </p>
+          {/if}
         </div>
       {:else if type === "http"}
         <div>
@@ -277,6 +318,11 @@
             placeholder={`{\n  "Authorization": "Bearer your_token_here",\n  "X-Custom-Header": "value"\n}`}
             class="w-full rounded-md border border-line bg-bg p-2 text-xs font-mono text-fg focus:outline-none focus:border-accent"
           ></textarea>
+          {#if editingId}
+            <p class="mt-1 text-[11px] text-fg-subtle">
+              Saved secret values are masked as "••••••••". Leave masked values unchanged to keep existing secrets.
+            </p>
+          {/if}
         </div>
       {/if}
 
@@ -325,11 +371,29 @@
                   class="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase font-mono text-fg-subtle"
                   >{server.type}</span
                 >
-                {#if server.status === "connected"}
+                {#if !server.isEnabled || server.status === "disabled"}
+                  <span
+                    class="rounded bg-bg-inset px-1.5 py-0.5 text-[10px] font-medium text-fg-subtle"
+                  >
+                    Disabled
+                  </span>
+                {:else if server.status === "connected"}
                   <span
                     class="flex items-center gap-1 text-[10px] text-success font-medium"
                   >
                     <CheckCircle size={10} /> Connected
+                  </span>
+                {:else if server.status === "connecting"}
+                  <span
+                    class="flex items-center gap-1 text-[10px] text-accent font-medium"
+                  >
+                    <RefreshCw size={10} class="animate-spin" /> Connecting
+                  </span>
+                {:else if server.status === "stopped"}
+                  <span
+                    class="rounded bg-bg-inset px-1.5 py-0.5 text-[10px] font-medium text-fg-subtle"
+                  >
+                    Ready
                   </span>
                 {:else if server.status === "error"}
                   <span
@@ -354,9 +418,31 @@
           </div>
 
           <div class="flex items-center gap-2">
+            <ToggleSwitch
+              id="mcp-enable-{server.id}"
+              checked={server.isEnabled}
+              onchange={(checked) => handleToggleEnabled(server, checked)}
+              label="Enable {server.name}"
+            />
+            {#if server.isEnabled}
+              <button
+                type="button"
+                onclick={() => handleReconnect(server)}
+                disabled={reconnectingId === server.id}
+                aria-label="Reconnect {server.name}"
+                title="Reconnect server"
+                class="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+              >
+                <RefreshCw
+                  size={13}
+                  class={reconnectingId === server.id ? "animate-spin" : ""}
+                />
+              </button>
+            {/if}
             <Button
               variant="default"
               size="sm"
+              aria-label="Edit {server.name}"
               onclick={() => startEdit(server)}>Edit</Button
             >
             <button

@@ -4,14 +4,22 @@
 
   interface Props {
     children: Snippet;
+    keepMounted?: boolean;
   }
-  const { children }: Props = $props();
+  const { children, keepMounted = false }: Props = $props();
 
   let el: HTMLDivElement;
   let isVisible = $state(true);
   let isRendered = $state(true);
   let height = $state(0);
   let observer: IntersectionObserver | null = null;
+
+  $effect(() => {
+    if (keepMounted && !isVisible) {
+      isVisible = true;
+      isRendered = true;
+    }
+  });
 
   function findScrollContainer(start: HTMLElement): HTMLElement {
     let p: HTMLElement | null = start.parentElement;
@@ -38,7 +46,7 @@
               });
             }
           } else {
-            if (isVisible) {
+            if (isVisible && !keepMounted) {
               if (el) {
                 height = el.getBoundingClientRect().height;
               }

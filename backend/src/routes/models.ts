@@ -1,8 +1,33 @@
 import type { FastifyInstance } from "fastify";
+import fs from "node:fs";
 import { backendRegistry } from "../registry.js";
-import type { ModelInfo, ModelSettingRow, ModelSettingWriteBody, CachedModelRow } from "../types.js";
+import type { ModelInfo, ModelSettingRow, ModelSettingWriteBody, CachedModelRow, AttachmentRow } from "../types.js";
 import db from "../db.js";
 import { forceSync } from "../services/modelSync.js";
+
+function markIconPurpose(iconUrl: string | null | undefined) {
+  if (iconUrl && iconUrl.startsWith("/api/uploads/")) {
+    const id = decodeURIComponent(iconUrl.replace("/api/uploads/", ""));
+    db.prepare("UPDATE attachments SET purpose = 'icon' WHERE id = ?").run(id);
+  }
+}
+
+function cleanupOrphanedIcon(oldIconUrl: string | null | undefined) {
+  if (!oldIconUrl || !oldIconUrl.startsWith("/api/uploads/")) return;
+  const stillUsed =
+    db.prepare("SELECT 1 FROM model_settings WHERE icon = ?").get(oldIconUrl) ||
+    db.prepare("SELECT 1 FROM global_settings WHERE user_avatar = ?").get(oldIconUrl);
+  if (!stillUsed) {
+    const id = decodeURIComponent(oldIconUrl.replace("/api/uploads/", ""));
+    const row = db.prepare("SELECT * FROM attachments WHERE id = ? AND message_id IS NULL").get(id) as AttachmentRow | undefined;
+    if (row) {
+      try {
+        if (fs.existsSync(row.disk_path)) fs.unlinkSync(row.disk_path);
+      } catch { }
+      db.prepare("DELETE FROM attachments WHERE id = ?").run(id);
+    }
+  }
+}
 
 export async function modelsRoutes(app: FastifyInstance) {
   // POST /api/models/sync - Force immediate background sync of cached models
@@ -48,11 +73,10 @@ export async function modelsRoutes(app: FastifyInstance) {
     // Augment Base Models with their settings
     const augmentedBaseModels: ModelInfo[] = baseModels.map((bm) => {
       const setting = settingsMap.get(bm.id);
-      const isOffline = Boolean(bm.isOffline);
       if (!setting) {
         return {
           ...bm,
-          isHidden: isOffline ? true : false,
+          isHidden: false,
           ctxOverflowBehavior: null,
           effectiveCtxOverflowBehavior: globalDefaultBehavior as any,
           reasoningInjectionMode: null,
@@ -85,7 +109,7 @@ export async function modelsRoutes(app: FastifyInstance) {
         effectiveCtxOverflowBehavior: behavior || globalDefaultBehavior,
         reasoningInjectionMode: rMode ?? null,
         effectiveReasoningInjectionMode: rMode || globalDefaultReasoningMode,
-        isHidden: isOffline ? true : Boolean(setting.is_hidden),
+        isHidden: Boolean(setting.is_hidden),
         sortOrder: setting.sort_order ?? 0,
         isDefault: Boolean(setting.is_default),
       };
@@ -127,7 +151,7 @@ export async function modelsRoutes(app: FastifyInstance) {
         effectiveCtxOverflowBehavior: behavior || globalDefaultBehavior,
         reasoningInjectionMode: rMode ?? null,
         effectiveReasoningInjectionMode: rMode || globalDefaultReasoningMode,
-        isHidden: isOffline ? true : Boolean(p.is_hidden),
+        isHidden: Boolean(p.is_hidden),
         sortOrder: p.sort_order ?? 0,
         isDefault: Boolean(p.is_default),
       };
@@ -188,6 +212,8 @@ export async function modelsRoutes(app: FastifyInstance) {
       sortOrder ?? 0,
       isDefault ? 1 : 0
     );
+
+    markIconPurpose(icon);
 
     return {
       id,
@@ -350,6 +376,13 @@ export async function modelsRoutes(app: FastifyInstance) {
         sortOrder ?? 0,
         nextIsDefault
       );
+      markIconPurpose(icon);
+    }
+
+    if (icon !== undefined && existing?.icon && existing.icon !== icon) {
+      cleanupOrphanedIcon(existing.icon);
+    } else if (icon !== undefined) {
+      markIconPurpose(icon);
     }
 
     return { ok: true };
@@ -362,7 +395,11 @@ export async function modelsRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Missing model ID" });
     }
 
+    const existing = db.prepare("SELECT icon FROM model_settings WHERE id = ?").get(modelId) as { icon: string | null } | undefined;
     db.prepare("DELETE FROM model_settings WHERE id = ?").run(modelId);
+    if (existing?.icon) {
+      cleanupOrphanedIcon(existing.icon);
+    }
     return { ok: true };
   });
 }

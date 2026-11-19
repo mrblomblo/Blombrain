@@ -5,6 +5,10 @@ import db, { DATA_DIR } from "../db.js";
 import { backendRegistry } from "../registry.js";
 import { getAdapter } from "../adapters/index.js";
 import { activeStreams } from "./chat.js";
+import {
+  assignAttachmentsToConversation,
+  removeConversationUploads,
+} from "./uploads.js";
 import type {
   ConversationRow,
   MessageRow,
@@ -13,6 +17,7 @@ import type {
   MessageOut,
   ConversationPatchBody,
   ModelSettingRow,
+  AttachmentRow,
 } from "../types.js";
 
 // ---------------------------------------------------------------------------
@@ -42,8 +47,10 @@ function rowToAttachment(a: import("../types.js").AttachmentRow) {
   };
 }
 
-function rowToMessage(row: MessageRow): MessageOut {
-  const attachRows = db.prepare(`SELECT * FROM attachments WHERE message_id = ?`).all(row.id) as import("../types.js").AttachmentRow[];
+function rowToMessage(row: MessageRow, preloadedAttachments?: AttachmentRow[]): MessageOut {
+  const attachRows =
+    preloadedAttachments ??
+    (db.prepare(`SELECT * FROM attachments WHERE message_id = ?`).all(row.id) as AttachmentRow[]);
   return {
     id: row.id,
     conversationId: row.conversation_id,
@@ -56,6 +63,23 @@ function rowToMessage(row: MessageRow): MessageOut {
     createdAt: row.created_at,
     attachments: attachRows.length > 0 ? attachRows.map(rowToAttachment) : undefined,
   };
+}
+
+function getConversationMessagesWithAttachments(convId: string): MessageOut[] {
+  const msgRows = getMessages.all(convId);
+  const attachRows = db
+    .prepare<[string], AttachmentRow>("SELECT * FROM attachments WHERE conversation_id = ?")
+    .all(convId);
+
+  const byMsgId = new Map<string, AttachmentRow[]>();
+  for (const att of attachRows) {
+    if (!att.message_id) continue;
+    const list = byMsgId.get(att.message_id);
+    if (list) list.push(att);
+    else byMsgId.set(att.message_id, [att]);
+  }
+
+  return msgRows.map((r) => rowToMessage(r, byMsgId.get(r.id) ?? []));
 }
 
 // ---------------------------------------------------------------------------
@@ -88,18 +112,6 @@ const updateConversationMeta = db.prepare(
 );
 
 const deleteConversation = db.prepare("DELETE FROM conversations WHERE id = ?");
-
-function removeConversationUploads(convId: string) {
-  try {
-    const convDir = path.join(DATA_DIR, "uploads", convId);
-    if (fs.existsSync(convDir)) {
-      fs.rmSync(convDir, { recursive: true, force: true });
-    }
-  } catch (e) { }
-  try {
-    db.prepare("DELETE FROM attachments WHERE conversation_id = ?").run(convId);
-  } catch (e) { }
-}
 
 const insertMessage = db.prepare(
   `INSERT INTO messages (id, conversation_id, parent_id, role, content, error, stats, model, created_at)
@@ -147,7 +159,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
     const row = getConversation.get(id);
     if (!row) return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
 
-    const messages = getMessages.all(id).map(rowToMessage);
+    const messages = getConversationMessagesWithAttachments(id);
     const active = activeStreams.get(id);
     if (active && !active.isDone) {
       if (!messages.some((m) => m.id === active.userMessageId)) {
@@ -240,14 +252,15 @@ export async function conversationsRoutes(app: FastifyInstance) {
   app.delete("/api/conversations/:id", async (req: FastifyRequest, reply: FastifyReply) => {
     const { id } = req.params as { id: string };
     const convDir = path.join(DATA_DIR, "uploads", id);
-    const result = deleteConversation.run(id);
     const convDirExists = fs.existsSync(convDir);
+    const existsInDb = Boolean(getConversation.get(id));
 
-    if (result.changes === 0 && !convDirExists) {
+    if (!existsInDb && !convDirExists) {
       return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
     }
 
     removeConversationUploads(id);
+    deleteConversation.run(id);
 
     return reply.code(204).send();
   });
@@ -276,10 +289,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
       } else {
         const placeholders = attachmentIds.map(() => "?").join(",");
         db.prepare(`UPDATE attachments SET message_id = NULL WHERE message_id = ? AND id NOT IN (${placeholders})`).run(msgId, ...attachmentIds);
-        const updateStmt = db.prepare("UPDATE attachments SET message_id = ?, conversation_id = ? WHERE id = ?");
-        for (const id of attachmentIds) {
-          updateStmt.run(msgId, convId, id);
-        }
+        assignAttachmentsToConversation(attachmentIds, convId, msgId);
       }
     }
 
@@ -336,8 +346,8 @@ export async function conversationsRoutes(app: FastifyInstance) {
     ).get(convId)?.count ?? 0;
 
     if (remainingCount === 0) {
-      deleteConversation.run(convId);
       removeConversationUploads(convId);
+      deleteConversation.run(convId);
     } else {
       updateConversationMeta.run({ id: convId, title: null, model: null, updatedAt: Date.now() });
     }
@@ -378,18 +388,17 @@ export async function conversationsRoutes(app: FastifyInstance) {
     });
 
     if (Array.isArray(attachmentIds)) {
-      const updateStmt = db.prepare("UPDATE attachments SET message_id = ?, conversation_id = ? WHERE id = ?");
       const insertAttachStmt = db.prepare(`
-        INSERT INTO attachments (id, conversation_id, message_id, original_name, mime_type, disk_path, size_bytes, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO attachments (id, conversation_id, message_id, original_name, mime_type, disk_path, size_bytes, created_at, purpose)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'attachment')
       `);
 
       for (const id of attachmentIds) {
-        const existing = db.prepare("SELECT * FROM attachments WHERE id = ?").get(id) as import("../types.js").AttachmentRow | undefined;
+        const existing = db.prepare("SELECT * FROM attachments WHERE id = ?").get(id) as AttachmentRow | undefined;
         if (existing) {
           if (!existing.message_id) {
-            // Unattached new upload -> link to newMsgId
-            updateStmt.run(newMsgId, convId, id);
+            // Unattached new upload -> move out of staging and link to newMsgId
+            assignAttachmentsToConversation([id], convId, newMsgId);
           } else if (existing.message_id !== newMsgId) {
             // Existing attachment from parent/sibling -> copy row for new branch message
             const copyId = crypto.randomUUID();
@@ -420,22 +429,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
     if (!getConversation.get(id)) {
       return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
     }
-    const messages = getMessages.all(id).map(rowToMessage);
-    const attachRows = db.prepare(`SELECT * FROM attachments WHERE conversation_id = ?`).all(id) as import("../types.js").AttachmentRow[];
-    for (const msg of messages) {
-      msg.attachments = attachRows
-        .filter(a => a.message_id === msg.id)
-        .map(a => ({
-          id: a.id,
-          conversationId: a.conversation_id,
-          messageId: a.message_id,
-          originalName: a.original_name,
-          mimeType: a.mime_type,
-          sizeBytes: a.size_bytes,
-          createdAt: a.created_at,
-        }));
-    }
-    return messages;
+    return getConversationMessagesWithAttachments(id);
   });
 
   /**
@@ -578,8 +572,11 @@ Rules:
         }
       }
 
-      // Strip thinking/reasoning blocks if present
-      let title = rawTitle.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+      // Strip thinking/reasoning blocks if present (including cross-closed or unclosed tags)
+      let title = rawTitle
+        .replace(/<(?:think|thought|reason|reasoning)>[\s\S]*?<\/(?:think|thought|reason|reasoning)>/gi, "")
+        .replace(/<(?:think|thought|reason|reasoning)>[\s\S]*$/gi, "")
+        .trim();
 
       // Clean title: remove markdown bold/headers/quotes/trailing punctuation
       title = title.replace(/^#+\s+/gm, "").trim();

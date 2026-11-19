@@ -54,6 +54,9 @@
     addKeyboardShortcuts() {
       return {
         Enter: ({ editor }) => {
+          if (editor.view.composing) {
+            return false;
+          }
           if (editor.isActive("listItem")) {
             const selFrom = editor.state.selection.$from;
             const isItemEmpty = selFrom.parent.content.size === 0;

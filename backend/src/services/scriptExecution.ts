@@ -2,7 +2,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { DATA_DIR } from "../db.js";
-import { getSkillById } from "./skills.js";
+import { getSkillById, resolveSkillScriptsDir } from "./skills.js";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 100_000;
@@ -77,7 +77,11 @@ export async function executeSkillScriptTool(
     }
 
     // 4. Resolve and Validate Script Path
-    const scriptsDir = path.resolve(path.join(skill.dirPath, "scripts"));
+    const resolvedScriptsDir = resolveSkillScriptsDir(skill.dirPath);
+    if (!resolvedScriptsDir) {
+      throw new Error(`No scripts/ directory found for skill '${skill.name}'.`);
+    }
+    const scriptsDir = path.resolve(resolvedScriptsDir);
     
     // Normalize and prevent traversal
     const normalizedScriptName = path.normalize(scriptName);

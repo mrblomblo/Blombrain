@@ -9,28 +9,28 @@
 @import "@fontsource/jetbrains-mono/700.css";
 
 :root {
-  --bg: #11111b;
-  --bg-elevated: #1e1e2e;
-  --bg-inset: color-mix(in srgb, #11111b 85%, black);
-  --bg-hover: #45475a;
-  --fg: #cdd6f4;
-  --fg-muted: #a6adc8;
-  --fg-subtle: #6c7086;
-  --line: #313244;
-  --line-strong: #313244;
-  --accent: #fab387;
-  --accent-fg: #11111b;
-  --accent-muted: color-mix(in srgb, #fab387 15%, transparent);
-  --danger: #f38ba8;
-  --danger-fg: #11111b;
-  --success: #a6e3a1;
-  --success-fg: #11111b;
-  --warning: #fab387;
-  --warning-fg: #11111b;
-  --info: #89b4fa;
-  --info-fg: #11111b;
-  --important: #cba6f7;
-  --important-fg: #11111b;
+  --bg: #1a1815;
+  --bg-elevated: #221f1a;
+  --bg-inset: color-mix(in srgb, #1a1815 85%, black);
+  --bg-hover: color-mix(in srgb, #221f1a 85%, white);
+  --fg: #ece6d8;
+  --fg-muted: #b8a898;
+  --fg-subtle: #b8a898;
+  --line: #5a4f3f;
+  --line-strong: #25241f;
+  --accent: #d4741a;
+  --accent-fg: #1a1815;
+  --accent-muted: color-mix(in srgb, #d4741a 15%, transparent);
+  --danger: #cc523e;
+  --danger-fg: #1a1815;
+  --success: #879a39;
+  --success-fg: #1a1815;
+  --warning: #d4741a;
+  --warning-fg: #1a1815;
+  --info: #5da0a4;
+  --info-fg: #1a1815;
+  --important: #a86ea4;
+  --important-fg: #1a1815;
   --shadow: rgba(0, 0, 0, 0.45);
 }
 

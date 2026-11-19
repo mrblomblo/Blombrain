@@ -5,6 +5,7 @@ import db, { DATA_DIR } from "../../../db.js";
 import type { BuiltInToolDefinition, BuiltInToolContext } from "../types.js";
 import type { ArtifactRow, AttachmentRow } from "../../../types.js";
 import { resolveSandboxedPath } from "./artifactUtils.js";
+import { extractDocumentText } from "../../documentExtractor.js";
 
 function getLanguageFromFilename(filename: string): string {
   const ext = path.extname(filename).toLowerCase();
@@ -138,6 +139,14 @@ export const createArtifactToolDef: BuiltInToolDefinition = {
         RETURNING id
       `).get(newId, convId, filename, language, title, filePath, stat.size, now, now) as { id: string };
 
+      ctx.emitEvent?.("artifact_created", {
+        artifactId: row.id,
+        conversationId: convId,
+        filename,
+        title,
+        language,
+      });
+
       return { content: `Artifact '${filename}' created. Display it to the user with [artifact: ${filename}].` };
     } catch (err) {
       return { content: `Failed: ${err instanceof Error ? err.message : String(err)}`, isError: true };
@@ -171,6 +180,14 @@ export const presentArtifactToolDef: BuiltInToolDefinition = {
     ).get(convId, filename);
 
     if (!row) return { content: `Error: '${filename}' not found.`, isError: true };
+
+    ctx.emitEvent?.("artifact_created", {
+      artifactId: row.id,
+      conversationId: convId,
+      filename: row.filename,
+      title: row.title,
+      language: row.language,
+    });
 
     return { content: `Artifact '${filename}' presented in the chat UI.` };
   },
@@ -226,14 +243,20 @@ export const readFileToolDef: BuiltInToolDefinition = {
 
     try {
       const MAX_SIZE = 200 * 1024; // 200 KB cap
-      const stat = fs.statSync(resolved.diskPath);
-      let text = fs.readFileSync(resolved.diskPath, "utf-8");
-      let isTruncated = false;
-
-      if (stat.size > MAX_SIZE) {
-        text = text.slice(0, MAX_SIZE);
-        isTruncated = true;
+      const extracted = extractDocumentText(
+        resolved.diskPath,
+        filename,
+        resolved.attachmentRow?.mime_type || "text/plain",
+        MAX_SIZE
+      );
+      if (extracted.isBinary) {
+        return {
+          content: `File '${filename}' is a binary file (${resolved.attachmentRow?.mime_type || "binary"}) and its text content cannot be extracted directly.`,
+          isError: true,
+        };
       }
+      const text = extracted.text;
+      const isTruncated = text.endsWith("[TRUNCATED]");
 
       // Prepend line numbers to help the LLM with subsequent edit_file calls
       const lines = text.split("\n");
@@ -381,7 +404,18 @@ export const findInFileToolDef: BuiltInToolDefinition = {
     if (!resolved) return { content: `Error: File '${filename}' not found.`, isError: true };
 
     try {
-      const fullText = fs.readFileSync(resolved.diskPath, "utf-8");
+      const extracted = extractDocumentText(
+        resolved.diskPath,
+        filename,
+        resolved.attachmentRow?.mime_type || "text/plain"
+      );
+      if (extracted.isBinary) {
+        return {
+          content: `File '${filename}' is a binary file and cannot be searched as text.`,
+          isError: true,
+        };
+      }
+      const fullText = extracted.text;
       const lines = fullText.split("\n");
 
       let matcher: (line: string) => boolean;

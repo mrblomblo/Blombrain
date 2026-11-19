@@ -31,21 +31,43 @@ if (!Number.isFinite(PORT) || PORT <= 0) {
 // Defaults to localhost-only. Set HOST=0.0.0.0 (or a specific LAN/tailscale address)
 const HOST = process.env.HOST ?? "127.0.0.1";
 
-// Comma-separated list of allowed origins, or "*"/unset for any origin
-const CORS_ORIGIN = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN === "*"
-    ? true
-    : process.env.CORS_ORIGIN.split(",").map((o) => o.trim())
-  : true;
+// Comma-separated list of allowed origins, "*" for any origin, or unset for localhost/loopback origins
+const LOCAL_ORIGIN_REGEX = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$|^tauri:\/\/localhost$|^https?:\/\/tauri\.localhost$/i;
+const CORS_ORIGIN: boolean | string[] | ((origin: string | undefined, cb: (err: Error | null, allow: boolean) => void) => void) =
+  process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN === "*"
+      ? true
+      : process.env.CORS_ORIGIN.split(",").map((o) => o.trim())
+    : (origin, cb) => {
+        if (!origin || LOCAL_ORIGIN_REGEX.test(origin)) {
+          cb(null, true);
+        } else {
+          cb(null, false);
+        }
+      };
 
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB ?? 100);
 
 const LOG_LEVEL = process.env.LOG_LEVEL ?? "info";
 
-async function main() {
-  const app = Fastify({ logger: { level: LOG_LEVEL } });
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-  await app.register(cors, { origin: CORS_ORIGIN });
+const TRUST_PROXY =
+  process.env.TRUST_PROXY !== undefined
+    ? process.env.TRUST_PROXY === "true" || process.env.TRUST_PROXY === "1"
+      ? true
+      : process.env.TRUST_PROXY === "false" || process.env.TRUST_PROXY === "0"
+        ? false
+        : process.env.TRUST_PROXY
+    : true;
+
+async function main() {
+  const app = Fastify({
+    logger: { level: LOG_LEVEL },
+    trustProxy: TRUST_PROXY,
+  });
+
+  await app.register(cors, { origin: CORS_ORIGIN, credentials: true });
   await app.register(fastifyMultipart, {
     limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 },
   });
@@ -71,13 +93,18 @@ async function main() {
     }
 
     const session = db
-      .prepare<[string], { token: string }>(
-        "SELECT token FROM auth_sessions WHERE token = ?"
+      .prepare<[string], { token: string; created_at: number }>(
+        "SELECT token, created_at FROM auth_sessions WHERE token = ?"
       )
       .get(token);
 
     if (!session) {
       return reply.code(401).send({ error: { message: "Unauthorized" } });
+    }
+
+    if (Date.now() - session.created_at > SESSION_TTL_MS) {
+      db.prepare("DELETE FROM auth_sessions WHERE token = ?").run(token);
+      return reply.code(401).send({ error: { message: "Session expired" } });
     }
   });
 

@@ -39,6 +39,45 @@
     );
   });
 
+  function extractBalancedJsonObjects(source: string): string[] {
+    const candidates: string[] = [];
+    let depth = 0;
+    let startIdx = -1;
+    let inString = false;
+    let escapeNext = false;
+
+    for (let i = 0; i < source.length; i++) {
+      const ch = source[i];
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+      if (ch === "\\" && inString) {
+        escapeNext = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (inString) continue;
+
+      if (ch === "{") {
+        if (depth === 0) startIdx = i;
+        depth++;
+      } else if (ch === "}") {
+        if (depth > 0) {
+          depth--;
+          if (depth === 0 && startIdx !== -1) {
+            candidates.push(source.slice(startIdx, i + 1));
+            startIdx = -1;
+          }
+        }
+      }
+    }
+    return candidates;
+  }
+
   let parsedRouterInfo = $derived.by(() => {
     if (!routerOutput) return null;
 
@@ -46,6 +85,7 @@
     let tools: string[] = [];
     let skills: string[] = [];
     let hasValidJson = false;
+    let fallback = false;
 
     const codeBlockMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i);
     if (codeBlockMatch) {
@@ -53,18 +93,32 @@
         const parsed = JSON.parse(codeBlockMatch[1]);
         if (Array.isArray(parsed.tools)) tools = parsed.tools.map(String);
         if (Array.isArray(parsed.skills)) skills = parsed.skills.map(String);
+        if (parsed.fallback) fallback = true;
         text = text.replace(codeBlockMatch[0], "").trim();
         hasValidJson = true;
       } catch (e) {}
-    } else {
-      const rawJsonMatch = text.match(/\{[\s\S]*\}/);
-      if (rawJsonMatch) {
+    }
+
+    if (!hasValidJson) {
+      const candidates = extractBalancedJsonObjects(text);
+      for (let i = candidates.length - 1; i >= 0; i--) {
         try {
-          const parsed = JSON.parse(rawJsonMatch[0]);
-          if (Array.isArray(parsed.tools)) tools = parsed.tools.map(String);
-          if (Array.isArray(parsed.skills)) skills = parsed.skills.map(String);
-          text = text.replace(rawJsonMatch[0], "").trim();
-          hasValidJson = true;
+          const parsed = JSON.parse(candidates[i]);
+          if (
+            parsed &&
+            typeof parsed === "object" &&
+            (Array.isArray(parsed.tools) ||
+              Array.isArray(parsed.skills) ||
+              parsed.fallback)
+          ) {
+            if (Array.isArray(parsed.tools)) tools = parsed.tools.map(String);
+            if (Array.isArray(parsed.skills))
+              skills = parsed.skills.map(String);
+            if (parsed.fallback) fallback = true;
+            text = text.replace(candidates[i], "").trim();
+            hasValidJson = true;
+            break;
+          }
         } catch (e) {}
       }
     }
@@ -86,8 +140,10 @@
       }
     }
 
-    text = text.replace(/<\/?think>/gi, "").trim();
-    return { text, tools, skills, hasValidJson };
+    text = text
+      .replace(/<\/?(?:think|thought|reason|reasoning)>/gi, "")
+      .trim();
+    return { text, tools, skills, hasValidJson, fallback };
   });
 
   $effect(() => {
@@ -187,6 +243,11 @@
       >
         {#if status === "routing" || isRouter}
           {#if parsedRouterInfo}
+            {#if parsedRouterInfo.fallback}
+              <div class="mb-1.5 rounded border border-warning/30 bg-warning/10 px-2 py-1 text-[10px] text-warning">
+                Router pre-pass fell back to all enabled tools and skills.
+              </div>
+            {/if}
             {#if parsedRouterInfo.text}
               <Markdown
                 content={parsedRouterInfo.text}

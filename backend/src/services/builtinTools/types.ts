@@ -1,5 +1,6 @@
 export interface ToolVisibilityOptions {
   allowNetwork?: boolean;
+  disabledTools?: string[];
 }
 
 export interface BuiltInToolContext {

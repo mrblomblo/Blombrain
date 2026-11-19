@@ -2,6 +2,7 @@
   import { createQuery } from "@tanstack/svelte-query";
   import type { ChatMessage as ChatMessageType } from "../types";
   import { serveUploadUrl, fetchModels, uploadFile } from "../api";
+  import { encodeToWav } from "../audio";
   import { chatStore } from "../stores/chat.svelte";
   import { settingsStore } from "../stores/settings.svelte";
   import { Paperclip, Check, Send as SendIcon, X, Info } from "@lucide/svelte";
@@ -14,13 +15,17 @@
   import Button from "./ui/Button.svelte";
   import { fly } from "svelte/transition";
   import type { AttachmentOut } from "../types";
-  import { parseMessageSegments } from "../utils/segmentParser";
+  import {
+    parseMessageSegments,
+    getCleanVisibleText,
+  } from "../utils/segmentParser";
 
   interface Props {
     message: ChatMessageType;
     isLast?: boolean;
+    onEditingChange?: (editing: boolean) => void;
   }
-  const { message, isLast = false }: Props = $props();
+  const { message, isLast = false, onEditingChange }: Props = $props();
 
   const modelsQuery = createQuery(() => ({
     queryKey: ["models"],
@@ -69,6 +74,17 @@
       ),
   );
 
+  let routerSegment = $derived(
+    parsedSegments.find((s) => s.type === "router"),
+  );
+  let showRouterBlock = $derived(
+    message.role === "assistant" &&
+      (message.status === "routing" || Boolean(routerSegment)),
+  );
+  let activeRouterOutput = $derived(
+    routerSegment?.content ?? message.routerOutput,
+  );
+
   // Edit Mode state
   let isEditing = $state(false);
   let editDraft = $state("");
@@ -77,7 +93,33 @@
   let editTextarea: HTMLTextAreaElement | undefined = $state();
   let isUploadingEdit = $state(false);
   let isSaving = $state(false);
+  let editError = $state<string | null>(null);
   let showStats = $state(false);
+  let statsContainerEl: HTMLDivElement | undefined = $state();
+
+  $effect(() => {
+    onEditingChange?.(isEditing);
+  });
+
+  $effect(() => {
+    if (!showStats) return;
+    function handleOutsideClick(e: MouseEvent) {
+      if (statsContainerEl && !statsContainerEl.contains(e.target as Node)) {
+        showStats = false;
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        showStats = false;
+      }
+    }
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  });
 
   $effect(() => {
     if (isEditing && editTextarea) {
@@ -104,8 +146,12 @@
   });
 
   function startEdit() {
-    editDraft = message.content;
+    editDraft =
+      message.role === "assistant"
+        ? getCleanVisibleText(message.content, message.thinkingContent)
+        : message.content;
     editAttachments = message.attachments ? [...message.attachments] : [];
+    editError = null;
     isEditing = true;
   }
 
@@ -113,6 +159,7 @@
     isEditing = false;
     editDraft = "";
     editAttachments = [];
+    editError = null;
   }
 
   function removeEditAttachment(id: string) {
@@ -123,11 +170,11 @@
     const input = e.target as HTMLInputElement;
     if (!input.files || input.files.length === 0) return;
     isUploadingEdit = true;
+    editError = null;
     for (const file of Array.from(input.files)) {
       try {
         let fileToUpload = file;
         if (file.type.startsWith("audio/")) {
-          const { encodeToWav } = await import("../audio");
           fileToUpload = await encodeToWav(file);
         }
         const uploaded = await uploadFile(
@@ -136,7 +183,7 @@
         );
         editAttachments.push(uploaded);
       } catch (err) {
-        alert("Failed to upload " + file.name);
+        editError = `Failed to upload "${file.name}": ${(err as Error).message || "Unknown error"}`;
       }
     }
     isUploadingEdit = false;
@@ -266,6 +313,7 @@
           {@const s = message.stats}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
+            bind:this={statsContainerEl}
             class="relative"
             onmouseenter={() => (showStats = true)}
             onmouseleave={() => (showStats = false)}
@@ -273,6 +321,7 @@
             <button
               type="button"
               aria-label="Response stats"
+              aria-expanded={showStats}
               onclick={(e) => {
                 e.stopPropagation();
                 showStats = !showStats;
@@ -369,6 +418,23 @@
       <div
         class="edit-container w-full flex flex-col gap-2 rounded-lg border bg-bg p-3 shadow-md"
       >
+        {#if editError}
+          <div
+            role="alert"
+            class="flex items-center justify-between gap-2 rounded-md border border-danger/40 bg-danger/10 px-2.5 py-1.5 text-xs text-danger"
+          >
+            <span>{editError}</span>
+            <button
+              type="button"
+              onclick={() => (editError = null)}
+              aria-label="Dismiss error"
+              class="shrink-0 rounded-sm p-0.5 hover:bg-danger/20 cursor-pointer"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        {/if}
+
         <!-- Existing & New Attachments Thumbnails -->
         {#if editAttachments.length > 0}
           <div class="flex flex-wrap gap-2 pb-1">
@@ -376,12 +442,20 @@
               <div
                 class="group relative flex h-12 w-12 items-center justify-center rounded-lg border border-line bg-bg-elevated overflow-hidden shadow-xs"
               >
-                {#if att.mimeType.startsWith("image/") || att.mimeType.startsWith("video/")}
+                {#if att.mimeType.startsWith("image/")}
                   <img
                     src={serveUploadUrl(att.id)}
                     alt={att.originalName}
                     class="h-full w-full object-cover"
                   />
+                {:else if att.mimeType.startsWith("video/")}
+                  <!-- svelte-ignore a11y_media_has_caption -->
+                  <video
+                    src={serveUploadUrl(att.id)}
+                    class="h-full w-full object-cover pointer-events-none"
+                    muted
+                    preload="metadata"
+                  ></video>
                 {:else if att.mimeType.startsWith("audio/")}
                   <div class="text-[9px] text-fg-subtle font-mono">Audio</div>
                 {:else}
@@ -507,20 +581,18 @@
           : 'bg-bg-elevated border border-line/60 text-fg rounded-tl-xs shadow-xs'}
           {hasCodeBlock ? 'w-full' : ''}"
       >
-        {#if message.role === "assistant" && message.status === "routing" && !parsedSegments.some((s) => s.type === "router")}
-          <ThinkingBlock status="routing" routerOutput={message.routerOutput} />
+        {#if showRouterBlock}
+          <ThinkingBlock
+            isRouter={true}
+            status={message.status}
+            routerOutput={activeRouterOutput}
+          />
         {/if}
         {#if message.error}
           <p class="font-medium text-danger">{message.error}</p>
         {:else if parsedSegments.length > 0}
           {#each parsedSegments as seg (seg.id)}
-            {#if seg.type === "router"}
-              <ThinkingBlock
-                isRouter={true}
-                status={message.status}
-                routerOutput={seg.content}
-              />
-            {:else if seg.type === "think"}
+            {#if seg.type === "think"}
               <ThinkingBlock
                 thinkingContent={seg.content}
                 thinkingDone={seg.isDone}

@@ -5,6 +5,8 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import db from "../db.js";
 import type { McpServerRow, McpServerOut, McpServerWriteBody } from "../types.js";
 
+export const MCP_SECRET_MASK = "••••••••";
+
 export interface McpToolDefinition {
   serverId: string;
   serverName: string;
@@ -13,12 +15,21 @@ export interface McpToolDefinition {
   inputSchema: Record<string, any>;
 }
 
+function maskRecord(rec: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(rec)) {
+    out[k] = v ? MCP_SECRET_MASK : "";
+  }
+  return out;
+}
+
 class McpManager {
   private clients = new Map<string, { client: Client; transport: any; status: "connected" | "connecting" | "error" | "stopped"; error?: string }>();
   private crashCounts = new Map<string, number>();
   private toolsCache = new Map<string, McpToolDefinition[]>();
 
-  public getAllServers(excludedIds: string[] = []): McpServerOut[] {
+  public getAllServers(excludedIds: string[] = [], options?: { maskSecrets?: boolean }): McpServerOut[] {
+    const shouldMask = options?.maskSecrets ?? true;
     const rows = db.prepare("SELECT * FROM mcp_servers ORDER BY name ASC").all() as McpServerRow[];
     return rows.map((r) => {
       let args: string[] = [];
@@ -29,16 +40,17 @@ class McpManager {
       try { headers = JSON.parse(r.headers || "{}"); } catch { }
 
       const active = this.clients.get(r.id);
+      const globallyEnabled = r.is_enabled === 1;
       return {
         id: r.id,
         name: r.name,
         type: r.type as "stdio" | "http",
         commandOrUrl: r.command_or_url,
         args,
-        env,
-        headers,
-        isEnabled: r.is_enabled === 1 && !excludedIds.includes(r.id),
-        status: active?.status ?? (r.is_enabled === 1 ? "stopped" : "disabled"),
+        env: shouldMask ? maskRecord(env) : env,
+        headers: shouldMask ? maskRecord(headers) : headers,
+        isEnabled: globallyEnabled && !excludedIds.includes(r.id),
+        status: !globallyEnabled ? "disabled" : (active?.status ?? "stopped"),
         error: active?.error,
       };
     });
@@ -50,31 +62,76 @@ class McpManager {
 
   public upsertServer(body: McpServerWriteBody): McpServerOut {
     const id = body.id ?? crypto.randomUUID();
-    const argsJson = JSON.stringify(body.args ?? []);
-    const envJson = JSON.stringify(body.env ?? {});
-    const headersJson = JSON.stringify(body.headers ?? {});
-    const isEnabled = body.isEnabled ?? true;
+    const existing = this.getRawServerRow(id);
 
-    const collision = db.prepare("SELECT id FROM mcp_servers WHERE name = ? AND id != ?").get(body.name, id);
+    const name = body.name ?? existing?.name ?? "";
+    const type = body.type ?? (existing?.type as "stdio" | "http") ?? "stdio";
+    const commandOrUrl = body.commandOrUrl ?? existing?.command_or_url ?? "";
+
+    const collision = db.prepare("SELECT id FROM mcp_servers WHERE name = ? AND id != ?").get(name, id);
     if (collision) {
-      throw new Error(`Server name "${body.name}" is already in use. Please choose a unique name.`);
+      throw new Error(`Server name "${name}" is already in use. Please choose a unique name.`);
     }
 
-    const existing = db.prepare("SELECT id FROM mcp_servers WHERE id = ?").get(id);
+    let existingArgs: string[] = [];
+    let existingEnv: Record<string, string> = {};
+    let existingHeaders: Record<string, string> = {};
+    if (existing) {
+      try { existingArgs = JSON.parse(existing.args); } catch { }
+      try { existingEnv = JSON.parse(existing.env); } catch { }
+      try { existingHeaders = JSON.parse(existing.headers || "{}"); } catch { }
+    }
+
+    const nextArgs = body.args !== undefined ? body.args : existingArgs;
+
+    let nextEnv: Record<string, string> = existingEnv;
+    if (body.env !== undefined) {
+      nextEnv = {};
+      for (const [k, v] of Object.entries(body.env)) {
+        if (v === MCP_SECRET_MASK && k in existingEnv) {
+          nextEnv[k] = existingEnv[k];
+        } else {
+          nextEnv[k] = v;
+        }
+      }
+    }
+
+    let nextHeaders: Record<string, string> = existingHeaders;
+    if (body.headers !== undefined) {
+      nextHeaders = {};
+      for (const [k, v] of Object.entries(body.headers)) {
+        if (v === MCP_SECRET_MASK && k in existingHeaders) {
+          nextHeaders[k] = existingHeaders[k];
+        } else {
+          nextHeaders[k] = v;
+        }
+      }
+    }
+
+    const argsJson = JSON.stringify(nextArgs);
+    const envJson = JSON.stringify(nextEnv);
+    const headersJson = JSON.stringify(nextHeaders);
+    const isEnabled =
+      body.isEnabled !== undefined
+        ? body.isEnabled
+        : existing
+          ? existing.is_enabled === 1
+          : true;
+
     if (existing) {
       db.prepare(`
         UPDATE mcp_servers
         SET name = ?, type = ?, command_or_url = ?, args = ?, env = ?, headers = ?, is_enabled = ?
         WHERE id = ?
-      `).run(body.name, body.type, body.commandOrUrl, argsJson, envJson, headersJson, isEnabled ? 1 : 0, id);
+      `).run(name, type, commandOrUrl, argsJson, envJson, headersJson, isEnabled ? 1 : 0, id);
     } else {
       db.prepare(`
         INSERT INTO mcp_servers (id, name, type, command_or_url, args, env, headers, is_enabled)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, body.name, body.type, body.commandOrUrl, argsJson, envJson, headersJson, isEnabled ? 1 : 0);
+      `).run(id, name, type, commandOrUrl, argsJson, envJson, headersJson, isEnabled ? 1 : 0);
     }
 
-    // Stop client if disabled or configuration updated
+    // Stop client and reset crash counter when config or enabled state changes
     this.stopServer(id);
     return this.getAllServers().find((s) => s.id === id)!;
   }
@@ -200,8 +257,19 @@ class McpManager {
       } catch { }
       this.clients.delete(id);
     }
+    this.crashCounts.delete(id);
     // Config changed or server stopped -- cached tool schemas may now be stale.
     this.toolsCache.delete(id);
+  }
+
+  public async reconnectServer(id: string): Promise<McpServerOut | null> {
+    this.stopServer(id);
+    const row = this.getRawServerRow(id);
+    if (!row) return null;
+    if (row.is_enabled === 1) {
+      await this.connectServer(row);
+    }
+    return this.getAllServers().find((s) => s.id === id) ?? null;
   }
 
   public async getAvailableTools(excludedIds: string[] = []): Promise<McpToolDefinition[]> {
@@ -256,11 +324,12 @@ class McpManager {
   private isAsyncJobResult(parsed: any): { jobId: string; status?: string } | null {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
 
-    const jobId =
-      (typeof parsed.id === "string" && parsed.id) ||
+    const explicitJobId =
       (typeof parsed.job_id === "string" && parsed.job_id) ||
       (typeof parsed.jobId === "string" && parsed.jobId) ||
       null;
+    const genericId = typeof parsed.id === "string" && parsed.id ? parsed.id : null;
+    const jobId = explicitJobId || genericId;
     if (!jobId) return null;
 
     const status = typeof parsed.status === "string" ? parsed.status.toLowerCase() : undefined;
@@ -275,12 +344,11 @@ class McpManager {
     if (status && terminalStatuses.has(status)) {
       return null;
     }
-    // No status field at all, but a `success: true` + bare id and nothing else
-    // resembling a real payload -- treat as an async job handle (common shape:
-    // `{ success: true, id: "..." }` returned by "start job" tools).
-    if (parsed.success === true && jobId) {
-      const otherKeys = Object.keys(parsed).filter((k) => !["success", "id", "job_id", "jobId", "status"].includes(k));
-      if (otherKeys.length === 0) return { jobId, status };
+    // Without an explicit in-progress status, only treat `{ success: true, job_id/jobId: "..." }`
+    // as an async job handle (never a generic `{ success: true, id: "..." }` which is standard for CRUD creates).
+    if (parsed.success === true && explicitJobId) {
+      const otherKeys = Object.keys(parsed).filter((k) => !["success", "job_id", "jobId", "status"].includes(k));
+      if (otherKeys.length === 0) return { jobId: explicitJobId, status };
     }
 
     return null;
@@ -296,11 +364,12 @@ class McpManager {
       if (rawName === mainToolRawName) continue;
 
       const nameTokens = this.tokenize(rawName);
-      const descTokens = this.tokenize(t.description || "");
-      const hasKeyword = keywords.some((kw) => nameTokens.includes(kw) || descTokens.includes(kw));
-      if (!hasKeyword) continue;
+      const hasNameKeyword = keywords.some((kw) => nameTokens.includes(kw));
+      if (!hasNameKeyword) continue;
 
-      const overlap = nameTokens.filter((tok) => mainTokens.has(tok)).length;
+      const overlap = nameTokens.filter((tok) => mainTokens.has(tok) && !keywords.includes(tok)).length;
+      if (overlap < 1) continue;
+
       if (!best || overlap > best.score) {
         best = { tool: t, score: overlap };
       }
@@ -309,7 +378,7 @@ class McpManager {
   }
 
   private findStatusTool(serverId: string, mainToolRawName: string): McpToolDefinition | undefined {
-    return this.findLinkedTool(serverId, mainToolRawName, ["status", "check", "poll", "result", "get"]);
+    return this.findLinkedTool(serverId, mainToolRawName, ["status", "check", "poll", "result"]);
   }
 
   private findCancelTool(serverId: string, mainToolRawName: string): McpToolDefinition | undefined {

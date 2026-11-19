@@ -21,7 +21,7 @@
     isArtifactPreview = false,
   }: Props = $props();
 
-  let html = $derived(renderMarkdown(content, { isArtifactPreview }));
+  let html = $derived(renderMarkdown(content, { isArtifactPreview, isStreaming: streaming }));
 
   // Tooltip state for inline code snippets
   let tooltip = $state<{
@@ -102,7 +102,7 @@
       onNodeAdded: (node) => {
         if (node.nodeType === Node.ELEMENT_NODE) {
           const el = node as HTMLElement;
-          if (streaming) {
+          if (streaming && !el.closest(".code-block-wrapper")) {
             el.classList.add("fade-in-node");
           }
           // Observe any new sentinels

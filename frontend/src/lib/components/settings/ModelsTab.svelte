@@ -25,6 +25,7 @@
     uploadFile,
     serveUploadUrl,
   } from "../../api";
+  import { resizeImageForIcon } from "../../audio";
   import type { ModelInfo, ModelSettingWriteBody } from "../../types";
   import ModelReorderModal from "./ModelReorderModal.svelte";
   import { flip } from "svelte/animate";
@@ -254,7 +255,8 @@
     formError = null;
 
     try {
-      const upload = await uploadFile(file);
+      const resized = await resizeImageForIcon(file, 256);
+      const upload = await uploadFile(resized, null, "icon");
       formIcon = serveUploadUrl(upload.id);
     } catch (err) {
       formError = err instanceof Error ? err.message : "Failed to upload icon.";
@@ -653,15 +655,15 @@
                   <button
                     type="button"
                     onclick={() => handleToggleHide(model)}
-                    disabled={model.isOffline}
+                    aria-label={model.isHidden
+                      ? `Unhide ${model.name || model.id}`
+                      : `Hide ${model.name || model.id}`}
                     class="flex h-7 w-7 items-center justify-center rounded-md transition-colors cursor-pointer {model.isHidden
                       ? 'text-accent'
-                      : 'text-fg-muted hover:bg-bg hover:text-fg'} disabled:opacity-30 disabled:pointer-events-none"
-                    title={model.isOffline
-                      ? "Backend unavailable (forced hidden)"
-                      : model.isHidden
-                        ? "Unhide model"
-                        : "Hide model from picker"}
+                      : 'text-fg-muted hover:bg-bg hover:text-fg'}"
+                    title={model.isHidden
+                      ? "Unhide model"
+                      : "Hide model from picker"}
                   >
                     {#if model.isHidden}
                       <EyeOff size={13} />

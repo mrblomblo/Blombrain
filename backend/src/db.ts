@@ -59,7 +59,7 @@ const migration1: Migration = {
         id              TEXT PRIMARY KEY,
         conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
         parent_id       TEXT REFERENCES messages(id) ON DELETE SET NULL,
-        role            TEXT NOT NULL CHECK(role IN ('system','user','assistant')),
+        role            TEXT NOT NULL CHECK(role IN ('system','user','assistant','tool')),
         content         TEXT NOT NULL DEFAULT '',
         error           TEXT,
         stats           TEXT,
@@ -86,7 +86,6 @@ const migration1: Migration = {
         icon              TEXT,
         seed              INTEGER,
         reasoning_effort  TEXT,
-        thinking          INTEGER NOT NULL DEFAULT 0,
         max_tokens        INTEGER,
         top_k             INTEGER,
         top_p             REAL,
@@ -170,16 +169,17 @@ const migration1: Migration = {
       INSERT OR IGNORE INTO global_settings (id, user_name, user_avatar, theme)
       VALUES ('default', 'You', NULL, 'autumn');
 
-      -- Ensure attachments table exists (missing from original exec block)
+      -- Ensure attachments table exists (conversation_id is nullable for staging/icons/avatars)
       CREATE TABLE IF NOT EXISTS attachments (
         id              TEXT PRIMARY KEY,
-        conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
         message_id      TEXT REFERENCES messages(id) ON DELETE SET NULL,
         original_name   TEXT NOT NULL,
         mime_type       TEXT NOT NULL,
         disk_path       TEXT NOT NULL,
         size_bytes      INTEGER NOT NULL,
-        created_at      INTEGER NOT NULL
+        created_at      INTEGER NOT NULL,
+        purpose         TEXT NOT NULL DEFAULT 'attachment'
       );
 
       CREATE INDEX IF NOT EXISTS idx_attachments_conv ON attachments(conversation_id);
@@ -191,7 +191,6 @@ const migration1: Migration = {
       { name: "icon", type: "TEXT" },
       { name: "seed", type: "INTEGER" },
       { name: "reasoning_effort", type: "TEXT" },
-      { name: "thinking", type: "INTEGER NOT NULL DEFAULT 0" },
       { name: "max_tokens", type: "INTEGER" },
       { name: "top_k", type: "INTEGER" },
       { name: "top_p", type: "REAL" },
@@ -331,20 +330,118 @@ const migration2: Migration = {
   }
 };
 
-const migrations: Migration[] = [migration1, migration2];
+const migration3: Migration = {
+  version: 3,
+  description: "Allow 'tool' role in messages CHECK constraint, drop dead model_settings.thinking column, make attachments.conversation_id nullable with purpose column, and add disabled_builtin_tools",
+  run: () => {
+    // 1. Recreate messages table with 'tool' included in role CHECK constraint
+    db.exec(`
+      CREATE TABLE messages_new (
+        id              TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        parent_id       TEXT REFERENCES messages_new(id) ON DELETE SET NULL,
+        role            TEXT NOT NULL CHECK(role IN ('system','user','assistant','tool')),
+        content         TEXT NOT NULL DEFAULT '',
+        error           TEXT,
+        stats           TEXT,
+        model           TEXT,
+        tool_calls      TEXT,
+        tool_call_id    TEXT,
+        created_at      INTEGER NOT NULL
+      );
+
+      INSERT INTO messages_new (id, conversation_id, parent_id, role, content, error, stats, model, tool_calls, tool_call_id, created_at)
+      SELECT id, conversation_id, parent_id, role, content, error, stats, model, tool_calls, tool_call_id, created_at FROM messages;
+
+      DROP TABLE messages;
+      ALTER TABLE messages_new RENAME TO messages;
+
+      CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);
+    `);
+
+    // 2. Drop dead thinking column from model_settings if present
+    const modelCols = (db.pragma("table_info(model_settings)") as { name: string }[]).map((c) => c.name);
+    if (modelCols.includes("thinking")) {
+      try {
+        db.exec("ALTER TABLE model_settings DROP COLUMN thinking");
+      } catch {
+        // Ignore if SQLite version doesn't support DROP COLUMN
+      }
+    }
+
+    // 3. Recreate attachments table to ensure conversation_id is nullable and purpose column exists
+    const attachCols = (db.pragma("table_info(attachments)") as { name: string }[]).map((c) => c.name);
+    const hasPurpose = attachCols.includes("purpose");
+    db.exec(`
+      CREATE TABLE attachments_new (
+        id              TEXT PRIMARY KEY,
+        conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
+        message_id      TEXT REFERENCES messages(id) ON DELETE SET NULL,
+        original_name   TEXT NOT NULL,
+        mime_type       TEXT NOT NULL,
+        disk_path       TEXT NOT NULL,
+        size_bytes      INTEGER NOT NULL,
+        created_at      INTEGER NOT NULL,
+        purpose         TEXT NOT NULL DEFAULT 'attachment'
+      );
+
+      INSERT INTO attachments_new (id, conversation_id, message_id, original_name, mime_type, disk_path, size_bytes, created_at, purpose)
+      SELECT id, conversation_id, message_id, original_name, mime_type, disk_path, size_bytes, created_at, ${hasPurpose ? "COALESCE(purpose, 'attachment')" : "'attachment'"} FROM attachments;
+
+      DROP TABLE attachments;
+      ALTER TABLE attachments_new RENAME TO attachments;
+
+      CREATE INDEX IF NOT EXISTS idx_attachments_conv ON attachments(conversation_id);
+      CREATE INDEX IF NOT EXISTS idx_attachments_msg  ON attachments(message_id);
+    `);
+
+    // Backfill purpose for existing model icons and user avatars
+    db.exec(`
+      UPDATE attachments
+      SET purpose = 'icon'
+      WHERE id IN (
+        SELECT REPLACE(icon, '/api/uploads/', '')
+        FROM model_settings
+        WHERE icon IS NOT NULL
+      );
+
+      UPDATE attachments
+      SET purpose = 'avatar'
+      WHERE id IN (
+        SELECT REPLACE(user_avatar, '/api/uploads/', '')
+        FROM global_settings
+        WHERE user_avatar IS NOT NULL
+      );
+    `);
+
+    // 4. Add disabled_builtin_tools to global_settings
+    const gsCols = (db.pragma("table_info(global_settings)") as { name: string }[]).map((c) => c.name);
+    if (!gsCols.includes("disabled_builtin_tools")) {
+      db.exec(`ALTER TABLE global_settings ADD COLUMN disabled_builtin_tools TEXT NOT NULL DEFAULT '[]'`);
+    }
+  },
+};
+
+const migrations: Migration[] = [migration1, migration2, migration3];
 
 const currentVersion = db.pragma("user_version", { simple: true }) as number;
 
-// Run migrations sequentially within a transaction
+// Run migrations sequentially within a transaction (with foreign_keys temporarily disabled during table rebuilds)
 for (const migration of migrations) {
   if (currentVersion < migration.version) {
     console.log(`[db] Running migration V${migration.version}: ${migration.description}...`);
-    const tx = db.transaction(() => {
-      migration.run();
-      db.pragma(`user_version = ${migration.version}`);
-    });
-    tx();
-    console.log(`[db] Migration V${migration.version} complete.`);
+    db.pragma("foreign_keys = OFF");
+    try {
+      const tx = db.transaction(() => {
+        migration.run();
+        db.pragma(`user_version = ${migration.version}`);
+      });
+      tx();
+      console.log(`[db] Migration V${migration.version} complete.`);
+    } finally {
+      db.pragma("foreign_keys = ON");
+    }
   }
 }
 

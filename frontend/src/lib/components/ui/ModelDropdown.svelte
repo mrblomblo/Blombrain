@@ -40,7 +40,8 @@
     allModels
       .filter((m) => {
         if (filterPresets && m.isPreset) return false;
-        if (m.isHidden && m.id !== value) return false;
+        if ((m.isHidden || m.isOffline || m.isOrphaned) && m.id !== value)
+          return false;
         return true;
       })
       .map((m) => ({

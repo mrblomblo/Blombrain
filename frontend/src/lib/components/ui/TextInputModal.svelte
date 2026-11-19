@@ -26,16 +26,12 @@
     onclose,
   }: Props = $props();
 
-  let inputEl = $state<HTMLInputElement | null>(null);
-
-  $effect(() => {
-    if (isOpen) {
-      setTimeout(() => {
-        inputEl?.focus();
-        inputEl?.select();
-      }, 50);
-    }
-  });
+  function focusAndSelect(node: HTMLInputElement) {
+    requestAnimationFrame(() => {
+      node.focus();
+      node.select();
+    });
+  }
 
   function handleSubmit(e?: SubmitEvent | MouseEvent) {
     e?.preventDefault();
@@ -43,7 +39,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && !e.isComposing) {
       handleSubmit();
     }
   }
@@ -61,7 +57,7 @@
     {/if}
     <input
       id="text-input-modal-field"
-      bind:this={inputEl}
+      use:focusAndSelect
       type="text"
       bind:value
       {placeholder}

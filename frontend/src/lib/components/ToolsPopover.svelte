@@ -2,7 +2,14 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { fetchMcpServers, fetchSkills } from "../api";
   import { chatStore } from "../stores/chat.svelte";
-  import { Server, BookOpen, Wrench, CheckSquare, Square } from "@lucide/svelte";
+  import {
+    Server,
+    BookOpen,
+    Wrench,
+    CheckSquare,
+    Square,
+    Pin,
+  } from "@lucide/svelte";
   import { slide } from "svelte/transition";
   import ToggleSwitch from "./ui/ToggleSwitch.svelte";
 
@@ -54,9 +61,15 @@
     if (wrapperEl && e.composedPath().includes(wrapperEl)) return;
     isOpen = false;
   }
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (isOpen && e.key === "Escape") {
+      isOpen = false;
+    }
+  }
 </script>
 
-<svelte:document onclick={handleOutsideClick} />
+<svelte:document onclick={handleOutsideClick} onkeydown={handleKeydown} />
 
 <div bind:this={wrapperEl} class="relative">
   <!-- Trigger Button (same style as the paperclip) -->
@@ -64,8 +77,11 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <button
+      type="button"
       onclick={toggleOpen}
       aria-label="Manage MCP servers & skills"
+      aria-haspopup="dialog"
+      aria-expanded={isOpen}
       title="Manage tools & skills for this conversation"
       class="inline-flex items-center justify-center rounded-md border text-fg h-8 w-8 text-xs shrink-0 p-0 transition-colors duration-200 cursor-pointer disabled:opacity-40 select-none focus-visible:border-none"
       class:border-line={!isOpen}
@@ -123,6 +139,7 @@
           </p>
           {#each enabledMcps as server (server.id)}
             {@const excluded = chatStore.conversationExcludedMcps.includes(server.id)}
+            {@const forced = chatStore.conversationForcedTools.includes(`mcp:${server.id}`)}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
@@ -144,6 +161,27 @@
                 <p class="text-xs font-medium text-fg truncate">{server.name}</p>
                 <p class="text-[10px] text-fg-subtle font-mono truncate">{server.commandOrUrl}</p>
               </div>
+              {#if !excluded}
+                <button
+                  type="button"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    chatStore.toggleForcedTool(`mcp:${server.id}`);
+                  }}
+                  aria-label={forced
+                    ? `Unpin ${server.name}`
+                    : `Pin ${server.name} to always include in tool routing`}
+                  aria-pressed={forced}
+                  title={forced
+                    ? "Pinned (always included, bypasses router filter)"
+                    : "Pin to always include"}
+                  class="flex h-5 w-5 items-center justify-center rounded transition-colors cursor-pointer {forced
+                    ? 'text-accent bg-accent/15'
+                    : 'text-fg-subtle hover:text-fg hover:bg-bg'}"
+                >
+                  <Pin size={11} />
+                </button>
+              {/if}
               {#if server.status === "connected"}
                 <span class="h-1.5 w-1.5 rounded-full bg-success shrink-0"></span>
               {:else if server.status === "error"}
@@ -162,6 +200,7 @@
           </p>
           {#each enabledSkills as skill (skill.id)}
             {@const excluded = chatStore.conversationExcludedSkills.includes(skill.id)}
+            {@const forced = chatStore.conversationForcedTools.includes(`skill:${skill.id}`)}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
@@ -183,6 +222,27 @@
                 <p class="text-xs font-medium text-fg truncate">{skill.name}</p>
                 <p class="text-[10px] text-fg-subtle truncate">{skill.description}</p>
               </div>
+              {#if !excluded}
+                <button
+                  type="button"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    chatStore.toggleForcedTool(`skill:${skill.id}`);
+                  }}
+                  aria-label={forced
+                    ? `Unpin ${skill.name}`
+                    : `Pin ${skill.name} to always include in tool routing`}
+                  aria-pressed={forced}
+                  title={forced
+                    ? "Pinned (always included, bypasses router filter)"
+                    : "Pin to always include"}
+                  class="flex h-5 w-5 items-center justify-center rounded transition-colors cursor-pointer {forced
+                    ? 'text-accent bg-accent/15'
+                    : 'text-fg-subtle hover:text-fg hover:bg-bg'}"
+                >
+                  <Pin size={11} />
+                </button>
+              {/if}
             </div>
           {/each}
         {/if}

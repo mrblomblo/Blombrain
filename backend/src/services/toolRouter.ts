@@ -14,17 +14,77 @@ export interface ToolRoutingResult {
   selectedBuiltInTools: BuiltInToolDefinition[];
 }
 
-export function parseRouterOutput(text: string): { tools: string[]; skills: string[] } {
-  // Strip markdown code fences if present
-  let cleaned = text.replace(/```(?:json)?([\s\S]*?)```/gi, "$1").trim();
+/**
+ * Extracts balanced `{ ... }` JSON object candidates from a string, ignoring braces inside string literals.
+ */
+function extractBalancedJsonObjects(str: string): string[] {
+  const results: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escapeNext = false;
 
-  // Match first JSON object in text
-  const match = cleaned.match(/\{[\s\S]*\}/);
-  if (match) {
-    cleaned = match[0];
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    if (ch === "\\") {
+      if (inString) escapeNext = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        results.push(str.slice(start, i + 1));
+        start = -1;
+      } else if (depth < 0) {
+        depth = 0;
+        start = -1;
+      }
+    }
+  }
+  return results;
+}
+
+export function parseRouterOutput(text: string): { tools: string[]; skills: string[] } {
+  // 1. Strip any thinking/reasoning blocks first so braces inside <think> never pollute extraction
+  let cleaned = text
+    .replace(/<(?:think|thought|reason|reasoning)>[\s\S]*?<\/(?:think|thought|reason|reasoning)>/gi, "")
+    .replace(/^[\s\S]*?<\/(?:think|thought|reason|reasoning)>/i, "")
+    .trim();
+
+  // 2. If there is an unclosed <think> tag, strip from it to the end unless JSON follows
+  cleaned = cleaned.replace(/```(?:json)?([\s\S]*?)```/gi, "$1").trim();
+
+  // 3. Try balanced JSON candidates from last to first
+  const candidates = extractBalancedJsonObjects(cleaned);
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const candidate = candidates[i].replace(/,\s*([\]}])/g, "$1");
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && ("tools" in parsed || "skills" in parsed)) {
+        const tools = Array.isArray(parsed.tools) ? parsed.tools.map((t: any) => String(t)) : [];
+        const skills = Array.isArray(parsed.skills) ? parsed.skills.map((s: any) => String(s)) : [];
+        return { tools, skills };
+      }
+    } catch { }
   }
 
-  const parsed = JSON.parse(cleaned);
+  // 4. Fallback direct parse after cleaning trailing commas
+  const fallbackMatch = cleaned.match(/\{[\s\S]*\}/);
+  const rawTarget = (fallbackMatch ? fallbackMatch[0] : cleaned).replace(/,\s*([\]}])/g, "$1");
+  const parsed = JSON.parse(rawTarget);
   const tools = Array.isArray(parsed.tools) ? parsed.tools.map((t: any) => String(t)) : [];
   const skills = Array.isArray(parsed.skills) ? parsed.skills.map((s: any) => String(s)) : [];
   return { tools, skills };
@@ -196,7 +256,7 @@ export function buildRecentContext(messages: any[], maxMessages = 4): string {
     text = text
       .replace(/<router_execution>[\s\S]*?<\/router_execution>/gi, "")
       .replace(/<tool_execution>[\s\S]*?<\/tool_execution>/gi, "")
-      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .replace(/<(?:think|thought|reason|reasoning)>[\s\S]*?<\/(?:think|thought|reason|reasoning)>/gi, "")
       .replace(/<artifact-card[^>]*>[\s\S]*?<\/artifact-card>/gi, "")
       .trim();
 
@@ -224,15 +284,22 @@ export async function routeToolsAndSkills(
   priorContext?: string,
   signal?: AbortSignal
 ): Promise<ToolRoutingResult> {
-  // Check global settings for tool_routing_mode, tool_routing_model, and network_tools_enabled
-  const settingsRow = db.prepare("SELECT tool_routing_mode, tool_routing_model, network_tools_enabled FROM global_settings LIMIT 1").get() as any;
+  // Check global settings for tool_routing_mode, tool_routing_model, network_tools_enabled, and disabled_builtin_tools
+  const settingsRow = db.prepare("SELECT tool_routing_mode, tool_routing_model, network_tools_enabled, disabled_builtin_tools FROM global_settings LIMIT 1").get() as any;
   const allowNetwork = !!settingsRow?.network_tools_enabled;
+  let disabledTools: string[] = [];
+  if (settingsRow?.disabled_builtin_tools) {
+    try {
+      const parsed = JSON.parse(settingsRow.disabled_builtin_tools);
+      if (Array.isArray(parsed)) disabledTools = parsed.map(String);
+    } catch { }
+  }
 
   const allMcpTools = await mcpManager.getAvailableTools(excludedMcps);
   const allSkills = getAllSkills(excludedSkills).filter((s) => s.isEnabled);
   const allBuiltInTools = builtInToolRegistry.getAvailableTools(
     { activeSkills: allSkills },
-    { allowNetwork }
+    { allowNetwork, disabledTools }
   );
 
   const toolsCatalog = [
@@ -327,7 +394,11 @@ ${JSON.stringify(skillsCatalog, null, 2)}`;
 
     // Filter tools & skills, ensuring forcedTools are ALWAYS included
     const selectedMcpTools = allMcpTools.filter(
-      (t) => selectedToolNames.includes(t.name) || forceTools.includes(t.name)
+      (t) =>
+        selectedToolNames.includes(t.name) ||
+        forceTools.includes(t.name) ||
+        forceTools.includes(t.serverId) ||
+        forceTools.includes(`mcp:${t.serverId}`)
     );
 
     const selectedBuiltInTools = allBuiltInTools.filter(
@@ -335,7 +406,11 @@ ${JSON.stringify(skillsCatalog, null, 2)}`;
     );
 
     const selectedSkills = allSkills.filter(
-      (s) => selectedSkillNames.includes(s.name) || forceTools.includes(s.name)
+      (s) =>
+        selectedSkillNames.includes(s.name) ||
+        forceTools.includes(s.name) ||
+        forceTools.includes(s.id) ||
+        forceTools.includes(`skill:${s.id}`)
     );
 
     console.log(
@@ -356,6 +431,7 @@ ${JSON.stringify(skillsCatalog, null, 2)}`;
       };
     }
     console.warn("[toolRouter] LLM pre-pass failed, failing open with all tools/skills:", err);
+    onToken?.(`\n${JSON.stringify({ fallback: true, tools: allMcpTools.map((t) => t.name), skills: allSkills.map((s) => s.name) })}`);
     return {
       mcpTools: allMcpTools,
       selectedSkills: allSkills,

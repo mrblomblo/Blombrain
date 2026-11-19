@@ -196,7 +196,7 @@
               </span>
             {/key}
             <span
-              class="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle1"
+              class="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
             >
               {b.prefix}:
             </span>

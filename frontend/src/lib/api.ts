@@ -12,6 +12,7 @@ import type {
   AttachmentOut,
   McpServerInfo,
   McpServerWriteBody,
+  BuiltInToolInfo,
   SkillInfo,
   SkillWriteBody,
   ModelSettingWriteBody,
@@ -99,6 +100,16 @@ export async function updateMcpServer(id: string, data: McpServerWriteBody): Pro
 export async function deleteMcpServer(id: string): Promise<void> {
   const res = await apiFetch(`/api/mcp/${encodeURIComponent(id)}`, { method: "DELETE" });
   await jsonOrThrow<{ success: boolean }>(res);
+}
+export async function reconnectMcpServer(id: string): Promise<McpServerInfo> {
+  const res = await apiFetch(`/api/mcp/${encodeURIComponent(id)}/reconnect`, {
+    method: "POST",
+  });
+  return jsonOrThrow<McpServerInfo>(res);
+}
+export async function fetchBuiltInTools(): Promise<BuiltInToolInfo[]> {
+  const res = await apiFetch("/api/builtin-tools");
+  return jsonOrThrow<BuiltInToolInfo[]>(res);
 }
 
 // ---------------------------------------------------------------------------
@@ -192,10 +203,18 @@ export async function updateModelOrder(orders: Array<{ id: string; sortOrder: nu
 // ---------------------------------------------------------------------------
 // Uploads
 // ---------------------------------------------------------------------------
-export async function uploadFile(file: File, conversationId?: string | null): Promise<AttachmentOut> {
+export async function uploadFile(
+  file: File,
+  conversationId?: string | null,
+  purpose?: "attachment" | "avatar" | "icon",
+): Promise<AttachmentOut> {
   const formData = new FormData();
   formData.append("file", file);
-  const url = conversationId ? `/api/uploads?conversationId=${encodeURIComponent(conversationId)}` : "/api/uploads";
+  const params = new URLSearchParams();
+  if (conversationId) params.set("conversationId", conversationId);
+  if (purpose) params.set("purpose", purpose);
+  const qs = params.toString();
+  const url = qs ? `/api/uploads?${qs}` : "/api/uploads";
   const res = await apiFetch(url, { method: "POST", body: formData });
   return jsonOrThrow<AttachmentOut>(res);
 }
@@ -203,8 +222,16 @@ export async function deleteUpload(id: string): Promise<void> {
   const res = await apiFetch(`/api/uploads/${encodeURIComponent(id)}`, { method: "DELETE" });
   await jsonOrThrow<{ success: boolean }>(res);
 }
-export function serveUploadUrl(id: string): string {
-  return `/api/uploads/${encodeURIComponent(id)}`;
+export function serveUploadUrl(id: string, download = false): string {
+  return `/api/uploads/${encodeURIComponent(id)}${download ? "?download=1" : ""}`;
+}
+export async function fetchUploadText(id: string): Promise<{
+  text: string;
+  isBinary: boolean;
+  format: "code" | "text" | "pdf" | "docx" | "binary";
+}> {
+  const res = await apiFetch(`/api/uploads/${encodeURIComponent(id)}/text`);
+  return jsonOrThrow(res);
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +278,11 @@ export async function deleteConversation(id: string): Promise<void> {
     const body = await res.text().catch(() => "");
     throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
   }
+  if (typeof localStorage !== "undefined") {
+    try {
+      localStorage.removeItem(`blombrain_branches_${id}`);
+    } catch { }
+  }
 }
 export async function patchMessage(convId: string, msgId: string, content: string, attachmentIds?: string[]): Promise<MessageOut> {
   const res = await apiFetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}`, {
@@ -283,17 +315,19 @@ export async function branchMessage(convId: string, msgId: string, content: stri
 // ---------------------------------------------------------------------------
 export interface StreamChatOptions {
   model: string;
-  messages: Pick<ChatMessage, "role" | "content">[];
+  messages: Array<Pick<ChatMessage, "role" | "content"> & { id?: string; attachments?: string[] }>;
   temperature?: number;
   conversationId?: string | null;
   userMessageId?: string;
   userParentId?: string | null;
   assistantMessageId?: string;
   isContinue?: boolean;
+  isReconnect?: boolean;
   attachmentIds?: string[];
   toolsEnabled?: boolean;
   excludedMcps?: string[];
   excludedSkills?: string[];
+  forcedTools?: string[];
   signal?: AbortSignal;
   onToken: (delta: string) => void;
   onMeta: (meta: {
@@ -351,10 +385,12 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
         userParentId,
         assistantMessageId,
         isContinue,
+        isReconnect: opts.isReconnect,
         attachments: attachmentIds,
         toolsEnabled: opts.toolsEnabled,
         excludedMcps: opts.excludedMcps,
         excludedSkills: opts.excludedSkills,
+        forcedTools: opts.forcedTools,
         stream: true,
       }),
       signal,
@@ -550,6 +586,7 @@ export interface GlobalSettingsOut {
   reasoningInjectionMode: ReasoningInjectionMode;
   networkToolsEnabled: boolean;
   artifactNetworkEnabled: boolean;
+  disabledBuiltInTools: string[];
 }
 
 export async function fetchGlobalSettings(): Promise<GlobalSettingsOut> {
@@ -569,6 +606,7 @@ export async function updateGlobalSettings(
     reasoningInjectionMode: ReasoningInjectionMode;
     networkToolsEnabled: boolean;
     artifactNetworkEnabled: boolean;
+    disabledBuiltInTools: string[];
     password?: string;
   }>,
 ): Promise<GlobalSettingsOut> {
