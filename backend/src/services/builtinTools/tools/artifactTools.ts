@@ -5,7 +5,7 @@ import db, { DATA_DIR } from "../../../db.js";
 import type { BuiltInToolDefinition, BuiltInToolContext } from "../types.js";
 import type { ArtifactRow, AttachmentRow } from "../../../types.js";
 import { resolveSandboxedPath } from "./artifactUtils.js";
-import { extractDocumentText } from "../../documentExtractor.js";
+import { extractDocumentTextAsync } from "../../documentExtractor.js";
 
 function getLanguageFromFilename(filename: string): string {
   const ext = path.extname(filename).toLowerCase();
@@ -243,7 +243,7 @@ export const readFileToolDef: BuiltInToolDefinition = {
 
     try {
       const MAX_SIZE = 200 * 1024; // 200 KB cap
-      const extracted = extractDocumentText(
+      const extracted = await extractDocumentTextAsync(
         resolved.diskPath,
         filename,
         resolved.attachmentRow?.mime_type || "text/plain",
@@ -404,7 +404,7 @@ export const findInFileToolDef: BuiltInToolDefinition = {
     if (!resolved) return { content: `Error: File '${filename}' not found.`, isError: true };
 
     try {
-      const extracted = extractDocumentText(
+      const extracted = await extractDocumentTextAsync(
         resolved.diskPath,
         filename,
         resolved.attachmentRow?.mime_type || "text/plain"

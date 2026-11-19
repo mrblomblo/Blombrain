@@ -1,0 +1,11 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
+  "identifier": "default",
+  "description": "Default capability for Blombrain desktop window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "dialog:default"
+  ]
+}

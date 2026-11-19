@@ -15,3 +15,18 @@ backend/data/
 # Editor/OS cruft
 .DS_Store
 *.log
+
+# Desktop / Tauri / SEA build artifacts
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+src-tauri/resources/native/*
+!src-tauri/resources/native/.gitkeep
+src-tauri/resources/frontend/
+src-tauri/resources/LICENSES.md
+backend/dist/bundle.cjs
+backend/dist/sea-prep.blob
+backend/dist/sea-config.json
+*.AppImage
+*.deb

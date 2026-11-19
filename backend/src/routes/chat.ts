@@ -9,7 +9,7 @@ import db, { DATA_DIR } from "../db.js";
 import type { ArtifactRow, AttachmentRow, MessageRow, ModelSettingRow, SlashToolSelection } from "../types.js";
 import { getAdapter } from "../adapters/index.js";
 import { mcpManager } from "../services/mcp.js";
-import { extractDocumentText } from "../services/documentExtractor.js";
+import { extractDocumentTextAsync } from "../services/documentExtractor.js";
 
 interface ChatCompletionBody {
   model: string;
@@ -1178,7 +1178,7 @@ export async function chatRoutes(app: FastifyInstance) {
       return "wav";
     }
 
-    function applyAttachmentsToUserMessage(targetMsg: any, rows: AttachmentRow[]) {
+    async function applyAttachmentsToUserMessage(targetMsg: any, rows: AttachmentRow[]) {
       if (!targetMsg || rows.length === 0) return;
 
       const parts: any[] = [];
@@ -1200,7 +1200,7 @@ export async function chatRoutes(app: FastifyInstance) {
           parts.push({ type: "input_audio", input_audio: { data: base64, format: audioFormat } });
         } else {
           try {
-            const extracted = extractDocumentText(row.disk_path, row.original_name, row.mime_type);
+            const extracted = await extractDocumentTextAsync(row.disk_path, row.original_name, row.mime_type);
             if (extracted.isBinary) {
               parts.push({
                 type: "text",
@@ -1318,7 +1318,7 @@ export async function chatRoutes(app: FastifyInstance) {
       delete msg.attachments;
 
       if (collectedById.size > 0) {
-        applyAttachmentsToUserMessage(msg, Array.from(collectedById.values()));
+        await applyAttachmentsToUserMessage(msg, Array.from(collectedById.values()));
       }
 
       if (mentionedArtifacts.length > 0) {

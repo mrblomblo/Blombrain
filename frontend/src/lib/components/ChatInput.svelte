@@ -598,6 +598,12 @@
         ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
         : null;
 
+    if (settingsStore.sttProvider === "browser" && !SpeechRec) {
+      uploadError =
+        "Browser Web Speech API is unavailable in this environment. Configure a Local CLI or OpenAI-compatible STT provider in Settings -> Speech.";
+      return;
+    }
+
     if (settingsStore.sttProvider === "browser" && SpeechRec) {
       try {
         const rec = new SpeechRec();

@@ -143,3 +143,10 @@ export async function forceSync(): Promise<void> {
     syncModels().catch((err) => console.error("[blombrain] Background model sync failed:", err));
   }, SYNC_INTERVAL_MS);
 }
+
+export function stopModelSync(): void {
+  if (syncTimer) {
+    clearInterval(syncTimer);
+    syncTimer = null;
+  }
+}

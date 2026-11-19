@@ -1,16 +1,68 @@
 import Database from "better-sqlite3";
-import { mkdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { copyFileSync, cpSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { DATA_DIR, MIGRATE_FROM_DIR } from "./paths.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+export { DATA_DIR };
 
-export const DATA_DIR = process.env.BLOMBRAIN_DATA_DIR ?? path.join(__dirname, "..", "data");
 mkdirSync(DATA_DIR, { recursive: true });
 
 const DB_PATH = path.join(DATA_DIR, "blombrain.db");
 
-const db = new Database(DB_PATH);
+function copyLegacyDataIfNeeded(): string | null {
+  if (!MIGRATE_FROM_DIR || existsSync(DB_PATH)) {
+    return null;
+  }
+  if (path.resolve(MIGRATE_FROM_DIR) === path.resolve(DATA_DIR)) {
+    return null;
+  }
+  const srcDb = path.join(MIGRATE_FROM_DIR, "blombrain.db");
+  if (!existsSync(srcDb)) {
+    return null;
+  }
+
+  console.log(`[db] Migrating existing data from ${MIGRATE_FROM_DIR} to ${DATA_DIR}...`);
+  try {
+    copyFileSync(srcDb, DB_PATH);
+    for (const suffix of ["-wal", "-shm"]) {
+      const srcAux = srcDb + suffix;
+      if (existsSync(srcAux)) {
+        copyFileSync(srcAux, DB_PATH + suffix);
+      }
+    }
+    for (const dirName of ["uploads", "skills"]) {
+      const srcSub = path.join(MIGRATE_FROM_DIR, dirName);
+      const destSub = path.join(DATA_DIR, dirName);
+      if (existsSync(srcSub) && !existsSync(destSub)) {
+        cpSync(srcSub, destSub, { recursive: true });
+      }
+    }
+    return path.resolve(MIGRATE_FROM_DIR);
+  } catch (err) {
+    console.error("[db] Legacy data migration failed:", err);
+    return null;
+  }
+}
+
+function loadNativeSqliteAddon(): unknown | undefined {
+  const explicitBinding = process.env.BLOMBRAIN_SQLITE_BINDING;
+  if (!explicitBinding) {
+    return undefined;
+  }
+  const resolved = path.resolve(explicitBinding);
+  const addonModule = { exports: {} };
+  (process as unknown as { dlopen: (mod: { exports: unknown }, filename: string) => void }).dlopen(
+    addonModule,
+    resolved
+  );
+  return addonModule.exports;
+}
+
+const migratedFromRoot = copyLegacyDataIfNeeded();
+const nativeAddon = loadNativeSqliteAddon();
+const db = nativeAddon
+  ? new Database(DB_PATH, { nativeBinding: nativeAddon as any })
+  : new Database(DB_PATH);
 
 // WAL mode -- better concurrency for reads alongside long writes.
 db.pragma("journal_mode = WAL");
@@ -529,6 +581,62 @@ for (const migration of migrations) {
     } finally {
       db.pragma("foreign_keys = ON");
     }
+  }
+}
+
+if (migratedFromRoot) {
+  try {
+    const oldPrefix = migratedFromRoot.endsWith(path.sep)
+      ? migratedFromRoot
+      : migratedFromRoot + path.sep;
+    const newPrefix = path.resolve(DATA_DIR).endsWith(path.sep)
+      ? path.resolve(DATA_DIR)
+      : path.resolve(DATA_DIR) + path.sep;
+
+    const rewritePrefix = (p: string | null | undefined): string | null => {
+      if (!p) return null;
+      if (p === migratedFromRoot) return path.resolve(DATA_DIR);
+      if (p.startsWith(oldPrefix)) {
+        return newPrefix + p.slice(oldPrefix.length);
+      }
+      return p;
+    };
+
+    const tx = db.transaction(() => {
+      const atts = db.prepare("SELECT id, disk_path FROM attachments").all() as Array<{
+        id: string;
+        disk_path: string;
+      }>;
+      const updAtt = db.prepare("UPDATE attachments SET disk_path = ? WHERE id = ?");
+      for (const a of atts) {
+        const next = rewritePrefix(a.disk_path);
+        if (next && next !== a.disk_path) updAtt.run(next, a.id);
+      }
+
+      const arts = db.prepare("SELECT id, disk_path FROM artifacts").all() as Array<{
+        id: string;
+        disk_path: string;
+      }>;
+      const updArt = db.prepare("UPDATE artifacts SET disk_path = ? WHERE id = ?");
+      for (const a of arts) {
+        const next = rewritePrefix(a.disk_path);
+        if (next && next !== a.disk_path) updArt.run(next, a.id);
+      }
+
+      const sks = db.prepare("SELECT id, dir_path FROM skills WHERE dir_path IS NOT NULL").all() as Array<{
+        id: string;
+        dir_path: string;
+      }>;
+      const updSkill = db.prepare("UPDATE skills SET dir_path = ? WHERE id = ?");
+      for (const s of sks) {
+        const next = rewritePrefix(s.dir_path);
+        if (next && next !== s.dir_path) updSkill.run(next, s.id);
+      }
+    });
+    tx();
+    console.log(`[db] Rewrote stored attachment, artifact, and skill paths to ${DATA_DIR}.`);
+  } catch (err) {
+    console.error("[db] Failed to rewrite migrated file paths:", err);
   }
 }
 

@@ -274,6 +274,12 @@ class McpManager {
     this.toolsCache.delete(id);
   }
 
+  public stopAllServers() {
+    for (const id of Array.from(this.clients.keys())) {
+      this.stopServer(id);
+    }
+  }
+
   public async reconnectServer(id: string): Promise<McpServerOut | null> {
     this.stopServer(id);
     const row = this.getRawServerRow(id);

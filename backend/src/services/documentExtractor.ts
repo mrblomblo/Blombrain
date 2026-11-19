@@ -230,10 +230,21 @@ function extractPdfTextFallback(pdfBuf: Buffer): string | null {
   }
 }
 
+async function extractPdfTextWithUnpdf(fileBuf: Buffer): Promise<string | null> {
+  try {
+    const { extractText } = await import("unpdf");
+    const res = await extractText(new Uint8Array(fileBuf), { mergePages: true });
+    const text = typeof res?.text === "string" ? res.text.trim() : "";
+    return text.length > 0 ? text : null;
+  } catch {
+    return null;
+  }
+}
+
 export function extractPdfText(diskPath: string, fileBuf?: Buffer): string | null {
   // 1. Prefer poppler's pdftotext when available on the system
   try {
-    const out = execFileSync("pdftotext", ["-layout", "-nopgbrk", diskPath, "-"], {
+    const out = execFileSync(process.env.BLOMBRAIN_PDFTOTEXT_PATH || "pdftotext", ["-layout", "-nopgbrk", diskPath, "-"], {
       encoding: "utf-8",
       timeout: 10_000,
       maxBuffer: 10 * 1024 * 1024,
@@ -251,38 +262,47 @@ export function extractPdfText(diskPath: string, fileBuf?: Buffer): string | nul
   return extractPdfTextFallback(buf);
 }
 
+export async function extractPdfTextAsync(diskPath: string, fileBuf?: Buffer): Promise<string | null> {
+  try {
+    const out = execFileSync(process.env.BLOMBRAIN_PDFTOTEXT_PATH || "pdftotext", ["-layout", "-nopgbrk", diskPath, "-"], {
+      encoding: "utf-8",
+      timeout: 10_000,
+      maxBuffer: 10 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const trimmed = out.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  } catch {
+    // Fall through to bundled pure-JS unpdf extractor
+  }
+
+  const buf = fileBuf ?? fs.readFileSync(diskPath);
+  const unpdfText = await extractPdfTextWithUnpdf(buf);
+  if (unpdfText) {
+    return unpdfText;
+  }
+
+  return extractPdfTextFallback(buf);
+}
+
 export interface ExtractedDocumentResult {
   text: string;
   isBinary: boolean;
   format: "code" | "text" | "pdf" | "docx" | "binary";
 }
 
-export function extractDocumentText(
-  diskPath: string,
+function finalizeNonPdfDocument(
+  fileBuf: Buffer,
   originalName: string,
   mimeType: string,
-  maxChars = 200_000
+  maxChars: number
 ): ExtractedDocumentResult {
   const lowerName = originalName.toLowerCase();
   const lowerMime = (mimeType || "").toLowerCase();
 
-  const fileBuf = fs.readFileSync(diskPath);
-
-  // 1. PDF
-  if (lowerName.endsWith(".pdf") || lowerMime === "application/pdf") {
-    const pdfText = extractPdfText(diskPath, fileBuf);
-    if (pdfText) {
-      const truncated = pdfText.length > maxChars ? pdfText.slice(0, maxChars) + "\n\n[TRUNCATED]" : pdfText;
-      return { text: truncated, isBinary: false, format: "pdf" };
-    }
-    return {
-      text: "",
-      isBinary: true,
-      format: "binary",
-    };
-  }
-
-  // 2. DOCX
+  // DOCX
   if (
     lowerName.endsWith(".docx") ||
     lowerMime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -299,7 +319,7 @@ export function extractDocumentText(
     };
   }
 
-  // 3. Check if buffer is binary
+  // Check if buffer is binary
   if (isBinaryBuffer(fileBuf)) {
     return {
       text: "",
@@ -308,7 +328,7 @@ export function extractDocumentText(
     };
   }
 
-  // 4. Plain text or source code
+  // Plain text or source code
   let rawText = fileBuf.toString("utf-8").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
   if (rawText.length > maxChars) {
     rawText = rawText.slice(0, maxChars) + "\n\n[TRUNCATED]";
@@ -322,4 +342,48 @@ export function extractDocumentText(
     isBinary: false,
     format: isCode ? "code" : "text",
   };
+}
+
+export function extractDocumentText(
+  diskPath: string,
+  originalName: string,
+  mimeType: string,
+  maxChars = 200_000
+): ExtractedDocumentResult {
+  const lowerName = originalName.toLowerCase();
+  const lowerMime = (mimeType || "").toLowerCase();
+  const fileBuf = fs.readFileSync(diskPath);
+
+  if (lowerName.endsWith(".pdf") || lowerMime === "application/pdf") {
+    const pdfText = extractPdfText(diskPath, fileBuf);
+    if (pdfText) {
+      const truncated = pdfText.length > maxChars ? pdfText.slice(0, maxChars) + "\n\n[TRUNCATED]" : pdfText;
+      return { text: truncated, isBinary: false, format: "pdf" };
+    }
+    return { text: "", isBinary: true, format: "binary" };
+  }
+
+  return finalizeNonPdfDocument(fileBuf, originalName, mimeType, maxChars);
+}
+
+export async function extractDocumentTextAsync(
+  diskPath: string,
+  originalName: string,
+  mimeType: string,
+  maxChars = 200_000
+): Promise<ExtractedDocumentResult> {
+  const lowerName = originalName.toLowerCase();
+  const lowerMime = (mimeType || "").toLowerCase();
+  const fileBuf = fs.readFileSync(diskPath);
+
+  if (lowerName.endsWith(".pdf") || lowerMime === "application/pdf") {
+    const pdfText = await extractPdfTextAsync(diskPath, fileBuf);
+    if (pdfText) {
+      const truncated = pdfText.length > maxChars ? pdfText.slice(0, maxChars) + "\n\n[TRUNCATED]" : pdfText;
+      return { text: truncated, isBinary: false, format: "pdf" };
+    }
+    return { text: "", isBinary: true, format: "binary" };
+  }
+
+  return finalizeNonPdfDocument(fileBuf, originalName, mimeType, maxChars);
 }

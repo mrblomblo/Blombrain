@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import fs from "node:fs";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import db from "../db.js";
 import type { GlobalSettingsRow, GlobalSettingsOut, GlobalSettingsWriteBody, AttachmentRow } from "../types.js";

@@ -6,7 +6,7 @@ import { pipeline } from "node:stream/promises";
 import db, { DATA_DIR } from "../db.js";
 import type { AttachmentOut, AttachmentRow } from "../types.js";
 import {
-  extractDocumentText,
+  extractDocumentTextAsync,
   isCodeOrTextFilename,
 } from "../services/documentExtractor.js";
 
@@ -209,7 +209,7 @@ export async function uploadsRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "File missing on disk" });
     }
 
-    const extracted = extractDocumentText(row.disk_path, row.original_name, row.mime_type);
+    const extracted = await extractDocumentTextAsync(row.disk_path, row.original_name, row.mime_type);
     return reply.send(extracted);
   });
 

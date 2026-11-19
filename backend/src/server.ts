@@ -1,5 +1,5 @@
-import { fileURLToPath } from "node:url";
 import path from "node:path";
+import crypto from "node:crypto";
 import { existsSync } from "node:fs";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
@@ -7,6 +7,7 @@ import fastifyStatic from "@fastify/static";
 import fastifyMultipart from "@fastify/multipart";
 import cookie from "@fastify/cookie";
 import db from "./db.js";
+import { FRONTEND_DIST } from "./paths.js";
 import { backendsRoutes } from "./routes/backends.js";
 import { modelsRoutes } from "./routes/models.js";
 import { chatRoutes } from "./routes/chat.js";
@@ -20,16 +21,40 @@ import { authRoutes } from "./routes/auth.js";
 import { memoriesRoutes } from "./routes/memories.js";
 import { backupRoutes } from "./routes/backup.js";
 import { speechRoutes } from "./routes/speech.js";
-import { initModelSync } from "./services/modelSync.js";
+import { initModelSync, stopModelSync } from "./services/modelSync.js";
 import { tryLoadSqliteVec } from "./services/memory.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { mcpManager } from "./services/mcp.js";
+import { speechResourceManager } from "./services/speech.js";
 
 // --- Configuration (env-overridable; sane defaults for local dev) ---------
 
 const PORT = Number(process.env.PORT ?? 4300);
 if (!Number.isFinite(PORT) || PORT <= 0) {
   throw new Error(`Invalid PORT: ${process.env.PORT}`);
+}
+
+const IS_DESKTOP = process.env.BLOMBRAIN_DESKTOP === "1";
+const LAUNCH_SECRET = process.env.BLOMBRAIN_LAUNCH_SECRET || "";
+const DESKTOP_COOKIE_TOKEN = LAUNCH_SECRET
+  ? crypto.randomBytes(32).toString("hex")
+  : "";
+
+function safeTokenEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+function isAllowedDesktopHost(hostHeader: string | undefined): boolean {
+  if (!hostHeader) return true;
+  const normalized = hostHeader.trim().toLowerCase();
+  return (
+    normalized === `127.0.0.1:${PORT}` ||
+    normalized === `localhost:${PORT}` ||
+    normalized === "127.0.0.1" ||
+    normalized === "localhost"
+  );
 }
 
 // Defaults to localhost-only. Set HOST=0.0.0.0 (or a specific LAN/tailscale address)
@@ -77,11 +102,46 @@ async function main() {
   });
   await app.register(cookie);
 
+  app.get("/api/health", async (_req, reply) => {
+    return reply.send({ ok: true, desktop: IS_DESKTOP });
+  });
+
   app.addHook("onRequest", async (req, reply) => {
-    const url = req.raw.url ?? "";
-    if (!url.startsWith("/api")) return;
-    if (url.startsWith("/api/auth/")) return;
-    if (url.startsWith("/api/instance-info")) return;
+    const rawUrl = req.raw.url ?? "";
+
+    if (IS_DESKTOP && !isAllowedDesktopHost(req.headers.host)) {
+      return reply.code(403).send({ error: { message: "Forbidden host header" } });
+    }
+
+    if (LAUNCH_SECRET && !rawUrl.startsWith("/api")) {
+      const qIdx = rawUrl.indexOf("?");
+      if (qIdx !== -1) {
+        const params = new URLSearchParams(rawUrl.slice(qIdx + 1));
+        const supplied = params.get("launch");
+        if (supplied && safeTokenEqual(supplied, LAUNCH_SECRET)) {
+          reply.setCookie("blombrain_launch", DESKTOP_COOKIE_TOKEN, {
+            path: "/",
+            httpOnly: true,
+            sameSite: "lax",
+            maxAge: 60 * 60 * 24 * 30,
+          });
+          return reply.redirect("/");
+        }
+      }
+    }
+
+    if (!rawUrl.startsWith("/api")) return;
+    if (rawUrl === "/api/health" || rawUrl.startsWith("/api/health?")) return;
+
+    if (LAUNCH_SECRET) {
+      const launchCookie = req.cookies?.blombrain_launch;
+      if (!launchCookie || !safeTokenEqual(launchCookie, DESKTOP_COOKIE_TOKEN)) {
+        return reply.code(401).send({ error: { message: "Desktop launch session required" } });
+      }
+    }
+
+    if (rawUrl.startsWith("/api/auth/")) return;
+    if (rawUrl.startsWith("/api/instance-info")) return;
 
     const row = db
       .prepare<[string], { password_hash: string | null }>(
@@ -133,9 +193,7 @@ async function main() {
   // whole app can run as a single process. During `npm run dev` this
   // directory won't exist yet -- Vite's dev server handles the frontend
   // instead and proxies /api to us (see frontend/vite.config.ts).
-  const frontendDist =
-    process.env.FRONTEND_DIST ??
-    path.join(__dirname, "..", "..", "frontend", "dist");
+  const frontendDist = FRONTEND_DIST;
   if (existsSync(frontendDist)) {
     await app.register(fastifyStatic, { root: frontendDist });
     app.setNotFoundHandler((req, reply) => {
@@ -152,7 +210,47 @@ async function main() {
     );
   }
 
+  let isShuttingDown = false;
+  const gracefulShutdown = async (reason: string) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    app.log.info(`Shutting down Blombrain backend (${reason})...`);
+
+    const forceTimer = setTimeout(() => {
+      process.exit(0);
+    }, 2500);
+    forceTimer.unref();
+
+    try { stopModelSync(); } catch { }
+    try { mcpManager.stopAllServers(); } catch { }
+    try { await speechResourceManager.eject("all"); } catch { }
+    try { await app.close(); } catch { }
+    try {
+      db.pragma("wal_checkpoint(TRUNCATE)");
+      db.close();
+    } catch { }
+
+    process.exit(0);
+  };
+
+  process.on("SIGTERM", () => { void gracefulShutdown("SIGTERM"); });
+  process.on("SIGINT", () => { void gracefulShutdown("SIGINT"); });
+
+  if (process.env.BLOMBRAIN_PARENT_WATCH === "1") {
+    process.stdin.resume();
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk: string) => {
+      if (chunk.includes("__BLOMBRAIN_SHUTDOWN__")) {
+        void gracefulShutdown("parent shutdown command");
+      }
+    });
+    process.stdin.on("end", () => {
+      void gracefulShutdown("parent stdin closed");
+    });
+  }
+
   await app.listen({ port: PORT, host: HOST });
+  process.stdout.write(`BLOMBRAIN_READY port=${PORT}\n`);
 }
 
 main().catch((err) => {
