@@ -32,6 +32,7 @@
   --important: #a86ea4;
   --important-fg: #1a1815;
   --shadow: rgba(0, 0, 0, 0.45);
+  --overlay: color-mix(in srgb, var(--bg-inset) 78%, transparent);
 }
 
 [data-theme="autumn"] {
@@ -58,6 +59,7 @@
   --important: #a86ea4;
   --important-fg: #1a1815;
   --shadow: rgba(0, 0, 0, 0.45);
+  --overlay: color-mix(in srgb, var(--bg-inset) 78%, transparent);
 }
 
 /* 
@@ -364,6 +366,7 @@
   --color-info-fg: var(--info-fg);
   --color-important: var(--important);
   --color-important-fg: var(--important-fg);
+  --color-overlay: var(--overlay);
 
   --font-sans: "Ubuntu", -apple-system, "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -646,4 +649,69 @@ select,
 
 .blombrain-logo .svg-accent {
   fill: var(--accent);
+}
+
+/* Theme-driven highlight.js syntax tokens (0 hardcoded colors) */
+.hljs {
+  color: var(--fg);
+  background: transparent;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--fg-subtle);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-meta .hljs-keyword,
+.hljs-doctag,
+.hljs-section {
+  color: var(--important);
+  font-weight: 500;
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attribute,
+.hljs-meta .hljs-string {
+  color: var(--success);
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag .hljs-attr,
+.hljs-type,
+.hljs-params {
+  color: var(--warning);
+}
+
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.function_,
+.hljs-function .hljs-title,
+.hljs-built_in,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link {
+  color: var(--info);
+}
+
+.hljs-deletion,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: var(--danger);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 700;
 }

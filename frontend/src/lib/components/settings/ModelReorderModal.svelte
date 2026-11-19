@@ -156,7 +156,7 @@
     aria-label="Reorder Models"
     tabindex="-1"
     transition:fade={{ duration: 150 }}
-    class="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs focus:outline-hidden"
+    class="fixed inset-0 z-60 flex items-center justify-center bg-overlay backdrop-blur-xs focus:outline-hidden"
     onkeydown={handleKeydown}
   >
     <div

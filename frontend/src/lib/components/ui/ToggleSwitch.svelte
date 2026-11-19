@@ -38,8 +38,8 @@
 >
   <span
     aria-hidden="true"
-    class="pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-xs transition-transform duration-200 ease-in-out {checked
-      ? 'translate-x-3.5'
-      : 'translate-x-0.5'}"
+    class="pointer-events-none inline-block h-3 w-3 transform rounded-full shadow-xs transition-transform duration-200 ease-in-out {checked
+      ? 'translate-x-3.5 bg-accent-fg'
+      : 'translate-x-0.5 bg-fg'}"
   ></span>
 </button>

@@ -15,9 +15,12 @@
     ChevronDown,
     Download,
     Globe,
+    Trash2,
   } from "@lucide/svelte";
   import Markdown from "./Markdown.svelte";
   import ToggleSwitch from "./ui/ToggleSwitch.svelte";
+  import Dropdown from "./ui/Dropdown.svelte";
+  import { confirmStore } from "../stores/confirmStore.svelte";
 
   let viewMode = $state<"preview" | "code">("preview");
   let copied = $state(false);
@@ -261,16 +264,40 @@ document.addEventListener('submit', function(e) {
   <div
     class="flex min-h-13.25 shrink-0 items-center justify-between border-b border-line bg-bg-elevated px-4 py-2.5 z-30"
   >
-    <!-- Title & Language -->
+    <!-- Title & Language / Switcher -->
     <div class="flex items-center gap-2.5 min-w-0">
       <span
         class="text-xs font-mono font-bold uppercase px-2 py-0.5 rounded bg-bg-inset border border-line text-accent"
       >
         {artifactStore.language === "markdown" ? "md" : artifactStore.language}
       </span>
-      <h3 class="text-sm font-semibold text-fg truncate">
-        {artifactStore.title}
-      </h3>
+      {#if artifactStore.conversationArtifacts.length > 1}
+        <div class="min-w-40 max-w-64">
+          <Dropdown
+            value={artifactStore.activeId ?? undefined}
+            options={artifactStore.conversationArtifacts.map((a) => ({
+              label: `${a.title || a.filename} (${a.language})`,
+              value: a.id,
+            }))}
+            onchange={(id) => {
+              const target = artifactStore.conversationArtifacts.find((a) => a.id === id);
+              if (target) {
+                artifactStore.loadArtifact(
+                  target.id,
+                  target.conversationId,
+                  target.filename,
+                  target.title,
+                  target.language,
+                );
+              }
+            }}
+          />
+        </div>
+      {:else}
+        <h3 class="text-sm font-semibold text-fg truncate">
+          {artifactStore.title}
+        </h3>
+      {/if}
     </div>
 
     <!-- Toggle View Mode Switcher -->
@@ -382,11 +409,36 @@ document.addEventListener('submit', function(e) {
             <button
               type="button"
               onclick={handleDownload}
-              class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-fg hover:bg-bg-hover transition-colors"
+              class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-fg hover:bg-bg-hover transition-colors cursor-pointer"
             >
               <Download size={14} class="text-fg-muted" />
               <span>Download</span>
             </button>
+            {#if artifactStore.activeId}
+              <button
+                type="button"
+                onclick={async () => {
+                  showDownloadMenu = false;
+                  if (!artifactStore.activeId) return;
+                  const confirmed = await confirmStore.confirm({
+                    title: "Delete Artifact",
+                    message: `Are you sure you want to delete "${artifactStore.title || artifactStore.filename}"?`,
+                    confirmText: "Delete",
+                    confirmStyle: "danger",
+                    cancelText: "Cancel",
+                    cancelStyle: "ghost",
+                    cancelOutline: true,
+                  });
+                  if (confirmed && artifactStore.activeId) {
+                    await artifactStore.removeArtifact(artifactStore.activeId);
+                  }
+                }}
+                class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-danger hover:bg-bg-hover transition-colors cursor-pointer"
+              >
+                <Trash2 size={14} />
+                <span>Delete Artifact</span>
+              </button>
+            {/if}
           </div>
         {/if}
       </div>
@@ -470,7 +522,7 @@ document.addEventListener('submit', function(e) {
           title={artifactStore.title}
           srcdoc={srcDoc}
           sandbox="allow-scripts allow-forms"
-          class="h-full w-full border-0 bg-white"
+          class="h-full w-full border-0 bg-bg"
         ></iframe>
       {/if}
     {:else}

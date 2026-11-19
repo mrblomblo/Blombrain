@@ -11,12 +11,17 @@
     MoreHorizontal,
     Pencil,
     Search,
+    Pin,
+    Archive,
+    Download,
   } from "@lucide/svelte";
   import {
     fetchBackends,
     fetchConversations,
     deleteConversation,
     updateConversation,
+    searchConversations,
+    exportConversationUrl,
   } from "../api";
   import { chatStore } from "../stores/chat.svelte";
   import { confirmStore } from "../stores/confirmStore.svelte";
@@ -59,19 +64,77 @@
   let renameInputValue = $state("");
   let openDropdownId = $state<string | null>(null);
   let searchQuery = $state("");
+  let showArchived = $state(false);
   let visibleLimit = $state(40);
   let sidebarError = $state<string | null>(null);
 
+  const searchHitsQuery = createQuery(() => ({
+    queryKey: ["conversationSearch", searchQuery.trim(), showArchived],
+    queryFn: () => searchConversations(searchQuery.trim(), showArchived),
+    enabled: searchQuery.trim().length >= 2,
+    staleTime: 5_000,
+  }));
+
+  let snippetByConvId = $derived.by(() => {
+    const map = new Map<string, string>();
+    for (const hit of searchHitsQuery.data ?? []) {
+      if (!map.has(hit.conversationId) && hit.snippet) {
+        map.set(hit.conversationId, hit.snippet);
+      }
+    }
+    return map;
+  });
+
+  let archivedCount = $derived(
+    (convsQuery.data ?? []).filter((c) => c.isArchived).length,
+  );
+
   let filteredConversations = $derived.by(() => {
-    const list = convsQuery.data ?? [];
+    const list = (convsQuery.data ?? []).filter((c) =>
+      showArchived ? Boolean(c.isArchived) : !c.isArchived,
+    );
     const q = searchQuery.trim().toLowerCase();
     if (!q) return list;
-    return list.filter((c) => c.title.toLowerCase().includes(q));
+    const hitConvIds = new Set(
+      (searchHitsQuery.data ?? []).map((h) => h.conversationId),
+    );
+    return list.filter(
+      (c) => c.title.toLowerCase().includes(q) || hitConvIds.has(c.id),
+    );
   });
 
   let visibleConversations = $derived(
     filteredConversations.slice(0, visibleLimit),
   );
+
+  async function handleTogglePin(conv: ConversationSummary) {
+    try {
+      sidebarError = null;
+      await updateConversation(conv.id, { isPinned: !conv.isPinned });
+      await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    } catch (err) {
+      sidebarError = `Failed to pin conversation: ${(err as Error).message}`;
+    }
+  }
+
+  async function handleToggleArchive(conv: ConversationSummary) {
+    try {
+      sidebarError = null;
+      await updateConversation(conv.id, { isArchived: !conv.isArchived });
+      await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    } catch (err) {
+      sidebarError = `Failed to archive conversation: ${(err as Error).message}`;
+    }
+  }
+
+  function handleExportConversation(conv: ConversationSummary, format: "md" | "json") {
+    const a = document.createElement("a");
+    a.href = exportConversationUrl(conv.id, format);
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
 
   function handleSelectConv(conv: ConversationSummary) {
     if (chatStore.isStreaming) return;
@@ -261,13 +324,25 @@
         <p
           class="text-[11px] font-semibold tracking-wider text-fg-subtle uppercase"
         >
-          Conversations
+          {showArchived ? "Archived Chats" : "Conversations"}
         </p>
-        {#if (convsQuery.data ?? []).length > 0}
-          <span class="text-[10px] font-mono text-fg-subtle">
-            {(convsQuery.data ?? []).length}
-          </span>
-        {/if}
+        <div class="flex items-center gap-2">
+          {#if archivedCount > 0 || showArchived}
+            <button
+              type="button"
+              onclick={() => (showArchived = !showArchived)}
+              class="text-[10px] font-medium text-fg-subtle hover:text-accent transition-colors cursor-pointer"
+              title={showArchived ? "View active conversations" : "View archived conversations"}
+            >
+              {showArchived ? "Active" : `Archived (${archivedCount})`}
+            </button>
+          {/if}
+          {#if filteredConversations.length > 0}
+            <span class="text-[10px] font-mono text-fg-subtle">
+              {filteredConversations.length}
+            </span>
+          {/if}
+        </div>
       </div>
 
       {#if sidebarError}
@@ -349,7 +424,19 @@
                 onkeydown={(e) =>
                   !isDisabled && e.key === "Enter" && handleSelectConv(conv)}
               >
-                <span class="w-full truncate">{conv.title}</span>
+                <div class="flex flex-col min-w-0 w-full">
+                  <div class="flex items-center gap-1.5 min-w-0">
+                    {#if conv.isPinned}
+                      <Pin size={11} class="shrink-0 text-accent" />
+                    {/if}
+                    <span class="w-full truncate">{conv.title}</span>
+                  </div>
+                  {#if searchQuery.trim().length >= 2 && snippetByConvId.has(conv.id)}
+                    <span class="truncate text-[10px] text-fg-subtle mt-0.5">
+                      {snippetByConvId.get(conv.id)}
+                    </span>
+                  {/if}
+                </div>
                 <div
                   class="absolute right-0 top-0 bottom-0 flex items-center gap-1.5 pl-1.5 pr-2.5 rounded-r-lg transition-all duration-200 {isActive ||
                   isMenuOpen
@@ -386,7 +473,27 @@
                         openDropdownId = null;
                     }}
                     options={[
+                      {
+                        label: conv.isPinned ? "Unpin" : "Pin to Top",
+                        value: "pin",
+                        icon: Pin,
+                      },
                       { label: "Rename", value: "rename", icon: Pencil },
+                      {
+                        label: conv.isArchived ? "Unarchive" : "Archive",
+                        value: "archive",
+                        icon: Archive,
+                      },
+                      {
+                        label: "Export Markdown",
+                        value: "export_md",
+                        icon: Download,
+                      },
+                      {
+                        label: "Export JSON",
+                        value: "export_json",
+                        icon: Download,
+                      },
                       {
                         label: "Delete",
                         value: "delete",
@@ -395,7 +502,11 @@
                       },
                     ]}
                     onchange={(val) => {
-                      if (val === "rename") openRenameModal(conv);
+                      if (val === "pin") handleTogglePin(conv);
+                      else if (val === "rename") openRenameModal(conv);
+                      else if (val === "archive") handleToggleArchive(conv);
+                      else if (val === "export_md") handleExportConversation(conv, "md");
+                      else if (val === "export_json") handleExportConversation(conv, "json");
                       else if (val === "delete") handleDelete(conv);
                     }}
                     align="right"

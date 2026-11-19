@@ -1,5 +1,6 @@
 import { settingsStore } from "./settings.svelte";
-import { fetchArtifactContent } from "../api";
+import { fetchArtifactContent, fetchArtifacts, deleteArtifact } from "../api";
+import type { ArtifactInfo } from "../types";
 
 export interface ArtifactData {
   id: string;
@@ -23,6 +24,44 @@ class ArtifactStore {
   userClosedIds = $state(new Set<string>());
   networkAccess = $state(false);
   generatingArtifactId = $state<string | null>(null);
+  conversationArtifacts = $state<ArtifactInfo[]>([]);
+
+  async loadConversationArtifacts(conversationId: string | null) {
+    if (!conversationId) {
+      this.conversationArtifacts = [];
+      return;
+    }
+    try {
+      this.conversationArtifacts = await fetchArtifacts(conversationId);
+    } catch (err) {
+      console.error("Failed to load conversation artifacts:", err);
+    }
+  }
+
+  async removeArtifact(artifactId: string) {
+    try {
+      await deleteArtifact(artifactId);
+      this.conversationArtifacts = this.conversationArtifacts.filter((a) => a.id !== artifactId);
+      if (this.activeId === artifactId || this.artifactId === artifactId) {
+        if (this.conversationArtifacts.length > 0) {
+          const next = this.conversationArtifacts[0];
+          await this.loadArtifact(
+            next.id,
+            next.conversationId,
+            next.filename,
+            next.title,
+            next.language,
+          );
+        } else {
+          this.close();
+          this.activeId = null;
+          this.artifactId = null;
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete artifact:", err);
+    }
+  }
 
   openArtifact(data: ArtifactData, isGenerating: boolean = false) {
     if (data.id) {

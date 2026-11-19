@@ -13,7 +13,14 @@ import {
   patchConversationTools,
 } from "../api";
 import { encodeToWav } from "../audio";
-import type { ChatMessage, ConversationSummary, AttachmentOut } from "../types";
+import type {
+  ChatMessage,
+  ConversationSummary,
+  AttachmentOut,
+  ConversationSamplingOverrides,
+  ScratchpadEntryInfo,
+  SlashToolSelection,
+} from "../types";
 import { artifactStore } from "./artifact.svelte";
 import { settingsStore } from "./settings.svelte";
 import { getRandomUUID } from "../utils/uuid";
@@ -146,6 +153,14 @@ class ChatStore {
   conversationForcedTools = $state<string[]>([]);
   /** Whether tool/skill injection is enabled for this conversation. */
   conversationToolsEnabled = $state<boolean>(true);
+  /** Per-conversation memory override (null = inherit global setting). */
+  conversationMemoryEnabled = $state<boolean | null>(null);
+  /** Per-conversation system prompt override/addition. */
+  conversationSystemPromptOverride = $state<string | null>(null);
+  /** Per-conversation sampling overrides. */
+  conversationSamplingOverrides = $state<ConversationSamplingOverrides | null>(null);
+  /** Ephemeral conversation scratchpad entries. */
+  scratchpadEntries = $state<ScratchpadEntryInfo[]>([]);
 
   /** Maps parentId ("ROOT" for root messages) to the selected child message ID */
   branchSelections = $state<Record<string, string>>({});
@@ -283,9 +298,14 @@ class ChatStore {
       this.conversationExcludedSkills = detail.excludedSkills ?? [];
       this.conversationForcedTools = [];
       this.conversationToolsEnabled = detail.toolsEnabled !== undefined ? detail.toolsEnabled : true;
+      this.conversationMemoryEnabled = detail.memoryEnabled ?? null;
+      this.conversationSystemPromptOverride = detail.systemPromptOverride ?? null;
+      this.conversationSamplingOverrides = detail.samplingOverrides ?? null;
+      this.scratchpadEntries = detail.scratchpad ?? [];
       if (detail.model) this.selectedModel = detail.model;
       this.loadBranchSelections(detail.id);
       artifactStore.close();
+      artifactStore.loadConversationArtifacts(detail.id);
 
       // Check if this conversation is actively generating on the backend
       const lastMsg = this.messages.length > 0 ? this.messages[this.messages.length - 1] : undefined;
@@ -314,9 +334,44 @@ class ChatStore {
     this.conversationExcludedSkills = [];
     this.conversationForcedTools = [];
     this.conversationToolsEnabled = true;
+    this.conversationMemoryEnabled = null;
+    this.conversationSystemPromptOverride = null;
+    this.conversationSamplingOverrides = null;
+    this.scratchpadEntries = [];
     this.streamingConvId = null;
     this.streamingAssistantId = null;
     artifactStore.close();
+    artifactStore.loadConversationArtifacts(null);
+  }
+
+  async setConversationMemoryEnabled(enabled: boolean | null) {
+    this.conversationMemoryEnabled = enabled;
+    if (this.activeConversationId) {
+      try {
+        await patchConversationTools(this.activeConversationId, { memoryEnabled: enabled });
+      } catch (err) {
+        console.warn("[chatStore] failed to persist memoryEnabled:", err);
+      }
+    }
+  }
+
+  async updateSessionOverrides(patch: {
+    systemPromptOverride?: string | null;
+    samplingOverrides?: ConversationSamplingOverrides | null;
+  }) {
+    if (patch.systemPromptOverride !== undefined) {
+      this.conversationSystemPromptOverride = patch.systemPromptOverride;
+    }
+    if (patch.samplingOverrides !== undefined) {
+      this.conversationSamplingOverrides = patch.samplingOverrides;
+    }
+    if (this.activeConversationId) {
+      try {
+        await patchConversationTools(this.activeConversationId, patch);
+      } catch (err) {
+        console.warn("[chatStore] failed to persist session overrides:", err);
+      }
+    }
   }
 
   /**
@@ -574,7 +629,7 @@ class ChatStore {
     await this.triggerAssistantResponse(targetMsg, undefined, { isContinue: true });
   }
 
-  async send(content: string) {
+  async send(content: string, injectedTools?: SlashToolSelection[]) {
     const trimmed = content.trim();
     if (!trimmed && this.pendingAttachments.length === 0) return;
     if (this.isStreaming) return;
@@ -649,7 +704,9 @@ class ChatStore {
     }
 
     // Start assistant response FIRST so the main chat completion starts streaming immediately
-    const assistantPromise = this.triggerAssistantResponse(userMessage, attachmentIds);
+    const assistantPromise = this.triggerAssistantResponse(userMessage, attachmentIds, {
+      injectedTools,
+    });
 
     if (isNewConv && newConvId && this.selectedModel) {
       this.triggerAutoNaming(newConvId, trimmed, this.selectedModel);
@@ -752,7 +809,7 @@ class ChatStore {
       attachments?: AttachmentOut[];
     },
     attachmentIds?: string[],
-    options?: { isContinue?: boolean }
+    options?: { isContinue?: boolean; injectedTools?: SlashToolSelection[] }
   ) {
     if (!this.selectedModel) return;
 
@@ -777,7 +834,7 @@ class ChatStore {
         parentId: currentUserId,
         role: "assistant",
         content: "",
-        status: "routing",
+        status: options?.injectedTools && options.injectedTools.length > 0 ? "generating" : "routing",
         createdAt: Date.now(),
         streaming: true,
         thinkingContent: undefined,
@@ -840,6 +897,10 @@ class ChatStore {
       excludedMcps: this.conversationExcludedMcps,
       excludedSkills: this.conversationExcludedSkills,
       forcedTools: this.conversationForcedTools,
+      injectedTools: options?.injectedTools,
+      memoryEnabled: this.conversationMemoryEnabled,
+      systemPromptOverride: this.conversationSystemPromptOverride,
+      samplingOverrides: this.conversationSamplingOverrides,
       signal: this.abortController.signal,
       onToken: (delta) => {
         const msg = this.messages.find((m) => m.id === currentAsstId);
@@ -971,6 +1032,7 @@ class ChatStore {
           lang: evt.language,
         });
         artifactStore.loadArtifact(evt.artifactId, evt.conversationId, evt.filename, evt.title, evt.language);
+        artifactStore.loadConversationArtifacts(evt.conversationId);
       },
       onArtifactUpdated: (evt) => {
         registerArtifact(evt.filename, {
@@ -979,6 +1041,12 @@ class ChatStore {
           lang: evt.language,
         });
         artifactStore.refreshArtifactContent(evt.artifactId);
+        artifactStore.loadConversationArtifacts(evt.conversationId);
+      },
+      onScratchpadUpdated: (evt) => {
+        if (evt.conversationId === this.activeConversationId || !this.activeConversationId) {
+          this.scratchpadEntries = evt.entries;
+        }
       },
       onMeta: (meta) => {
         if (meta.isReconnect) {
@@ -1086,6 +1154,9 @@ class ChatStore {
       excludedMcps: this.conversationExcludedMcps,
       excludedSkills: this.conversationExcludedSkills,
       forcedTools: this.conversationForcedTools,
+      memoryEnabled: this.conversationMemoryEnabled,
+      systemPromptOverride: this.conversationSystemPromptOverride,
+      samplingOverrides: this.conversationSamplingOverrides,
       signal: this.abortController.signal,
       onToken: (delta) => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);
@@ -1149,6 +1220,7 @@ class ChatStore {
           lang: evt.language,
         });
         artifactStore.loadArtifact(evt.artifactId, evt.conversationId, evt.filename, evt.title, evt.language);
+        artifactStore.loadConversationArtifacts(evt.conversationId);
       },
       onArtifactUpdated: (evt) => {
         registerArtifact(evt.filename, {
@@ -1157,6 +1229,12 @@ class ChatStore {
           lang: evt.language,
         });
         artifactStore.refreshArtifactContent(evt.artifactId);
+        artifactStore.loadConversationArtifacts(evt.conversationId);
+      },
+      onScratchpadUpdated: (evt) => {
+        if (evt.conversationId === this.activeConversationId || !this.activeConversationId) {
+          this.scratchpadEntries = evt.entries;
+        }
       },
       onDone: () => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);

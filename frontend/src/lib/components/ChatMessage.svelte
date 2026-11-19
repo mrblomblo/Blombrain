@@ -166,12 +166,11 @@
     editAttachments = editAttachments.filter((a) => a.id !== id);
   }
 
-  async function handleEditFileSelect(e: Event) {
-    const input = e.target as HTMLInputElement;
-    if (!input.files || input.files.length === 0) return;
+  async function uploadEditFiles(files: File[]) {
+    if (files.length === 0) return;
     isUploadingEdit = true;
     editError = null;
-    for (const file of Array.from(input.files)) {
+    for (const file of files) {
       try {
         let fileToUpload = file;
         if (file.type.startsWith("audio/")) {
@@ -187,7 +186,22 @@
       }
     }
     isUploadingEdit = false;
+  }
+
+  async function handleEditFileSelect(e: Event) {
+    const input = e.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0) return;
+    await uploadEditFiles(Array.from(input.files));
     input.value = "";
+  }
+
+  async function handleEditPaste(e: ClipboardEvent) {
+    if (message.role !== "user") return;
+    const files = e.clipboardData?.files;
+    if (files && files.length > 0) {
+      e.preventDefault();
+      await uploadEditFiles(Array.from(files));
+    }
   }
 
   async function handleSaveOnly() {
@@ -468,7 +482,7 @@
                 <button
                   type="button"
                   onclick={() => removeEditAttachment(att.id)}
-                  class="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white/90 opacity-0 transition-all duration-150 group-hover:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100 hover:bg-danger hover:text-white z-10 cursor-pointer shadow-xs"
+                  class="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-bg-inset/90 text-fg opacity-0 transition-all duration-150 group-hover:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100 hover:bg-danger hover:text-danger-fg z-10 cursor-pointer shadow-xs"
                   aria-label="Remove attachment"
                   title="Remove attachment"
                 >
@@ -497,6 +511,7 @@
         <textarea
           bind:this={editTextarea}
           bind:value={editDraft}
+          onpaste={handleEditPaste}
           onkeydown={(e) => {
             if (e.key === "Escape") {
               cancelEdit();

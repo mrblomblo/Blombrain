@@ -9,6 +9,11 @@ import {
   assignAttachmentsToConversation,
   removeConversationUploads,
 } from "./uploads.js";
+import {
+  getScratchpadEntries,
+  searchChatHistory,
+  stripInternalMessageTags,
+} from "../services/memory.js";
 import type {
   ConversationRow,
   MessageRow,
@@ -18,11 +23,21 @@ import type {
   ConversationPatchBody,
   ModelSettingRow,
   AttachmentRow,
+  ConversationSummaryOverrides,
 } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function parseSamplingOverrides(raw: string | null | undefined): ConversationSummaryOverrides | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") return parsed;
+  } catch { }
+  return null;
+}
 
 function rowToSummary(row: ConversationRow): ConversationSummary {
   return {
@@ -31,7 +46,18 @@ function rowToSummary(row: ConversationRow): ConversationSummary {
     model: row.model,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    toolsEnabled: (row as any).tools_enabled !== undefined && (row as any).tools_enabled !== null ? Boolean((row as any).tools_enabled) : true,
+    toolsEnabled:
+      row.tools_enabled !== undefined && row.tools_enabled !== null
+        ? Boolean(row.tools_enabled)
+        : true,
+    isPinned: Boolean(row.is_pinned),
+    isArchived: Boolean(row.is_archived),
+    memoryEnabled:
+      row.memory_enabled !== undefined && row.memory_enabled !== null
+        ? Boolean(row.memory_enabled)
+        : null,
+    systemPromptOverride: row.system_prompt_override ?? null,
+    samplingOverrides: parseSamplingOverrides(row.sampling_overrides),
   };
 }
 
@@ -87,7 +113,7 @@ function getConversationMessagesWithAttachments(convId: string): MessageOut[] {
 // ---------------------------------------------------------------------------
 
 const listConversations = db.prepare<[], ConversationRow>(
-  "SELECT * FROM conversations ORDER BY updated_at DESC",
+  "SELECT * FROM conversations ORDER BY COALESCE(is_pinned, 0) DESC, updated_at DESC",
 );
 
 const getConversation = db.prepare<[string], ConversationRow>(
@@ -123,7 +149,7 @@ const insertMessage = db.prepare(
 // ---------------------------------------------------------------------------
 
 export async function conversationsRoutes(app: FastifyInstance) {
-  /** GET /api/conversations -- list all, most-recently-updated first. */
+  /** GET /api/conversations -- list all, pinned first then most-recently-updated first. */
   app.get("/api/conversations", async () => {
     return listConversations.all().map((r) => {
       const summary = rowToSummary(r);
@@ -134,6 +160,60 @@ export async function conversationsRoutes(app: FastifyInstance) {
       return summary;
     });
   });
+
+  /** GET /api/conversations/search?q=...&includeArchived=... -- full-text search across titles and messages. */
+  app.get<{ Querystring: { q?: string; includeArchived?: string; limit?: string } }>(
+    "/api/conversations/search",
+    async (req, reply) => {
+      const q = (req.query.q ?? "").trim();
+      const includeArchived =
+        req.query.includeArchived === "1" || req.query.includeArchived === "true";
+      const limit = Math.max(1, Math.min(50, Number(req.query.limit) || 20));
+
+      if (!q) {
+        return reply.send([]);
+      }
+
+      const hits = searchChatHistory({
+        query: q,
+        excludeConversationId: null,
+        includeArchived,
+        limit,
+      });
+
+      // Also include conversations whose titles match even if they have no messages yet
+      const qLower = q.toLowerCase();
+      const matchingConvs = listConversations
+        .all()
+        .filter((c) => {
+          if (!includeArchived && c.is_archived) return false;
+          return c.title.toLowerCase().includes(qLower);
+        });
+
+      const seenConvIds = new Set(hits.map((h) => h.conversationId));
+      for (const conv of matchingConvs) {
+        if (!seenConvIds.has(conv.id)) {
+          hits.push({
+            conversationId: conv.id,
+            conversationTitle: conv.title,
+            isArchived: Boolean(conv.is_archived),
+            isPinned: Boolean(conv.is_pinned),
+            messageId: "",
+            role: "system",
+            snippet: conv.title,
+            createdAt: conv.updated_at,
+            score: 0.9,
+          });
+        }
+      }
+
+      return reply.send(
+        hits
+          .sort((a, b) => b.score - a.score || b.createdAt - a.createdAt)
+          .slice(0, limit)
+      );
+    }
+  );
 
   /** POST /api/conversations -- create a new conversation. */
   app.post("/api/conversations", async (req: FastifyRequest, reply: FastifyReply) => {
@@ -201,21 +281,101 @@ export async function conversationsRoutes(app: FastifyInstance) {
       }
     }
 
+    const summary = rowToSummary(row);
     return reply.send({
-      id: row.id,
-      title: row.title,
-      model: row.model,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      toolsEnabled: (row as any).tools_enabled !== undefined && (row as any).tools_enabled !== null ? Boolean((row as any).tools_enabled) : true,
+      ...summary,
       excludedMcps: (row as any).excluded_mcps ? JSON.parse((row as any).excluded_mcps) : [],
       excludedSkills: (row as any).excluded_skills ? JSON.parse((row as any).excluded_skills) : [],
+      scratchpad: getScratchpadEntries(id),
       messages,
       isGenerating: active && !active.isDone ? true : undefined,
     });
   });
 
-  /** PATCH /api/conversations/:id -- update title, model, excludedMcps, excludedSkills, toolsEnabled. */
+  /** GET /api/conversations/:id/export?format=md|json -- export single conversation. */
+  app.get<{ Params: { id: string }; Querystring: { format?: string } }>(
+    "/api/conversations/:id/export",
+    async (req, reply) => {
+      const { id } = req.params;
+      const format = (req.query.format || "md").toLowerCase();
+      const row = getConversation.get(id);
+      if (!row) {
+        return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
+      }
+
+      const messages = getConversationMessagesWithAttachments(id);
+      const scratchpad = getScratchpadEntries(id);
+      const safeTitle = (row.title || "conversation")
+        .replace(/[^a-zA-Z0-9_-]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 60) || "conversation";
+
+      if (format === "json") {
+        reply.header("Content-Type", "application/json; charset=utf-8");
+        reply.header(
+          "Content-Disposition",
+          `attachment; filename="${safeTitle}.json"`
+        );
+        return reply.send(
+          JSON.stringify(
+            {
+              ...rowToSummary(row),
+              scratchpad,
+              messages,
+            },
+            null,
+            2
+          )
+        );
+      }
+
+      const lines: string[] = [
+        `# ${row.title}`,
+        ``,
+        `- **Conversation ID**: \`${row.id}\``,
+        `- **Model**: \`${row.model || "default"}\``,
+        `- **Created**: ${new Date(row.created_at).toISOString()}`,
+        `- **Updated**: ${new Date(row.updated_at).toISOString()}`,
+        ``,
+        `---`,
+        ``,
+      ];
+
+      for (const msg of messages) {
+        if (msg.role === "tool") continue;
+        const sender =
+          msg.role === "user"
+            ? "User"
+            : msg.role === "assistant"
+              ? `Assistant (${msg.model || row.model || "AI"})`
+              : "System";
+        const ts = new Date(msg.createdAt).toISOString();
+        const cleanBody =
+          msg.role === "assistant"
+            ? stripInternalMessageTags(msg.content)
+            : msg.content;
+        lines.push(`### ${sender} (${ts})`);
+        lines.push(``);
+        if (msg.attachments && msg.attachments.length > 0) {
+          lines.push(
+            `*Attachments: ${msg.attachments.map((a) => a.originalName).join(", ")}*`
+          );
+          lines.push(``);
+        }
+        lines.push(cleanBody || "*(empty)*");
+        lines.push(``);
+      }
+
+      reply.header("Content-Type", "text/markdown; charset=utf-8");
+      reply.header(
+        "Content-Disposition",
+        `attachment; filename="${safeTitle}.md"`
+      );
+      return reply.send(lines.join("\n"));
+    }
+  );
+
+  /** PATCH /api/conversations/:id -- update title, model, excludedMcps, excludedSkills, toolsEnabled, isPinned, isArchived, memoryEnabled, systemPromptOverride, samplingOverrides. */
   app.patch("/api/conversations/:id", async (req: FastifyRequest, reply: FastifyReply) => {
     const { id } = req.params as { id: string };
     const row = getConversation.get(id);
@@ -243,6 +403,35 @@ export async function conversationsRoutes(app: FastifyInstance) {
 
     if (body.toolsEnabled !== undefined) {
       db.prepare("UPDATE conversations SET tools_enabled = ? WHERE id = ?").run(body.toolsEnabled ? 1 : 0, id);
+    }
+
+    if (body.isPinned !== undefined) {
+      db.prepare("UPDATE conversations SET is_pinned = ? WHERE id = ?").run(body.isPinned ? 1 : 0, id);
+    }
+
+    if (body.isArchived !== undefined) {
+      db.prepare("UPDATE conversations SET is_archived = ? WHERE id = ?").run(body.isArchived ? 1 : 0, id);
+    }
+
+    if (body.memoryEnabled !== undefined) {
+      db.prepare("UPDATE conversations SET memory_enabled = ? WHERE id = ?").run(
+        body.memoryEnabled === null ? null : body.memoryEnabled ? 1 : 0,
+        id
+      );
+    }
+
+    if (body.systemPromptOverride !== undefined) {
+      db.prepare("UPDATE conversations SET system_prompt_override = ? WHERE id = ?").run(
+        body.systemPromptOverride ? body.systemPromptOverride.trim() : null,
+        id
+      );
+    }
+
+    if (body.samplingOverrides !== undefined) {
+      db.prepare("UPDATE conversations SET sampling_overrides = ? WHERE id = ?").run(
+        body.samplingOverrides ? JSON.stringify(body.samplingOverrides) : null,
+        id
+      );
     }
 
     return rowToSummary(getConversation.get(id)!);

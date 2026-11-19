@@ -1,12 +1,9 @@
 <script lang="ts">
   import { chatStore } from "../stores/chat.svelte";
-  import { themeStore } from "../theme.svelte";
   import { serveUploadUrl, fetchUploadText } from "../api";
   import { X, Download, FileText, ExternalLink } from "@lucide/svelte";
   import { fade, scale } from "svelte/transition";
   import hljs from "highlight.js";
-  import githubDarkCss from "highlight.js/styles/github-dark.css?raw";
-  import githubLightCss from "highlight.js/styles/github.css?raw";
 
   let attachment = $derived(chatStore.selectedAttachment);
 
@@ -138,10 +135,6 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<svelte:head>
-  {@html `<style id="hljs-dynamic-theme">${themeStore.isDark ? githubDarkCss : githubLightCss}</style>`}
-</svelte:head>
-
 {#if attachment}
   <!-- Backdrop -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -149,7 +142,7 @@
   <div
     transition:fade={{ duration: 150 }}
     onclick={close}
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 sm:p-6"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm p-4 sm:p-6"
   >
     <!-- Modal Card -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->

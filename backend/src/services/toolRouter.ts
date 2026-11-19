@@ -1,6 +1,6 @@
 import { mcpManager, type McpToolDefinition } from "./mcp.js";
-import { getAllSkills } from "./skills.js";
-import type { SkillOut } from "../types.js";
+import { getAllSkills, getSkillScripts } from "./skills.js";
+import type { SkillOut, SlashToolSelection } from "../types.js";
 import db from "../db.js";
 import { backendRegistry } from "../registry.js";
 import { getAdapter } from "../adapters/index.js";
@@ -273,6 +273,83 @@ export function buildRecentContext(messages: any[], maxMessages = 4): string {
   return lines.join("\n");
 }
 
+export async function summarizeMcpServerTools(
+  serverName: string,
+  tools: Array<{ name: string; description?: string }>,
+  requestedModelId?: string
+): Promise<{ summary: string; keywords: string }> {
+  const fallbackSummary =
+    tools.length > 0
+      ? `Provides ${tools.length} tools for ${serverName} (${tools.slice(0, 5).map((t) => t.name).join(", ")}${tools.length > 5 ? ", ..." : ""}).`
+      : `MCP server ${serverName}.`;
+  const fallbackKeywords = [
+    serverName.toLowerCase(),
+    ...tools.slice(0, 8).flatMap((t) => t.name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2)),
+  ]
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .slice(0, 10)
+    .join(", ");
+
+  let modelToUse = requestedModelId;
+  if (!modelToUse) {
+    const gs = db
+      .prepare("SELECT tool_routing_model, auto_name_model FROM global_settings WHERE id = 'default'")
+      .get() as any;
+    modelToUse = gs?.tool_routing_model || gs?.auto_name_model;
+  }
+  if (!modelToUse) {
+    const defaultRow = db
+      .prepare("SELECT id FROM model_settings WHERE is_default = 1 LIMIT 1")
+      .get() as any;
+    const cachedRow = db
+      .prepare("SELECT id FROM cached_models WHERE is_online = 1 LIMIT 1")
+      .get() as any;
+    modelToUse = defaultRow?.id || cachedRow?.id;
+  }
+
+  if (!modelToUse || tools.length === 0) {
+    return { summary: fallbackSummary, keywords: fallbackKeywords };
+  }
+
+  try {
+    const sys = `You generate concise 1-sentence descriptions and keywords for MCP tool servers.
+Respond strictly with a raw JSON object:
+{
+  "summary": "One concise sentence describing what this server and its tools do.",
+  "keywords": "comma, separated, keywords"
+}`;
+    const toolList = tools
+      .slice(0, 30)
+      .map((t) => `- ${t.name}: ${(t.description || "").slice(0, 160)}`)
+      .join("\n");
+    const raw = await queryLLM(
+      modelToUse,
+      sys,
+      `Server Name: ${serverName}\nTools:\n${toolList}`
+    );
+    const cleaned = raw.replace(/<(?:think|thought|reason|reasoning)>[\s\S]*?<\/(?:think|thought|reason|reasoning)>/gi, "");
+    const candidates = extractBalancedJsonObjects(cleaned);
+    for (let i = candidates.length - 1; i >= 0; i--) {
+      try {
+        const parsed = JSON.parse(candidates[i]);
+        if (parsed && typeof parsed.summary === "string") {
+          return {
+            summary: parsed.summary.trim() || fallbackSummary,
+            keywords:
+              typeof parsed.keywords === "string"
+                ? parsed.keywords.trim()
+                : Array.isArray(parsed.keywords)
+                  ? parsed.keywords.join(", ")
+                  : fallbackKeywords,
+          };
+        }
+      } catch { }
+    }
+  } catch { }
+
+  return { summary: fallbackSummary, keywords: fallbackKeywords };
+}
+
 export async function routeToolsAndSkills(
   userQuery: string,
   excludedMcps: string[] = [],
@@ -282,11 +359,23 @@ export async function routeToolsAndSkills(
   contextLimit?: number | null,
   onToken?: (text: string) => void,
   priorContext?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  conversationMemoryEnabled?: boolean | null
 ): Promise<ToolRoutingResult> {
-  // Check global settings for tool_routing_mode, tool_routing_model, network_tools_enabled, and disabled_builtin_tools
-  const settingsRow = db.prepare("SELECT tool_routing_mode, tool_routing_model, network_tools_enabled, disabled_builtin_tools FROM global_settings LIMIT 1").get() as any;
+  // Check global settings for tool_routing_mode, tool_routing_model, network_tools_enabled, disabled_builtin_tools, memory_enabled, cross_chat_recall_enabled
+  const settingsRow = db.prepare("SELECT tool_routing_mode, tool_routing_model, network_tools_enabled, disabled_builtin_tools, memory_enabled, cross_chat_recall_enabled, cross_chat_include_archived FROM global_settings LIMIT 1").get() as any;
   const allowNetwork = !!settingsRow?.network_tools_enabled;
+  const globalMemoryEnabled = settingsRow?.memory_enabled !== undefined ? !!settingsRow.memory_enabled : true;
+  const effectiveMemoryEnabled =
+    conversationMemoryEnabled !== undefined && conversationMemoryEnabled !== null
+      ? conversationMemoryEnabled
+      : globalMemoryEnabled;
+  const crossChatRecallEnabled =
+    settingsRow?.cross_chat_recall_enabled !== undefined
+      ? !!settingsRow.cross_chat_recall_enabled
+      : true;
+  const crossChatIncludeArchived = !!settingsRow?.cross_chat_include_archived;
+
   let disabledTools: string[] = [];
   if (settingsRow?.disabled_builtin_tools) {
     try {
@@ -298,7 +387,12 @@ export async function routeToolsAndSkills(
   const allMcpTools = await mcpManager.getAvailableTools(excludedMcps);
   const allSkills = getAllSkills(excludedSkills).filter((s) => s.isEnabled);
   const allBuiltInTools = builtInToolRegistry.getAvailableTools(
-    { activeSkills: allSkills },
+    {
+      activeSkills: allSkills,
+      memoryEnabled: effectiveMemoryEnabled,
+      crossChatRecallEnabled,
+      crossChatIncludeArchived,
+    },
     { allowNetwork, disabledTools }
   );
 
@@ -307,16 +401,27 @@ export async function routeToolsAndSkills(
       name: t.name,
       description: t.description ? t.description.trim().slice(0, 300) : "No description",
     })),
-    ...allMcpTools.map((t) => ({
-      name: t.name,
-      description: t.description ? t.description.trim().slice(0, 300) : "No description",
-    })),
+    ...allMcpTools.map((t) => {
+      const prefixParts: string[] = [];
+      if (t.serverSummary) prefixParts.push(t.serverSummary);
+      if (t.serverKeywords) prefixParts.push(`keywords: ${t.serverKeywords}`);
+      const prefix = prefixParts.length > 0 ? `[${prefixParts.join(" | ")}] ` : "";
+      const baseDesc = t.description ? t.description.trim() : "No description";
+      return {
+        name: t.name,
+        description: (prefix + baseDesc).slice(0, 360),
+      };
+    }),
   ];
 
-  const skillsCatalog = allSkills.map((s) => ({
-    name: s.name,
-    description: s.description ? s.description.trim().slice(0, 300) : "No description",
-  }));
+  const skillsCatalog = allSkills.map((s) => {
+    const baseDesc = (s.summary || s.description || "No description").trim();
+    const kwSuffix = s.keywords ? ` (keywords: ${s.keywords})` : "";
+    return {
+      name: s.name,
+      description: (baseDesc + kwSuffix).slice(0, 320),
+    };
+  });
 
   // Single unified token estimation (1 token ~= 4 chars)
   const totalSchemaLength =
@@ -438,4 +543,185 @@ ${JSON.stringify(skillsCatalog, null, 2)}`;
       selectedBuiltInTools: allBuiltInTools,
     };
   }
+}
+
+/**
+ * Extracts `@filename` / `@"file name"` or `/tool` / `/"tool name"` tokens
+ * where the trigger character is preceded only by start-of-string or whitespace.
+ */
+export function extractPrefixTokens(text: string, prefix: "@" | "/"): string[] {
+  if (!text) return [];
+  const escaped = prefix === "/" ? "\\/" : "@";
+  const regex = new RegExp(`(?:^|\\s)${escaped}(?:"([^"\\n]+)"|([^\\s"\\n]+))`, "g");
+  const seen = new Set<string>();
+  const tokens: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    const val = (match[1] ?? match[2] ?? "").replace(/\\([_*[\]])/g, "$1").trim();
+    if (!val) continue;
+    const key = val.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      tokens.push(val);
+    }
+  }
+  return tokens;
+}
+
+export interface SlashInjectionResult extends ToolRoutingResult {
+  hasInjections: boolean;
+}
+
+/**
+ * Resolves explicit `/` popover selections and inline `/token` or `/"token with spaces"`
+ * directives from user text into concrete tools, skills, and MCP tools.
+ * Bypasses disabled flags, exclusions, and network restrictions intentionally,
+ * allowing callers to skip the LLM routing pre-pass when `hasInjections` is true.
+ */
+export async function resolveSlashInjections(
+  explicitSelections: SlashToolSelection[] = [],
+  userText = ""
+): Promise<SlashInjectionResult> {
+  const inlineTokens = extractPrefixTokens(userText, "/");
+  if (explicitSelections.length === 0 && inlineTokens.length === 0) {
+    return {
+      hasInjections: false,
+      mcpTools: [],
+      selectedSkills: [],
+      selectedBuiltInTools: [],
+    };
+  }
+
+  const allBuiltIn = builtInToolRegistry.getAllTools();
+  const allSkills = getAllSkills();
+  const allMcpServers = mcpManager.getAllServers([], { maskSecrets: true });
+  const knownMcpTools = await mcpManager.getKnownTools();
+
+  const builtInMap = new Map<string, BuiltInToolDefinition>();
+  const skillMap = new Map<string, SkillOut>();
+  const fullMcpServerIds = new Set<string>();
+  const specificMcpToolNames = new Set<string>();
+  const neededMcpServerIds = new Set<string>();
+
+  const addBuiltIn = (tool: BuiltInToolDefinition) => {
+    builtInMap.set(tool.name.trim(), tool);
+  };
+
+  const addSkill = (skill: SkillOut) => {
+    skillMap.set(skill.id, skill);
+  };
+
+  for (const sel of explicitSelections) {
+    if (!sel || typeof sel.kind !== "string") continue;
+    const targetName = (sel.name || "").trim().toLowerCase();
+    const targetId = (sel.id || "").trim();
+
+    if (sel.kind === "builtin_tool") {
+      const match = allBuiltIn.find(
+        (t) => t.name.trim() === targetId || t.name.trim().toLowerCase() === targetName
+      );
+      if (match) addBuiltIn(match);
+    } else if (sel.kind === "skill") {
+      const match = allSkills.find(
+        (s) => s.id === targetId || s.name.trim().toLowerCase() === targetName
+      );
+      if (match) addSkill(match);
+    } else if (sel.kind === "mcp_server") {
+      const match = allMcpServers.find(
+        (s) => s.id === targetId || s.name.trim().toLowerCase() === targetName
+      );
+      if (match) {
+        fullMcpServerIds.add(match.id);
+        neededMcpServerIds.add(match.id);
+      }
+    } else if (sel.kind === "mcp_tool") {
+      const knownMatch = knownMcpTools.find(
+        (t) => t.name === targetId || t.name.toLowerCase() === targetName
+      );
+      if (knownMatch) {
+        neededMcpServerIds.add(knownMatch.serverId);
+        specificMcpToolNames.add(knownMatch.name);
+      } else {
+        const rawRef = sel.id || sel.name || "";
+        const sepIdx = rawRef.indexOf("__");
+        if (sepIdx > 0) {
+          const srvPrefix = rawRef.slice(0, sepIdx).toLowerCase();
+          const srv = allMcpServers.find(
+            (s) => s.name.trim().toLowerCase() === srvPrefix || s.id === srvPrefix
+          );
+          if (srv) {
+            neededMcpServerIds.add(srv.id);
+            specificMcpToolNames.add(rawRef);
+          }
+        }
+      }
+    }
+  }
+
+  for (const token of inlineTokens) {
+    const lower = token.toLowerCase();
+
+    const builtInMatch = allBuiltIn.find((t) => t.name.trim().toLowerCase() === lower);
+    if (builtInMatch) {
+      addBuiltIn(builtInMatch);
+      continue;
+    }
+
+    const skillMatch = allSkills.find((s) => s.name.trim().toLowerCase() === lower);
+    if (skillMatch) {
+      addSkill(skillMatch);
+      continue;
+    }
+
+    const serverMatch = allMcpServers.find((s) => s.name.trim().toLowerCase() === lower);
+    if (serverMatch) {
+      fullMcpServerIds.add(serverMatch.id);
+      neededMcpServerIds.add(serverMatch.id);
+      continue;
+    }
+
+    const knownToolMatch = knownMcpTools.find((t) => t.name.toLowerCase() === lower);
+    if (knownToolMatch) {
+      neededMcpServerIds.add(knownToolMatch.serverId);
+      specificMcpToolNames.add(knownToolMatch.name);
+      continue;
+    }
+
+    const sepIdx = token.indexOf("__");
+    if (sepIdx > 0) {
+      const srvPrefix = token.slice(0, sepIdx).toLowerCase();
+      const srv = allMcpServers.find((s) => s.name.trim().toLowerCase() === srvPrefix);
+      if (srv) {
+        neededMcpServerIds.add(srv.id);
+        specificMcpToolNames.add(token);
+      }
+    }
+  }
+
+  // If any injected skill has runnable scripts, automatically provide execute_skill_script
+  const selectedSkills = Array.from(skillMap.values());
+  if (selectedSkills.some((s) => getSkillScripts(s.dirPath).length > 0)) {
+    const execScriptTool = allBuiltIn.find((t) => t.name.trim() === "execute_skill_script");
+    if (execScriptTool) addBuiltIn(execScriptTool);
+  }
+
+  let mcpTools: McpToolDefinition[] = [];
+  if (neededMcpServerIds.size > 0) {
+    const fetchedTools = await mcpManager.getToolsForServers(Array.from(neededMcpServerIds), true);
+    const specificLower = new Set(Array.from(specificMcpToolNames).map((n) => n.toLowerCase()));
+    mcpTools = fetchedTools.filter(
+      (t) => fullMcpServerIds.has(t.serverId) || specificLower.has(t.name.toLowerCase())
+    );
+  }
+
+  const selectedBuiltInTools = Array.from(builtInMap.values());
+  const hasInjections =
+    selectedBuiltInTools.length > 0 || selectedSkills.length > 0 || mcpTools.length > 0;
+
+  return {
+    hasInjections,
+    mcpTools,
+    selectedSkills,
+    selectedBuiltInTools,
+  };
 }

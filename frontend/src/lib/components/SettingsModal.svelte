@@ -7,6 +7,8 @@
     Cpu,
     BookOpen,
     User,
+    Brain,
+    Volume2,
     ChevronRight,
     ChevronLeft,
   } from "@lucide/svelte";
@@ -16,10 +18,20 @@
   import McpTab from "./settings/McpTab.svelte";
   import SkillsTab from "./settings/SkillsTab.svelte";
   import BackendsTab from "./settings/BackendsTab.svelte";
+  import MemoryTab from "./settings/MemoryTab.svelte";
+  import SpeechTab from "./settings/SpeechTab.svelte";
   import UserTab from "./settings/UserTab.svelte";
   import Button from "./ui/Button.svelte";
 
-  type Tab = "general" | "models" | "mcp" | "skills" | "backends" | "user";
+  type Tab =
+    | "general"
+    | "models"
+    | "memory"
+    | "mcp"
+    | "skills"
+    | "speech"
+    | "backends"
+    | "user";
 
   interface Props {
     open: boolean;
@@ -32,8 +44,10 @@
   const TABS: Tab[] = [
     "general",
     "models",
+    "memory",
     "mcp",
     "skills",
+    "speech",
     "backends",
     "user",
   ];
@@ -117,7 +131,7 @@
     aria-label="Settings"
     tabindex="-1"
     transition:fade={{ duration: 150 }}
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm focus:outline-hidden"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm focus:outline-hidden"
     onkeydown={handleKeydown}
   >
     <div
@@ -179,7 +193,19 @@
                 : 'border-transparent text-fg-muted hover:text-fg'}"
             >
               <Layers size={14} />
-              <span>Models & Presets</span>
+              <span>Models &amp; Presets</span>
+            </button>
+
+            <button
+              type="button"
+              onclick={() => setTab("memory")}
+              class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors shrink-0 whitespace-nowrap {activeTab ===
+              'memory'
+                ? 'border-accent text-accent'
+                : 'border-transparent text-fg-muted hover:text-fg'}"
+            >
+              <Brain size={14} />
+              <span>Memory</span>
             </button>
 
             <button
@@ -204,6 +230,18 @@
             >
               <BookOpen size={14} />
               <span>Skills</span>
+            </button>
+
+            <button
+              type="button"
+              onclick={() => setTab("speech")}
+              class="flex cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors shrink-0 whitespace-nowrap {activeTab ===
+              'speech'
+                ? 'border-accent text-accent'
+                : 'border-transparent text-fg-muted hover:text-fg'}"
+            >
+              <Volume2 size={14} />
+              <span>Speech</span>
             </button>
 
             <button
@@ -263,6 +301,14 @@
           >
             <ModelsTab />
           </div>
+        {:else if activeTab === "memory"}
+          <div
+            class="col-start-1 row-start-1 overflow-y-auto p-5"
+            in:fly={getFlyParams(true)}
+            out:fly={getFlyParams(false)}
+          >
+            <MemoryTab />
+          </div>
         {:else if activeTab === "mcp"}
           <div
             class="col-start-1 row-start-1 overflow-y-auto p-5"
@@ -278,6 +324,14 @@
             out:fly={getFlyParams(false)}
           >
             <SkillsTab />
+          </div>
+        {:else if activeTab === "speech"}
+          <div
+            class="col-start-1 row-start-1 overflow-y-auto p-5"
+            in:fly={getFlyParams(true)}
+            out:fly={getFlyParams(false)}
+          >
+            <SpeechTab />
           </div>
         {:else if activeTab === "backends"}
           <div

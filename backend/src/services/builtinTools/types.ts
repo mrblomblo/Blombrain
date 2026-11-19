@@ -1,5 +1,7 @@
 export interface ToolVisibilityOptions {
   allowNetwork?: boolean;
+  allowMemory?: boolean;
+  allowCrossChatRecall?: boolean;
   disabledTools?: string[];
 }
 
@@ -9,6 +11,9 @@ export interface BuiltInToolContext {
   activeSkills?: any[];
   abortSignal?: AbortSignal;
   uploadsDir?: string;
+  memoryEnabled?: boolean;
+  crossChatRecallEnabled?: boolean;
+  crossChatIncludeArchived?: boolean;
   emitEvent?: (type: string, payload: Record<string, any>) => void;
 }
 

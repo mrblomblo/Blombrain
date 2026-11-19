@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, untrack } from "svelte";
   import { Editor, Extension } from "@tiptap/core";
   import StarterKit from "@tiptap/starter-kit";
   import Placeholder from "@tiptap/extension-placeholder";
@@ -8,9 +8,15 @@
   import Blockquote from "@tiptap/extension-blockquote";
   import { createLowlight, common } from "lowlight";
   import { Markdown } from "tiptap-markdown";
-  import { themeStore } from "../theme.svelte";
-  import githubDarkCss from "highlight.js/styles/github-dark.css?raw";
-  import githubLightCss from "highlight.js/styles/github.css?raw";
+  import {
+    detectInputTrigger,
+    type ActiveInputTrigger,
+  } from "../utils/inputTriggers";
+
+  export type EditorTriggerState = ActiveInputTrigger & {
+    from: number;
+    to: number;
+  };
 
   interface Props {
     value?: string;
@@ -18,6 +24,9 @@
     disabled?: boolean;
     disableSubmit?: boolean;
     onSubmit?: () => void;
+    onPasteFiles?: (files: File[]) => void;
+    onTriggerChange?: (trigger: EditorTriggerState | null) => void;
+    onTriggerKeydown?: (key: string) => boolean;
     class?: string;
   }
 
@@ -27,6 +36,9 @@
     disabled = false,
     disableSubmit = false,
     onSubmit,
+    onPasteFiles,
+    onTriggerChange,
+    onTriggerKeydown,
     class: className = "",
   }: Props = $props();
 
@@ -43,19 +55,85 @@
     }
   }
 
+  export function replaceRange(from: number, to: number, text: string) {
+    if (!editor) return;
+    editor
+      .chain()
+      .focus()
+      .insertContentAt({ from, to }, text)
+      .run();
+    updateTriggerState(editor);
+  }
+
   const lowlight = createLowlight(common);
 
-  // Keep a fresh reference to onSubmit and disableSubmit for the extension keyboard handler
+  // Keep a fresh reference to callbacks/flags for editor handlers
   let getOnSubmit = $derived(() => onSubmit);
   let getDisableSubmit = $derived(() => disableSubmit);
+  let getOnPasteFiles = $derived(() => onPasteFiles);
+  let getOnTriggerChange = $derived(() => onTriggerChange);
+  let getOnTriggerKeydown = $derived(() => onTriggerKeydown);
+
+  // True while the component itself is pushing content into the editor, so the
+  // resulting selection/update events do not feed back into trigger state.
+  let suppressTriggerEvents = false;
+
+  function emitTrigger(trigger: EditorTriggerState | null) {
+    const cb = untrack(() => getOnTriggerChange());
+    if (!cb) return;
+    // Never let parent state writes become dependencies of whatever effect we may be in.
+    untrack(() => cb(trigger));
+  }
+
+  function updateTriggerState(ed: Editor) {
+    if (suppressTriggerEvents) return;
+    const cb = emitTrigger;
+    const { selection } = ed.state;
+    const { from, empty } = selection;
+    const resolvedFrom = selection.$from;
+    if (!empty || !resolvedFrom.parent.isTextblock) {
+      cb(null);
+      return;
+    }
+    const textBefore = resolvedFrom.parent.textBetween(0, resolvedFrom.parentOffset, "\n", "\n");
+    const detected = detectInputTrigger(textBefore);
+    if (!detected) {
+      cb(null);
+      return;
+    }
+    cb({
+      ...detected,
+      from: Math.max(0, from - detected.matchLength),
+      to: from,
+    });
+  }
 
   const CustomShortcuts = Extension.create({
     name: "customShortcuts",
     addKeyboardShortcuts() {
       return {
+        ArrowUp: ({ editor }) => {
+          if (editor.view.composing) return false;
+          return Boolean(getOnTriggerKeydown()?.("ArrowUp"));
+        },
+        ArrowDown: ({ editor }) => {
+          if (editor.view.composing) return false;
+          return Boolean(getOnTriggerKeydown()?.("ArrowDown"));
+        },
+        Tab: ({ editor }) => {
+          if (editor.view.composing) return false;
+          return Boolean(getOnTriggerKeydown()?.("Tab"));
+        },
+        Escape: ({ editor }) => {
+          if (editor.view.composing) return false;
+          return Boolean(getOnTriggerKeydown()?.("Escape"));
+        },
         Enter: ({ editor }) => {
           if (editor.view.composing) {
             return false;
+          }
+          if (getOnTriggerKeydown()?.("Enter")) {
+            return true;
           }
           if (editor.isActive("listItem")) {
             const selFrom = editor.state.selection.$from;
@@ -184,6 +262,17 @@
       ],
       editorProps: {
         handleDrop: () => true,
+        handlePaste: (_view, event) => {
+          const files = event.clipboardData?.files;
+          if (files && files.length > 0) {
+            const fn = getOnPasteFiles();
+            if (fn) {
+              fn(Array.from(files));
+              return true;
+            }
+          }
+          return false;
+        },
         handleDOMEvents: {
           dragover: () => true,
         },
@@ -197,6 +286,16 @@
         if (value !== md) {
           value = md;
         }
+        updateTriggerState(editor);
+      },
+      onSelectionUpdate: ({ editor }) => {
+        updateTriggerState(editor);
+      },
+      onBlur: () => {
+        emitTrigger(null);
+      },
+      onFocus: ({ editor }) => {
+        updateTriggerState(editor);
       },
     });
 
@@ -211,14 +310,23 @@
 
   // Sync external value changes to the editor (e.g. draft cleared on send)
   $effect(() => {
-    if (editor) {
-      const rawMd = (editor.storage as any).markdown?.getMarkdown() ?? "";
+    const incoming = value;
+    const ed = editor;
+    if (!ed) return;
+    untrack(() => {
+      const rawMd = (ed.storage as any).markdown?.getMarkdown() ?? "";
       const currentMd = unescapeHtmlEntities(rawMd);
-      if (value !== currentMd) {
-        editor.commands.setContent(value, { emitUpdate: false });
-        checkAlerts(editor);
+      if (incoming !== currentMd) {
+        suppressTriggerEvents = true;
+        try {
+          ed.commands.setContent(incoming, { emitUpdate: false });
+          checkAlerts(ed);
+        } finally {
+          suppressTriggerEvents = false;
+        }
+        updateTriggerState(ed);
       }
-    }
+    });
   });
 
   // Sync disabled prop to editor editable state
@@ -237,10 +345,6 @@
     }
   }
 </script>
-
-<svelte:head>
-  {@html `<style id="hljs-input-theme">${themeStore.isDark ? githubDarkCss : githubLightCss}</style>`}
-</svelte:head>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div

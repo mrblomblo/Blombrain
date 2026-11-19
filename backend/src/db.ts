@@ -423,7 +423,94 @@ const migration3: Migration = {
   },
 };
 
-const migrations: Migration[] = [migration1, migration2, migration3];
+const migration4: Migration = {
+  version: 4,
+  description: "Add 3-layer memory tables (conversation_scratchpad, memories), conversation pinning/archiving/session overrides, MCP/skill summaries & keywords, and speech/memory global settings",
+  run: () => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS conversation_scratchpad (
+        conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        key             TEXT NOT NULL,
+        content         TEXT NOT NULL DEFAULT '',
+        updated_at      INTEGER NOT NULL,
+        PRIMARY KEY (conversation_id, key)
+      );
+
+      CREATE TABLE IF NOT EXISTS memories (
+        id                     TEXT PRIMARY KEY,
+        content                TEXT NOT NULL,
+        category               TEXT NOT NULL DEFAULT 'general',
+        tags                   TEXT NOT NULL DEFAULT '[]',
+        source_conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
+        embedding              BLOB,
+        is_enabled             INTEGER NOT NULL DEFAULT 1,
+        created_at             INTEGER NOT NULL,
+        updated_at             INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_memories_enabled ON memories(is_enabled, updated_at DESC);
+    `);
+
+    const convCols = (db.pragma("table_info(conversations)") as { name: string }[]).map((c) => c.name);
+    const convAdditions = [
+      { name: "is_pinned", type: "INTEGER NOT NULL DEFAULT 0" },
+      { name: "is_archived", type: "INTEGER NOT NULL DEFAULT 0" },
+      { name: "memory_enabled", type: "INTEGER" },
+      { name: "system_prompt_override", type: "TEXT" },
+      { name: "sampling_overrides", type: "TEXT" },
+    ];
+    for (const col of convAdditions) {
+      if (!convCols.includes(col.name)) {
+        try {
+          db.exec(`ALTER TABLE conversations ADD COLUMN ${col.name} ${col.type}`);
+        } catch { }
+      }
+    }
+
+    const mcpCols = (db.pragma("table_info(mcp_servers)") as { name: string }[]).map((c) => c.name);
+    if (!mcpCols.includes("summary")) {
+      try { db.exec("ALTER TABLE mcp_servers ADD COLUMN summary TEXT"); } catch { }
+    }
+    if (!mcpCols.includes("keywords")) {
+      try { db.exec("ALTER TABLE mcp_servers ADD COLUMN keywords TEXT"); } catch { }
+    }
+
+    const skillCols = (db.pragma("table_info(skills)") as { name: string }[]).map((c) => c.name);
+    if (!skillCols.includes("summary")) {
+      try { db.exec("ALTER TABLE skills ADD COLUMN summary TEXT"); } catch { }
+    }
+    if (!skillCols.includes("keywords")) {
+      try { db.exec("ALTER TABLE skills ADD COLUMN keywords TEXT"); } catch { }
+    }
+
+    const gsCols = (db.pragma("table_info(global_settings)") as { name: string }[]).map((c) => c.name);
+    const gsAdditions = [
+      { name: "memory_enabled", type: "INTEGER NOT NULL DEFAULT 1" },
+      { name: "cross_chat_recall_enabled", type: "INTEGER NOT NULL DEFAULT 1" },
+      { name: "cross_chat_include_archived", type: "INTEGER NOT NULL DEFAULT 0" },
+      { name: "embedding_model", type: "TEXT" },
+      { name: "stt_provider", type: "TEXT NOT NULL DEFAULT 'browser'" },
+      { name: "stt_endpoint", type: "TEXT" },
+      { name: "stt_model", type: "TEXT" },
+      { name: "stt_device", type: "TEXT NOT NULL DEFAULT 'cpu'" },
+      { name: "tts_provider", type: "TEXT NOT NULL DEFAULT 'browser'" },
+      { name: "tts_endpoint", type: "TEXT" },
+      { name: "tts_model", type: "TEXT" },
+      { name: "tts_voice", type: "TEXT" },
+      { name: "tts_device", type: "TEXT NOT NULL DEFAULT 'cpu'" },
+      { name: "speech_idle_timeout_sec", type: "INTEGER NOT NULL DEFAULT 60" },
+    ];
+    for (const col of gsAdditions) {
+      if (!gsCols.includes(col.name)) {
+        try {
+          db.exec(`ALTER TABLE global_settings ADD COLUMN ${col.name} ${col.type}`);
+        } catch { }
+      }
+    }
+  },
+};
+
+const migrations: Migration[] = [migration1, migration2, migration3, migration4];
 
 const currentVersion = db.pragma("user_version", { simple: true }) as number;
 

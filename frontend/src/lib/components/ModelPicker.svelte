@@ -22,6 +22,12 @@
     return models.filter((m) => !m.isHidden && !m.isOffline && !m.isOrphaned);
   });
 
+  // Orphaned presets (greyed out so user can see them and know their parent model is missing)
+  const orphanedPresets = $derived.by(() => {
+    const models = modelsQuery.data ?? [];
+    return models.filter((m) => m.isPreset && !m.isHidden && m.isOrphaned);
+  });
+
   // Filtered by search query
   const filteredModels = $derived.by(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -244,6 +250,25 @@
                 {/if}
               </button>
             {/each}
+          {/if}
+
+          {#if orphanedPresets.length > 0 && !searchQuery.trim()}
+            <div class="pt-1 mt-1 border-t border-line/60">
+              <div class="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
+                Presets Missing Parent Model
+              </div>
+              {#each orphanedPresets as orphan (orphan.id)}
+                <div
+                  title="Open Settings > Models & Presets to pick a new parent base model for this preset"
+                  class="w-full flex items-center justify-between gap-2.5 rounded-md px-2.5 py-1.5 text-left text-xs opacity-45 cursor-not-allowed select-none"
+                >
+                  <span class="truncate text-fg-muted">{orphan.name || orphan.id}</span>
+                  <span class="rounded bg-danger/15 px-1.5 py-0.5 text-[9px] font-mono text-danger shrink-0">
+                    No Parent
+                  </span>
+                </div>
+              {/each}
+            </div>
           {/if}
         </div>
       </div>

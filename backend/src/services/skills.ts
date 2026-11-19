@@ -125,6 +125,8 @@ export function getAllSkills(excludedSkillIds: string[] = []): SkillOut[] {
     contentHash: r.content_hash,
     isEnabled: r.is_enabled === 1 && !excludedSkillIds.includes(r.id),
     createdAt: r.created_at,
+    summary: r.summary ?? null,
+    keywords: r.keywords ?? null,
   }));
 }
 
@@ -141,6 +143,8 @@ export function getSkillById(id: string): SkillOut | null {
     contentHash: row.content_hash,
     isEnabled: row.is_enabled === 1,
     createdAt: row.created_at,
+    summary: row.summary ?? null,
+    keywords: row.keywords ?? null,
   };
 }
 
@@ -157,11 +161,19 @@ export function upsertSkill(body: SkillWriteBody): SkillOut {
       : existing
         ? existing.is_enabled === 1
         : true;
+  const summary =
+    body.summary !== undefined
+      ? (body.summary ? body.summary.trim() : null)
+      : (existing?.summary ?? null);
+  const keywords =
+    body.keywords !== undefined
+      ? (body.keywords ? body.keywords.trim() : null)
+      : (existing?.keywords ?? null);
 
   if (existing) {
     db.prepare(`
       UPDATE skills
-      SET name = ?, description = ?, instructions = ?, dir_path = ?, source_url = ?, content_hash = ?, is_enabled = ?
+      SET name = ?, description = ?, instructions = ?, dir_path = ?, source_url = ?, content_hash = ?, is_enabled = ?, summary = ?, keywords = ?
       WHERE id = ?
     `).run(
       body.name,
@@ -171,12 +183,14 @@ export function upsertSkill(body: SkillWriteBody): SkillOut {
       body.sourceUrl !== undefined ? (body.sourceUrl || null) : existing.source_url,
       hash,
       isEnabled ? 1 : 0,
+      summary,
+      keywords,
       id
     );
   } else {
     db.prepare(`
-      INSERT INTO skills (id, name, description, instructions, dir_path, source_url, content_hash, is_enabled, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO skills (id, name, description, instructions, dir_path, source_url, content_hash, is_enabled, created_at, summary, keywords)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       body.name,
@@ -186,7 +200,9 @@ export function upsertSkill(body: SkillWriteBody): SkillOut {
       body.sourceUrl ?? null,
       hash,
       isEnabled ? 1 : 0,
-      now
+      now,
+      summary,
+      keywords
     );
   }
 

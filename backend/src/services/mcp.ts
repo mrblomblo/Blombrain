@@ -10,6 +10,8 @@ export const MCP_SECRET_MASK = "••••••••";
 export interface McpToolDefinition {
   serverId: string;
   serverName: string;
+  serverSummary?: string | null;
+  serverKeywords?: string | null;
   name: string;
   description?: string;
   inputSchema: Record<string, any>;
@@ -50,6 +52,8 @@ class McpManager {
         env: shouldMask ? maskRecord(env) : env,
         headers: shouldMask ? maskRecord(headers) : headers,
         isEnabled: globallyEnabled && !excludedIds.includes(r.id),
+        summary: r.summary ?? null,
+        keywords: r.keywords ?? null,
         status: !globallyEnabled ? "disabled" : (active?.status ?? "stopped"),
         error: active?.error,
       };
@@ -117,18 +121,26 @@ class McpManager {
         : existing
           ? existing.is_enabled === 1
           : true;
+    const summary =
+      body.summary !== undefined
+        ? (body.summary ? body.summary.trim() : null)
+        : (existing?.summary ?? null);
+    const keywords =
+      body.keywords !== undefined
+        ? (body.keywords ? body.keywords.trim() : null)
+        : (existing?.keywords ?? null);
 
     if (existing) {
       db.prepare(`
         UPDATE mcp_servers
-        SET name = ?, type = ?, command_or_url = ?, args = ?, env = ?, headers = ?, is_enabled = ?
+        SET name = ?, type = ?, command_or_url = ?, args = ?, env = ?, headers = ?, is_enabled = ?, summary = ?, keywords = ?
         WHERE id = ?
-      `).run(name, type, commandOrUrl, argsJson, envJson, headersJson, isEnabled ? 1 : 0, id);
+      `).run(name, type, commandOrUrl, argsJson, envJson, headersJson, isEnabled ? 1 : 0, summary, keywords, id);
     } else {
       db.prepare(`
-        INSERT INTO mcp_servers (id, name, type, command_or_url, args, env, headers, is_enabled)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, name, type, commandOrUrl, argsJson, envJson, headersJson, isEnabled ? 1 : 0);
+        INSERT INTO mcp_servers (id, name, type, command_or_url, args, env, headers, is_enabled, summary, keywords)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, name, type, commandOrUrl, argsJson, envJson, headersJson, isEnabled ? 1 : 0, summary, keywords);
     }
 
     // Stop client and reset crash counter when config or enabled state changes
@@ -142,14 +154,14 @@ class McpManager {
     return res.changes > 0;
   }
 
-  public async getClient(id: string): Promise<Client | null> {
+  public async getClient(id: string, allowDisabled = false): Promise<Client | null> {
     const active = this.clients.get(id);
     if (active && active.status === "connected") {
       return active.client;
     }
 
     const row = this.getRawServerRow(id);
-    if (!row || row.is_enabled !== 1) return null;
+    if (!row || (!allowDisabled && row.is_enabled !== 1)) return null;
 
     return this.connectServer(row);
   }
@@ -285,6 +297,8 @@ class McpManager {
         const serverTools: McpToolDefinition[] = res.tools.map((t) => ({
           serverId: serverRow.id,
           serverName: serverRow.name,
+          serverSummary: serverRow.summary ?? null,
+          serverKeywords: serverRow.keywords ?? null,
           name: `${serverRow.name}__${t.name}`,
           description: t.description,
           inputSchema: t.inputSchema as Record<string, any>,
@@ -297,6 +311,84 @@ class McpManager {
         const cached = this.toolsCache.get(serverRow.id);
         if (cached) tools.push(...cached);
       }
+    }
+
+    return tools;
+  }
+
+  /**
+   * Lists tools for a specific set of MCP server IDs, optionally bypassing
+   * global isEnabled and per-conversation exclusions (used for explicit / injections).
+   */
+  public async getToolsForServers(serverIds: string[], allowDisabled = false): Promise<McpToolDefinition[]> {
+    const uniqueIds = Array.from(new Set(serverIds));
+    const allServers = this.getAllServers([], { maskSecrets: true });
+    const tools: McpToolDefinition[] = [];
+
+    for (const id of uniqueIds) {
+      const serverMeta = allServers.find((s) => s.id === id);
+      if (!serverMeta) continue;
+      if (!allowDisabled && !serverMeta.isEnabled) continue;
+
+      const client = await this.getClient(id, allowDisabled);
+      if (!client) {
+        const cached = this.toolsCache.get(id);
+        if (cached) tools.push(...cached);
+        continue;
+      }
+
+      try {
+        const res = await client.listTools();
+        const serverTools: McpToolDefinition[] = res.tools.map((t) => ({
+          serverId: serverMeta.id,
+          serverName: serverMeta.name,
+          serverSummary: serverMeta.summary ?? null,
+          serverKeywords: serverMeta.keywords ?? null,
+          name: `${serverMeta.name}__${t.name}`,
+          description: t.description,
+          inputSchema: t.inputSchema as Record<string, any>,
+        }));
+        this.toolsCache.set(id, serverTools);
+        tools.push(...serverTools);
+      } catch (err) {
+        console.error(`[McpManager] Failed to list tools for ${serverMeta.name}:`, err);
+        const cached = this.toolsCache.get(id);
+        if (cached) tools.push(...cached);
+      }
+    }
+
+    return tools;
+  }
+
+  /**
+   * Returns all known/cached MCP tools across configured servers without
+   * spawning disconnected servers; populates any already-connected server cache if missing.
+   */
+  public async getKnownTools(): Promise<McpToolDefinition[]> {
+    const allServers = this.getAllServers([], { maskSecrets: true });
+    const tools: McpToolDefinition[] = [];
+
+    for (const server of allServers) {
+      let cached = this.toolsCache.get(server.id);
+      const active = this.clients.get(server.id);
+      if (!cached && active && active.status === "connected" && active.client) {
+        try {
+          const res = await active.client.listTools();
+          cached = res.tools.map((t) => ({
+            serverId: server.id,
+            serverName: server.name,
+            serverSummary: server.summary ?? null,
+            serverKeywords: server.keywords ?? null,
+            name: `${server.name}__${t.name}`,
+            description: t.description,
+            inputSchema: t.inputSchema as Record<string, any>,
+          }));
+          this.toolsCache.set(server.id, cached);
+        } catch {
+          cached = undefined;
+        }
+      }
+      if (cached) tools.push(...cached);
     }
 
     return tools;

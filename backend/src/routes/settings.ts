@@ -36,6 +36,20 @@ function rowToSettings(row: GlobalSettingsRow): GlobalSettingsOut {
     networkToolsEnabled: !!row.network_tools_enabled,
     artifactNetworkEnabled: !!row.artifact_network_enabled,
     disabledBuiltInTools,
+    memoryEnabled: row.memory_enabled !== undefined ? !!row.memory_enabled : true,
+    crossChatRecallEnabled: row.cross_chat_recall_enabled !== undefined ? !!row.cross_chat_recall_enabled : true,
+    crossChatIncludeArchived: !!row.cross_chat_include_archived,
+    embeddingModel: row.embedding_model ?? null,
+    sttProvider: (row.stt_provider as any) || "browser",
+    sttEndpoint: row.stt_endpoint ?? null,
+    sttModel: row.stt_model ?? null,
+    sttDevice: (row.stt_device as any) || "cpu",
+    ttsProvider: (row.tts_provider as any) || "browser",
+    ttsEndpoint: row.tts_endpoint ?? null,
+    ttsModel: row.tts_model ?? null,
+    ttsVoice: row.tts_voice ?? null,
+    ttsDevice: (row.tts_device as any) || "cpu",
+    speechIdleTimeoutSec: row.speech_idle_timeout_sec ?? 60,
   };
 }
 
@@ -90,6 +104,42 @@ export async function settingsRoutes(app: FastifyInstance) {
       body.disabledBuiltInTools !== undefined
         ? JSON.stringify(body.disabledBuiltInTools)
         : (current.disabled_builtin_tools ?? "[]");
+    const memoryEnabled =
+      body.memoryEnabled !== undefined
+        ? (body.memoryEnabled ? 1 : 0)
+        : (current.memory_enabled ?? 1);
+    const crossChatRecallEnabled =
+      body.crossChatRecallEnabled !== undefined
+        ? (body.crossChatRecallEnabled ? 1 : 0)
+        : (current.cross_chat_recall_enabled ?? 1);
+    const crossChatIncludeArchived =
+      body.crossChatIncludeArchived !== undefined
+        ? (body.crossChatIncludeArchived ? 1 : 0)
+        : (current.cross_chat_include_archived ?? 0);
+    const embeddingModel =
+      body.embeddingModel !== undefined ? body.embeddingModel : (current.embedding_model ?? null);
+    const sttProvider =
+      body.sttProvider !== undefined ? body.sttProvider : (current.stt_provider || "browser");
+    const sttEndpoint =
+      body.sttEndpoint !== undefined ? body.sttEndpoint : (current.stt_endpoint ?? null);
+    const sttModel =
+      body.sttModel !== undefined ? body.sttModel : (current.stt_model ?? null);
+    const sttDevice =
+      body.sttDevice !== undefined ? body.sttDevice : (current.stt_device || "cpu");
+    const ttsProvider =
+      body.ttsProvider !== undefined ? body.ttsProvider : (current.tts_provider || "browser");
+    const ttsEndpoint =
+      body.ttsEndpoint !== undefined ? body.ttsEndpoint : (current.tts_endpoint ?? null);
+    const ttsModel =
+      body.ttsModel !== undefined ? body.ttsModel : (current.tts_model ?? null);
+    const ttsVoice =
+      body.ttsVoice !== undefined ? body.ttsVoice : (current.tts_voice ?? null);
+    const ttsDevice =
+      body.ttsDevice !== undefined ? body.ttsDevice : (current.tts_device || "cpu");
+    const speechIdleTimeoutSec =
+      body.speechIdleTimeoutSec !== undefined
+        ? Math.max(5, Math.min(3600, Number(body.speechIdleTimeoutSec) || 60))
+        : (current.speech_idle_timeout_sec ?? 60);
 
     // Mark new avatar attachment as purpose = 'avatar', and clean up old avatar if replaced
     if (body.userAvatar !== undefined && body.userAvatar !== current.user_avatar) {
@@ -141,9 +191,36 @@ export async function settingsRoutes(app: FastifyInstance) {
 
     db.prepare(`
       UPDATE global_settings
-      SET user_name = ?, user_avatar = ?, theme = ?, auto_name_mode = ?, auto_name_model = ?, tool_routing_mode = ?, tool_routing_model = ?, ctx_overflow_behavior = ?, reasoning_injection_mode = ?, network_tools_enabled = ?, artifact_network_enabled = ?, disabled_builtin_tools = ?
+      SET user_name = ?, user_avatar = ?, theme = ?, auto_name_mode = ?, auto_name_model = ?, tool_routing_mode = ?, tool_routing_model = ?, ctx_overflow_behavior = ?, reasoning_injection_mode = ?, network_tools_enabled = ?, artifact_network_enabled = ?, disabled_builtin_tools = ?, memory_enabled = ?, cross_chat_recall_enabled = ?, cross_chat_include_archived = ?, embedding_model = ?, stt_provider = ?, stt_endpoint = ?, stt_model = ?, stt_device = ?, tts_provider = ?, tts_endpoint = ?, tts_model = ?, tts_voice = ?, tts_device = ?, speech_idle_timeout_sec = ?
       WHERE id = 'default'
-    `).run(userName, userAvatar, theme, autoNameMode, autoNameModel, toolRoutingMode, toolRoutingModel, ctxOverflowBehavior, reasoningInjectionMode, networkToolsEnabled, artifactNetworkEnabled, disabledBuiltInTools);
+    `).run(
+      userName,
+      userAvatar,
+      theme,
+      autoNameMode,
+      autoNameModel,
+      toolRoutingMode,
+      toolRoutingModel,
+      ctxOverflowBehavior,
+      reasoningInjectionMode,
+      networkToolsEnabled,
+      artifactNetworkEnabled,
+      disabledBuiltInTools,
+      memoryEnabled,
+      crossChatRecallEnabled,
+      crossChatIncludeArchived,
+      embeddingModel,
+      sttProvider,
+      sttEndpoint,
+      sttModel,
+      sttDevice,
+      ttsProvider,
+      ttsEndpoint,
+      ttsModel,
+      ttsVoice,
+      ttsDevice,
+      speechIdleTimeoutSec
+    );
 
     const updated = db
       .prepare<[string], GlobalSettingsRow>("SELECT * FROM global_settings WHERE id = ?")

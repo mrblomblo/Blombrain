@@ -68,7 +68,7 @@
     aria-label={title || "Modal"}
     tabindex="-1"
     transition:fade={{ duration: 150 }}
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm p-4"
     onclick={handleBackdropClick}
     onkeydown={handleKeydown}
   >

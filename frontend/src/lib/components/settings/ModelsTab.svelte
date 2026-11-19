@@ -90,6 +90,13 @@
   let formError = $state<string | null>(null);
   let imageUploading = $state(false);
 
+  // Selective Inheritance Checkboxes for Presets
+  let inheritIcon = $state(true);
+  let inheritPrompt = $state(true);
+  let inheritMultimodal = $state(true);
+  let inheritSampling = $state(true);
+  let inheritContext = $state(true);
+
   function resetForm() {
     formName = "";
     formBaseModelId = "";
@@ -113,29 +120,59 @@
     formReasoningInjectionMode = undefined;
     showAdvanced = false;
     formError = null;
+    inheritIcon = true;
+    inheritPrompt = true;
+    inheritMultimodal = true;
+    inheritSampling = true;
+    inheritContext = true;
   }
 
-  function populateFromBaseModel(baseModelId: string) {
+  function populateFromBaseModel(baseModelId: string, selective = false) {
     const allModels = modelsQuery.data ?? [];
     const baseModel = allModels.find((m) => m.id === baseModelId);
     if (!baseModel) return;
 
-    formSystemPrompt = baseModel.systemPrompt ?? "";
-    formTemperature = baseModel.temperature;
-    formCanImage = Boolean(baseModel.canImage);
-    formCanAudio = Boolean(baseModel.canAudio);
-    formCanVideo = Boolean(baseModel.canVideo);
-    formIcon = baseModel.icon;
-    formSeed = baseModel.seed;
-    formReasoningEffort = baseModel.reasoningEffort;
-    formMaxTokens = baseModel.maxTokens;
-    formTopK = baseModel.topK;
-    formTopP = baseModel.topP;
-    formMinP = baseModel.minP;
-    formPresencePenalty = baseModel.presencePenalty;
-    formFrequencyPenalty = baseModel.frequencyPenalty;
-    formRepeatPenalty = baseModel.repeatPenalty;
-    formCtxLength = baseModel.ctxLength;
+    if (!selective || inheritPrompt) {
+      formSystemPrompt = baseModel.systemPrompt ?? "";
+    }
+    if (!selective || inheritIcon) {
+      formIcon = baseModel.icon;
+    }
+    if (!selective || inheritMultimodal) {
+      formCanImage = Boolean(baseModel.canImage);
+      formCanAudio = Boolean(baseModel.canAudio);
+      formCanVideo = Boolean(baseModel.canVideo);
+    }
+    if (!selective || inheritSampling) {
+      formTemperature = baseModel.temperature;
+      formSeed = baseModel.seed;
+      formReasoningEffort = baseModel.reasoningEffort;
+      formMaxTokens = baseModel.maxTokens;
+      formTopK = baseModel.topK;
+      formTopP = baseModel.topP;
+      formMinP = baseModel.minP;
+      formPresencePenalty = baseModel.presencePenalty;
+      formFrequencyPenalty = baseModel.frequencyPenalty;
+      formRepeatPenalty = baseModel.repeatPenalty;
+    }
+    if (!selective || inheritContext) {
+      formCtxLength = baseModel.ctxLength;
+      formCtxOverflowBehavior = baseModel.ctxOverflowBehavior ?? undefined;
+      formReasoningInjectionMode = baseModel.reasoningInjectionMode ?? undefined;
+    }
+  }
+
+  async function handleQuickReassignParent(preset: ModelInfo, newBaseModelId: string) {
+    if (!newBaseModelId) return;
+    try {
+      await updateModelSettings(preset.id, {
+        isPreset: true,
+        baseModelId: newBaseModelId,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["models"] });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to reassign parent model.");
+    }
   }
 
   function startAddPreset() {
@@ -505,6 +542,20 @@
                       <p class="truncate text-xs text-fg-subtle mt-0.5">
                         Base: {model.baseModelId || "None"}
                       </p>
+                      {#if model.isOrphaned}
+                        <div class="mt-2 flex items-center gap-2 max-w-xs">
+                          <span class="text-[11px] font-medium text-danger shrink-0">
+                            Pick new parent:
+                          </span>
+                          <ModelDropdown
+                            filterPresets={true}
+                            models={modelsQuery.data}
+                            placeholder="Reassign base model..."
+                            onchange={(newBase) =>
+                              handleQuickReassignParent(model, newBase)}
+                          />
+                        </div>
+                      {/if}
                     </div>
                   </div>
 
@@ -769,23 +820,65 @@
 
           <!-- Base Model Selection (for Preset creation/edit) -->
           {#if formMode === "add_preset" || modelsQuery.data?.find((m) => m.id === selectedModelId)?.isPreset}
-            <div class="flex flex-col gap-1">
-              <label for="me-base" class="text-xs font-medium text-fg-muted"
-                >Parent Base Model</label
-              >
-              <ModelDropdown
-                id="me-base"
-                filterPresets={true}
-                value={formBaseModelId}
-                models={modelsQuery.data}
-                onchange={(val) => {
-                  formBaseModelId = val;
-                  if (formMode === "add_preset") {
-                    populateFromBaseModel(val);
-                  }
-                }}
-                placeholder="Select parent base model"
-              />
+            <div class="flex flex-col gap-2 rounded-lg border border-line bg-bg p-3">
+              <div class="flex flex-col gap-1">
+                <label for="me-base" class="text-xs font-medium text-fg-muted"
+                  >Parent Base Model</label
+                >
+                <ModelDropdown
+                  id="me-base"
+                  filterPresets={true}
+                  value={formBaseModelId}
+                  models={modelsQuery.data}
+                  onchange={(val) => {
+                    formBaseModelId = val;
+                    if (formMode === "add_preset") {
+                      populateFromBaseModel(val, true);
+                    }
+                  }}
+                  placeholder="Select parent base model"
+                />
+              </div>
+
+              <!-- Selective Inheritance Picker -->
+              <div class="flex flex-col gap-1.5 pt-1">
+                <div class="flex items-center justify-between">
+                  <span class="text-[11px] font-medium text-fg-subtle">
+                    Fields to inherit from parent model:
+                  </span>
+                  <button
+                    type="button"
+                    onclick={() => populateFromBaseModel(formBaseModelId, true)}
+                    class="text-[11px] font-medium text-accent hover:underline cursor-pointer"
+                  >
+                    {formMode === "add_preset"
+                      ? "Re-apply selected fields"
+                      : "Inherit selected fields from parent"}
+                  </button>
+                </div>
+                <div class="flex flex-wrap gap-3 text-xs text-fg-muted">
+                  <label class="flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" bind:checked={inheritIcon} class="accent-accent" />
+                    <span>Icon</span>
+                  </label>
+                  <label class="flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" bind:checked={inheritPrompt} class="accent-accent" />
+                    <span>System Prompt</span>
+                  </label>
+                  <label class="flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" bind:checked={inheritMultimodal} class="accent-accent" />
+                    <span>Multimodal Flags</span>
+                  </label>
+                  <label class="flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" bind:checked={inheritSampling} class="accent-accent" />
+                    <span>Sampling Params</span>
+                  </label>
+                  <label class="flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" bind:checked={inheritContext} class="accent-accent" />
+                    <span>Context Settings</span>
+                  </label>
+                </div>
+              </div>
             </div>
           {/if}
 

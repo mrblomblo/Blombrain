@@ -25,6 +25,15 @@ import {
   findInFileToolDef,
   presentArtifactToolDef
 } from "./tools/artifactTools.js";
+import {
+  scratchpadSetToolDef,
+  scratchpadGetToolDef,
+  memorySearchToolDef,
+  memorySetToolDef,
+  memoryUpdateToolDef,
+  memoryDeleteToolDef,
+  chatHistorySearchToolDef,
+} from "./tools/memoryTools.js";
 
 export * from "./types.js";
 
@@ -56,6 +65,13 @@ class BuiltInToolRegistry {
     this.register(editFileToolDef);
     this.register(findInFileToolDef);
     this.register(presentArtifactToolDef);
+    this.register(scratchpadSetToolDef);
+    this.register(scratchpadGetToolDef);
+    this.register(memorySearchToolDef);
+    this.register(memorySetToolDef);
+    this.register(memoryUpdateToolDef);
+    this.register(memoryDeleteToolDef);
+    this.register(chatHistorySearchToolDef);
   }
 
   public register(tool: BuiltInToolDefinition) {

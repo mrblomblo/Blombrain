@@ -11,6 +11,28 @@ export default defineConfig({
       '$lib': path.resolve(import.meta.dirname, './src/lib'),
     },
   },
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor-highlight',
+              test: /node_modules[\\/](highlight\.js|lowlight)/,
+            },
+            {
+              name: 'vendor-editor',
+              test: /node_modules[\\/](@tiptap|prosemirror|tiptap-markdown|marked|dompurify)/,
+            },
+            {
+              name: 'vendor-icons',
+              test: /node_modules[\\/]@lucide[\\/]svelte/,
+            },
+          ],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

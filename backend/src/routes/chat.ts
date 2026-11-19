@@ -6,7 +6,7 @@ import { backendRegistry } from "../registry.js";
 import { persistChatTurn } from "./conversations.js";
 import { assignAttachmentsToConversation } from "./uploads.js";
 import db, { DATA_DIR } from "../db.js";
-import type { AttachmentRow, MessageRow, ModelSettingRow } from "../types.js";
+import type { ArtifactRow, AttachmentRow, MessageRow, ModelSettingRow, SlashToolSelection } from "../types.js";
 import { getAdapter } from "../adapters/index.js";
 import { mcpManager } from "../services/mcp.js";
 import { extractDocumentText } from "../services/documentExtractor.js";
@@ -22,6 +22,7 @@ interface ChatCompletionBody {
   isContinue?: boolean;
   isReconnect?: boolean;
   attachments?: string[];
+  injectedTools?: SlashToolSelection[];
   [key: string]: unknown;
 }
 
@@ -673,14 +674,26 @@ export async function chatRoutes(app: FastifyInstance) {
     const { backend, rawModelId } = resolved;
 
     // -----------------------------------------------------------------------
-    // 3. Fetch per-conversation excluded MCP/Skill IDs and tools_enabled from DB
+    // 3. Fetch per-conversation excluded MCP/Skill IDs, tools_enabled, memory_enabled, and overrides from DB
     // -----------------------------------------------------------------------
     let excludedMcps: string[] = Array.isArray((body as any).excludedMcps) ? (body as any).excludedMcps : [];
     let excludedSkills: string[] = Array.isArray((body as any).excludedSkills) ? (body as any).excludedSkills : [];
     let toolsEnabled = (body as any).toolsEnabled !== undefined ? Boolean((body as any).toolsEnabled) : true;
+    let convMemoryEnabled: boolean | null =
+      (body as any).memoryEnabled !== undefined && (body as any).memoryEnabled !== null
+        ? Boolean((body as any).memoryEnabled)
+        : null;
+    let convSystemPromptOverride: string | null =
+      typeof (body as any).systemPromptOverride === "string"
+        ? (body as any).systemPromptOverride.trim() || null
+        : null;
+    let convSamplingOverrides: { temperature?: number | null; maxTokens?: number | null; reasoningEffort?: string | null } | null =
+      (body as any).samplingOverrides && typeof (body as any).samplingOverrides === "object"
+        ? (body as any).samplingOverrides
+        : null;
 
     if (body.conversationId) {
-      const convRow = db.prepare("SELECT excluded_mcps, excluded_skills, tools_enabled FROM conversations WHERE id = ?").get(body.conversationId) as any;
+      const convRow = db.prepare("SELECT excluded_mcps, excluded_skills, tools_enabled, memory_enabled, system_prompt_override, sampling_overrides FROM conversations WHERE id = ?").get(body.conversationId) as any;
       if (convRow) {
         if ((body as any).excludedMcps === undefined) {
           try { excludedMcps = JSON.parse(convRow.excluded_mcps || "[]"); } catch { }
@@ -690,6 +703,17 @@ export async function chatRoutes(app: FastifyInstance) {
         }
         if ((body as any).toolsEnabled === undefined && convRow.tools_enabled !== undefined && convRow.tools_enabled !== null) {
           toolsEnabled = Boolean(convRow.tools_enabled);
+        }
+        if (convMemoryEnabled === null && convRow.memory_enabled !== undefined && convRow.memory_enabled !== null) {
+          convMemoryEnabled = Boolean(convRow.memory_enabled);
+        }
+        if (convSystemPromptOverride === null && convRow.system_prompt_override) {
+          convSystemPromptOverride = String(convRow.system_prompt_override).trim() || null;
+        }
+        if (convSamplingOverrides === null && convRow.sampling_overrides) {
+          try {
+            convSamplingOverrides = JSON.parse(convRow.sampling_overrides);
+          } catch { }
         }
       }
     }
@@ -902,39 +926,57 @@ export async function chatRoutes(app: FastifyInstance) {
     reply.raw.on("close", onClientDisconnect);
     req.raw.on("aborted", onClientDisconnect);
 
-    // Emit routing status event if not a continue request
-    if (!isContinue) {
-      broadcastChunk(JSON.stringify({ type: "status", status: "routing" }));
-    }
+    const { extractPrefixTokens, resolveSlashInjections, routeToolsAndSkills, buildRecentContext } = await import(
+      "../services/toolRouter.js"
+    );
+
+    const slashInjections = !isContinue
+      ? await resolveSlashInjections(
+          Array.isArray(body.injectedTools) ? body.injectedTools : [],
+          originalUserContent
+        )
+      : { hasInjections: false, mcpTools: [], selectedSkills: [], selectedBuiltInTools: [] };
 
     let mcpTools: any[] = [];
     let activeSkills: any[] = [];
     let builtInTools: any[] = [];
 
-    if (toolsEnabled && !isContinue && !abortController.signal.aborted) {
-      const { routeToolsAndSkills, buildRecentContext } = await import("../services/toolRouter.js");
-      const priorContext = buildRecentContext(body.messages);
-      try {
-        const routingResult = await routeToolsAndSkills(
-          userQuery,
-          excludedMcps,
-          excludedSkills,
-          forcedTools,
-          body.model,
-          contextLimit,
-          (text: string) => {
-            routerRawText += text;
-            broadcastChunk(JSON.stringify({ type: "router_token", text }));
-          },
-          priorContext,
-          abortController.signal
-        );
-        mcpTools = routingResult.mcpTools ?? [];
-        activeSkills = routingResult.selectedSkills ?? [];
-        builtInTools = routingResult.selectedBuiltInTools ?? [];
-      } catch (err) {
-        if (!abortController.signal.aborted && !(err instanceof Error && (err.name === "AbortError" || err.message.includes("aborted")))) {
-          console.error("[toolRouter] Error during pre-pass routing:", err);
+    if (slashInjections.hasInjections) {
+      // Explicit / selections or /directives bypass disabled flags and skip the LLM routing pre-pass.
+      mcpTools = slashInjections.mcpTools;
+      activeSkills = slashInjections.selectedSkills;
+      builtInTools = slashInjections.selectedBuiltInTools;
+    } else {
+      // Emit routing status event if not a continue request
+      if (!isContinue) {
+        broadcastChunk(JSON.stringify({ type: "status", status: "routing" }));
+      }
+
+      if (toolsEnabled && !isContinue && !abortController.signal.aborted) {
+        const priorContext = buildRecentContext(body.messages);
+        try {
+          const routingResult = await routeToolsAndSkills(
+            userQuery,
+            excludedMcps,
+            excludedSkills,
+            forcedTools,
+            body.model,
+            contextLimit,
+            (text: string) => {
+              routerRawText += text;
+              broadcastChunk(JSON.stringify({ type: "router_token", text }));
+            },
+            priorContext,
+            abortController.signal,
+            convMemoryEnabled
+          );
+          mcpTools = routingResult.mcpTools ?? [];
+          activeSkills = routingResult.selectedSkills ?? [];
+          builtInTools = routingResult.selectedBuiltInTools ?? [];
+        } catch (err) {
+          if (!abortController.signal.aborted && !(err instanceof Error && (err.name === "AbortError" || err.message.includes("aborted")))) {
+            console.error("[toolRouter] Error during pre-pass routing:", err);
+          }
         }
       }
     }
@@ -963,18 +1005,68 @@ export async function chatRoutes(app: FastifyInstance) {
       outgoingMessages[outgoingMessages.length - 1].content = initialAssistantContent;
     }
 
-    const globalSettingsRow = db.prepare("SELECT ctx_overflow_behavior, reasoning_injection_mode, network_tools_enabled FROM global_settings LIMIT 1").get() as any;
+    const globalSettingsRow = db.prepare("SELECT ctx_overflow_behavior, reasoning_injection_mode, network_tools_enabled, memory_enabled, cross_chat_recall_enabled, cross_chat_include_archived FROM global_settings LIMIT 1").get() as any;
     const defaultReasoningMode = globalSettingsRow?.reasoning_injection_mode || "all";
     const effectiveReasoningMode = settingRow?.reasoning_injection_mode || defaultReasoningMode;
+    const globalMemoryEnabled = globalSettingsRow?.memory_enabled !== undefined ? Boolean(globalSettingsRow.memory_enabled) : true;
+    const effectiveMemoryEnabled = convMemoryEnabled !== null ? convMemoryEnabled : globalMemoryEnabled;
+    const crossChatRecallEnabled = globalSettingsRow?.cross_chat_recall_enabled !== undefined ? Boolean(globalSettingsRow.cross_chat_recall_enabled) : true;
+    const crossChatIncludeArchived = Boolean(globalSettingsRow?.cross_chat_include_archived);
 
     const { filterReasoningContent } = await import("../services/contextWindow.js");
     outgoingMessages = filterReasoningContent(outgoingMessages, effectiveReasoningMode as any);
 
-    if (settingRow?.system_prompt) {
+    const effectiveSystemPrompt = [settingRow?.system_prompt, convSystemPromptOverride]
+      .filter((p) => typeof p === "string" && p.trim().length > 0)
+      .join("\n\n");
+
+    if (effectiveSystemPrompt) {
       if (outgoingMessages.length > 0 && outgoingMessages[0].role === "system") {
-        outgoingMessages[0] = { ...outgoingMessages[0], content: settingRow.system_prompt };
+        outgoingMessages[0] = { ...outgoingMessages[0], content: effectiveSystemPrompt };
       } else {
-        outgoingMessages.unshift({ role: "system", content: settingRow.system_prompt });
+        outgoingMessages.unshift({ role: "system", content: effectiveSystemPrompt });
+      }
+    }
+
+    // Inject conversation scratchpad and top relevant persistent user memories into the system prompt
+    if (toolsEnabled || builtInTools.some((t) => t.category === "memory")) {
+      const { getScratchpadEntries, searchMemories } = await import("../services/memory.js");
+      const memoryBlocks: string[] = [];
+
+      const scratchEntries = getScratchpadEntries(conversationId);
+      if (scratchEntries.length > 0) {
+        const formattedScratch = scratchEntries
+          .map((e) => `[${e.key}]: ${e.content}`)
+          .join("\n");
+        memoryBlocks.push(
+          `CONVERSATION SCRATCHPAD (current notes for this chat; update via scratchpad_set):\n${formattedScratch}`
+        );
+      }
+
+      if (effectiveMemoryEnabled && userQuery.trim()) {
+        try {
+          const relevantMemories = await searchMemories(userQuery, 5, true, abortController.signal);
+          if (relevantMemories.length > 0) {
+            const formattedMems = relevantMemories
+              .map((m) => `- (${m.category}, id=${m.id}): ${m.content}`)
+              .join("\n");
+            memoryBlocks.push(
+              `RELEVANT PERSISTENT USER MEMORIES (manage via memory_set / memory_update / memory_delete / memory_search):\n${formattedMems}`
+            );
+          }
+        } catch { }
+      }
+
+      if (memoryBlocks.length > 0) {
+        const memInjection = memoryBlocks.join("\n\n");
+        if (outgoingMessages.length > 0 && outgoingMessages[0].role === "system") {
+          outgoingMessages[0] = {
+            ...outgoingMessages[0],
+            content: outgoingMessages[0].content + "\n\n" + memInjection,
+          };
+        } else {
+          outgoingMessages.unshift({ role: "system", content: memInjection });
+        }
       }
     }
 
@@ -1047,7 +1139,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const { builtInToolRegistry } = await import("../services/builtinTools/index.js");
 
-    if (toolsEnabled) {
+    if (toolsEnabled || builtInTools.some((t) => t.category === "artifact")) {
       const artifactGuidance =
         `ARTIFACT TOOLS:\n` +
         `When generating HTML web pages, SVG graphics, scripts, or markdown documents, call the \`create_artifact\` tool function. Only call \`create_artifact\` once per artifact.\n` +
@@ -1069,7 +1161,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const { model: _incomingModel, conversationId: _incomingConvId, userMessageId: _umId, userParentId: _upId, assistantMessageId: _amId, attachments: _attachments, messages: _msgs, ...rest } = body;
 
-    const finalTemperature = settingRow?.temperature ?? body.temperature;
+    let finalTemperature = settingRow?.temperature ?? body.temperature;
 
     // Helper to embed attachments (images, audio, video, extracted PDF/DOCX/code/text) into a user message
     const selectAttachmentById = db.prepare<[string], AttachmentRow>("SELECT * FROM attachments WHERE id = ?");
@@ -1175,12 +1267,81 @@ export async function chatRoutes(app: FastifyInstance) {
         }
       }
 
+      // 4. Resolve @filename / @"file name" mentions in the latest user turn against session attachments & artifacts
+      const mentionedArtifacts: ArtifactRow[] = [];
+      if (isCurrentUserTurn && originalUserContent) {
+        const atTokens = extractPrefixTokens(originalUserContent, "@");
+        if (atTokens.length > 0) {
+          const collectedNames = new Set(
+            Array.from(collectedById.values()).map((r) => r.original_name.trim().toLowerCase())
+          );
+
+          const sessionAtts = db
+            .prepare<[string], AttachmentRow>(
+              `SELECT a.* FROM attachments a
+               JOIN messages m ON a.message_id = m.id
+               WHERE m.conversation_id = ?
+               ORDER BY a.created_at DESC`
+            )
+            .all(conversationId);
+
+          const sessionArts = db
+            .prepare<[string], ArtifactRow>(
+              "SELECT * FROM artifacts WHERE conversation_id = ? ORDER BY updated_at DESC"
+            )
+            .all(conversationId);
+
+          for (const token of atTokens) {
+            const lowerTok = token.toLowerCase();
+            if (!collectedNames.has(lowerTok)) {
+              const attMatch = sessionAtts.find(
+                (a) => a.original_name.trim().toLowerCase() === lowerTok
+              );
+              if (attMatch) {
+                collectedById.set(attMatch.id, attMatch);
+                collectedNames.add(lowerTok);
+                continue;
+              }
+            }
+            const artMatch = sessionArts.find(
+              (a) => a.filename.trim().toLowerCase() === lowerTok
+            );
+            if (artMatch && !mentionedArtifacts.some((m) => m.id === artMatch.id)) {
+              mentionedArtifacts.push(artMatch);
+            }
+          }
+        }
+      }
+
       // Strip internal id/attachments fields before sending to LLM adapter
       delete msg.id;
       delete msg.attachments;
 
       if (collectedById.size > 0) {
         applyAttachmentsToUserMessage(msg, Array.from(collectedById.values()));
+      }
+
+      if (mentionedArtifacts.length > 0) {
+        const artifactBlocks: string[] = [];
+        for (const art of mentionedArtifacts) {
+          try {
+            if (fs.existsSync(art.disk_path)) {
+              const rawText = fs.readFileSync(art.disk_path, "utf-8");
+              const lang = art.language || path.extname(art.filename).replace(".", "") || "text";
+              artifactBlocks.push(
+                `\n\n--- Referenced Session Artifact: ${art.filename} ---\n\`\`\`${lang}\n${rawText}\n\`\`\``
+              );
+            }
+          } catch { }
+        }
+        if (artifactBlocks.length > 0) {
+          const combined = artifactBlocks.join("");
+          if (typeof msg.content === "string") {
+            msg.content += combined;
+          } else if (Array.isArray(msg.content)) {
+            msg.content.push({ type: "text", text: combined });
+          }
+        }
       }
     }
 
@@ -1203,6 +1364,18 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
+    if (convSamplingOverrides) {
+      if (convSamplingOverrides.maxTokens !== null && convSamplingOverrides.maxTokens !== undefined) {
+        extraParams.max_tokens = convSamplingOverrides.maxTokens;
+      }
+      if (convSamplingOverrides.reasoningEffort) {
+        extraParams.reasoning_effort = convSamplingOverrides.reasoningEffort;
+      }
+      if (convSamplingOverrides.temperature !== null && convSamplingOverrides.temperature !== undefined) {
+        finalTemperature = convSamplingOverrides.temperature;
+      }
+    }
+
     // Inject tools into the request if any are available
     let toolDefinitions: any[] = [];
     if (mcpTools.length > 0) {
@@ -1215,7 +1388,11 @@ export async function chatRoutes(app: FastifyInstance) {
       conversationId,
       activeSkillIds: activeSkills.map((s) => s.id),
       activeSkills,
+      abortSignal: abortController.signal,
       uploadsDir: path.join(DATA_DIR, "uploads"),
+      memoryEnabled: effectiveMemoryEnabled,
+      crossChatRecallEnabled,
+      crossChatIncludeArchived,
       emitEvent: (type: string, payload: Record<string, any>) => {
         if ((type === "artifact_created" || type === "artifact_updated") && typeof payload.filename === "string") {
           artifactFilenamesThisTurn.add(payload.filename);
@@ -1224,7 +1401,8 @@ export async function chatRoutes(app: FastifyInstance) {
       },
     };
 
-    const availableBuiltInTools = toolsEnabled ? [...builtInTools] : [];
+    const availableBuiltInTools =
+      toolsEnabled || slashInjections.hasInjections ? [...builtInTools] : [];
 
     if (toolsEnabled) {
       // Force-include any artifact tools the router might have dropped

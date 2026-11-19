@@ -1,4 +1,13 @@
-import { fetchGlobalSettings, updateGlobalSettings, type AutoNameMode, type ToolRoutingMode, type CtxOverflowBehavior, type ReasoningInjectionMode } from "../api";
+import {
+  fetchGlobalSettings,
+  updateGlobalSettings,
+  type AutoNameMode,
+  type ToolRoutingMode,
+  type CtxOverflowBehavior,
+  type ReasoningInjectionMode,
+  type SpeechProviderType,
+  type SpeechDeviceType,
+} from "../api";
 import { themeStore, type ThemeName } from "../theme.svelte";
 
 class SettingsStore {
@@ -14,6 +23,20 @@ class SettingsStore {
   networkToolsEnabled = $state<boolean>(false);
   artifactNetworkEnabled = $state<boolean>(false);
   disabledBuiltInTools = $state<string[]>([]);
+  memoryEnabled = $state<boolean>(true);
+  crossChatRecallEnabled = $state<boolean>(true);
+  crossChatIncludeArchived = $state<boolean>(false);
+  embeddingModel = $state<string | null>(null);
+  sttProvider = $state<SpeechProviderType>("browser");
+  sttEndpoint = $state<string | null>(null);
+  sttModel = $state<string | null>(null);
+  sttDevice = $state<SpeechDeviceType>("cpu");
+  ttsProvider = $state<SpeechProviderType>("browser");
+  ttsEndpoint = $state<string | null>(null);
+  ttsModel = $state<string | null>(null);
+  ttsVoice = $state<string | null>(null);
+  ttsDevice = $state<SpeechDeviceType>("cpu");
+  speechIdleTimeoutSec = $state<number>(60);
   loaded = $state(false);
 
   async init() {
@@ -31,6 +54,20 @@ class SettingsStore {
       this.networkToolsEnabled = !!data.networkToolsEnabled;
       this.artifactNetworkEnabled = !!data.artifactNetworkEnabled;
       this.disabledBuiltInTools = Array.isArray(data.disabledBuiltInTools) ? data.disabledBuiltInTools : [];
+      this.memoryEnabled = data.memoryEnabled !== undefined ? !!data.memoryEnabled : true;
+      this.crossChatRecallEnabled = data.crossChatRecallEnabled !== undefined ? !!data.crossChatRecallEnabled : true;
+      this.crossChatIncludeArchived = !!data.crossChatIncludeArchived;
+      this.embeddingModel = data.embeddingModel ?? null;
+      this.sttProvider = data.sttProvider ?? "browser";
+      this.sttEndpoint = data.sttEndpoint ?? null;
+      this.sttModel = data.sttModel ?? null;
+      this.sttDevice = data.sttDevice ?? "cpu";
+      this.ttsProvider = data.ttsProvider ?? "browser";
+      this.ttsEndpoint = data.ttsEndpoint ?? null;
+      this.ttsModel = data.ttsModel ?? null;
+      this.ttsVoice = data.ttsVoice ?? null;
+      this.ttsDevice = data.ttsDevice ?? "cpu";
+      this.speechIdleTimeoutSec = data.speechIdleTimeoutSec ?? 60;
       themeStore.set(this.theme);
       this.loaded = true;
     } catch (err) {
@@ -52,6 +89,20 @@ class SettingsStore {
       networkToolsEnabled: boolean;
       artifactNetworkEnabled: boolean;
       disabledBuiltInTools: string[];
+      memoryEnabled: boolean;
+      crossChatRecallEnabled: boolean;
+      crossChatIncludeArchived: boolean;
+      embeddingModel: string | null;
+      sttProvider: SpeechProviderType;
+      sttEndpoint: string | null;
+      sttModel: string | null;
+      sttDevice: SpeechDeviceType;
+      ttsProvider: SpeechProviderType;
+      ttsEndpoint: string | null;
+      ttsModel: string | null;
+      ttsVoice: string | null;
+      ttsDevice: SpeechDeviceType;
+      speechIdleTimeoutSec: number;
       password?: string;
     }>,
   ) {
@@ -68,6 +119,20 @@ class SettingsStore {
       networkToolsEnabled: this.networkToolsEnabled,
       artifactNetworkEnabled: this.artifactNetworkEnabled,
       disabledBuiltInTools: [...this.disabledBuiltInTools],
+      memoryEnabled: this.memoryEnabled,
+      crossChatRecallEnabled: this.crossChatRecallEnabled,
+      crossChatIncludeArchived: this.crossChatIncludeArchived,
+      embeddingModel: this.embeddingModel,
+      sttProvider: this.sttProvider,
+      sttEndpoint: this.sttEndpoint,
+      sttModel: this.sttModel,
+      sttDevice: this.sttDevice,
+      ttsProvider: this.ttsProvider,
+      ttsEndpoint: this.ttsEndpoint,
+      ttsModel: this.ttsModel,
+      ttsVoice: this.ttsVoice,
+      ttsDevice: this.ttsDevice,
+      speechIdleTimeoutSec: this.speechIdleTimeoutSec,
     };
 
     if (patch.userName !== undefined) this.userName = patch.userName;
@@ -85,23 +150,23 @@ class SettingsStore {
     if (patch.networkToolsEnabled !== undefined) this.networkToolsEnabled = patch.networkToolsEnabled;
     if (patch.artifactNetworkEnabled !== undefined) this.artifactNetworkEnabled = patch.artifactNetworkEnabled;
     if (patch.disabledBuiltInTools !== undefined) this.disabledBuiltInTools = patch.disabledBuiltInTools;
+    if (patch.memoryEnabled !== undefined) this.memoryEnabled = patch.memoryEnabled;
+    if (patch.crossChatRecallEnabled !== undefined) this.crossChatRecallEnabled = patch.crossChatRecallEnabled;
+    if (patch.crossChatIncludeArchived !== undefined) this.crossChatIncludeArchived = patch.crossChatIncludeArchived;
+    if (patch.embeddingModel !== undefined) this.embeddingModel = patch.embeddingModel;
+    if (patch.sttProvider !== undefined) this.sttProvider = patch.sttProvider;
+    if (patch.sttEndpoint !== undefined) this.sttEndpoint = patch.sttEndpoint;
+    if (patch.sttModel !== undefined) this.sttModel = patch.sttModel;
+    if (patch.sttDevice !== undefined) this.sttDevice = patch.sttDevice;
+    if (patch.ttsProvider !== undefined) this.ttsProvider = patch.ttsProvider;
+    if (patch.ttsEndpoint !== undefined) this.ttsEndpoint = patch.ttsEndpoint;
+    if (patch.ttsModel !== undefined) this.ttsModel = patch.ttsModel;
+    if (patch.ttsVoice !== undefined) this.ttsVoice = patch.ttsVoice;
+    if (patch.ttsDevice !== undefined) this.ttsDevice = patch.ttsDevice;
+    if (patch.speechIdleTimeoutSec !== undefined) this.speechIdleTimeoutSec = patch.speechIdleTimeoutSec;
 
     try {
-      await updateGlobalSettings({
-        userName: patch.userName,
-        userAvatar: patch.userAvatar,
-        theme: patch.theme,
-        autoNameMode: patch.autoNameMode,
-        autoNameModel: patch.autoNameModel,
-        toolRoutingMode: patch.toolRoutingMode,
-        toolRoutingModel: patch.toolRoutingModel,
-        ctxOverflowBehavior: patch.ctxOverflowBehavior,
-        reasoningInjectionMode: patch.reasoningInjectionMode,
-        networkToolsEnabled: patch.networkToolsEnabled,
-        artifactNetworkEnabled: patch.artifactNetworkEnabled,
-        disabledBuiltInTools: patch.disabledBuiltInTools,
-        password: patch.password,
-      });
+      await updateGlobalSettings(patch);
     } catch (err) {
       this.userName = prev.userName;
       this.userAvatar = prev.userAvatar;
@@ -116,6 +181,20 @@ class SettingsStore {
       this.networkToolsEnabled = prev.networkToolsEnabled;
       this.artifactNetworkEnabled = prev.artifactNetworkEnabled;
       this.disabledBuiltInTools = prev.disabledBuiltInTools;
+      this.memoryEnabled = prev.memoryEnabled;
+      this.crossChatRecallEnabled = prev.crossChatRecallEnabled;
+      this.crossChatIncludeArchived = prev.crossChatIncludeArchived;
+      this.embeddingModel = prev.embeddingModel;
+      this.sttProvider = prev.sttProvider;
+      this.sttEndpoint = prev.sttEndpoint;
+      this.sttModel = prev.sttModel;
+      this.sttDevice = prev.sttDevice;
+      this.ttsProvider = prev.ttsProvider;
+      this.ttsEndpoint = prev.ttsEndpoint;
+      this.ttsModel = prev.ttsModel;
+      this.ttsVoice = prev.ttsVoice;
+      this.ttsDevice = prev.ttsDevice;
+      this.speechIdleTimeoutSec = prev.speechIdleTimeoutSec;
       console.error("Failed to persist settings to server:", err);
       throw err;
     }

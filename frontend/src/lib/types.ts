@@ -168,6 +168,66 @@ export interface ChatMessage {
   model?: string;
 }
 
+export interface ConversationSamplingOverrides {
+  temperature?: number | null;
+  maxTokens?: number | null;
+  reasoningEffort?: string | null;
+}
+
+export interface ScratchpadEntryInfo {
+  conversationId: string;
+  key: string;
+  content: string;
+  updatedAt: number;
+}
+
+export interface MemoryInfo {
+  id: string;
+  content: string;
+  category: string;
+  tags: string[];
+  sourceConversationId: string | null;
+  hasEmbedding: boolean;
+  isEnabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+  score?: number;
+}
+
+export interface MemoryWriteBody {
+  content: string;
+  category?: string;
+  tags?: string[];
+  sourceConversationId?: string | null;
+  isEnabled?: boolean;
+}
+
+export interface ChatHistorySearchHit {
+  conversationId: string;
+  conversationTitle: string;
+  isArchived: boolean;
+  isPinned: boolean;
+  messageId: string;
+  role: string;
+  snippet: string;
+  createdAt: number;
+  score: number;
+}
+
+export interface ArtifactInfo {
+  id: string;
+  conversationId: string;
+  filename: string;
+  language: string;
+  title: string;
+  sizeBytes: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type SpeechProviderType = "browser" | "openai_compatible" | "local_cli";
+export type SpeechDeviceType = "cpu" | "gpu";
+
 /** A conversation list item (no messages). */
 export interface ConversationSummary {
   id: string;
@@ -176,6 +236,11 @@ export interface ConversationSummary {
   createdAt: number;
   updatedAt: number;
   toolsEnabled?: boolean;
+  isPinned?: boolean;
+  isArchived?: boolean;
+  memoryEnabled?: boolean | null;
+  systemPromptOverride?: string | null;
+  samplingOverrides?: ConversationSamplingOverrides | null;
 }
 
 /** A full conversation with its messages. */
@@ -183,6 +248,7 @@ export interface ConversationDetail extends ConversationSummary {
   messages: MessageOut[];
   excludedMcps?: string[];
   excludedSkills?: string[];
+  scratchpad?: ScratchpadEntryInfo[];
 }
 
 /** Message shape returned from the API. */
@@ -215,6 +281,8 @@ export interface McpServerInfo {
   env: Record<string, string>;
   headers: Record<string, string>;
   isEnabled: boolean;
+  summary?: string | null;
+  keywords?: string | null;
   status?: "connected" | "connecting" | "error" | "stopped" | "disabled";
   error?: string;
 }
@@ -235,6 +303,8 @@ export interface McpServerWriteBody {
   env?: Record<string, string>;
   headers?: Record<string, string>;
   isEnabled?: boolean;
+  summary?: string | null;
+  keywords?: string | null;
 }
 
 export interface SkillInfo {
@@ -247,6 +317,8 @@ export interface SkillInfo {
   contentHash: string;
   isEnabled: boolean;
   createdAt: number;
+  summary?: string | null;
+  keywords?: string | null;
 }
 
 export interface SkillWriteBody {
@@ -257,4 +329,27 @@ export interface SkillWriteBody {
   dirPath?: string;
   sourceUrl?: string;
   isEnabled?: boolean;
+  summary?: string | null;
+  keywords?: string | null;
+}
+
+export interface McpToolInfo {
+  serverId: string;
+  serverName: string;
+  name: string;
+  description?: string;
+}
+
+export interface SlashToolSelection {
+  kind: "builtin_tool" | "skill" | "mcp_server" | "mcp_tool";
+  id: string;
+  name: string;
+}
+
+export interface SessionFileItem {
+  id: string;
+  name: string;
+  source: "pending" | "attachment" | "artifact";
+  subtitle: string;
+  mimeType?: string;
 }

@@ -17,7 +17,11 @@ import { mcpRoutes } from "./routes/mcp.js";
 import { skillRoutes } from "./routes/skills.js";
 import { artifactsRoutes } from "./routes/artifacts.js";
 import { authRoutes } from "./routes/auth.js";
+import { memoriesRoutes } from "./routes/memories.js";
+import { backupRoutes } from "./routes/backup.js";
+import { speechRoutes } from "./routes/speech.js";
 import { initModelSync } from "./services/modelSync.js";
+import { tryLoadSqliteVec } from "./services/memory.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -118,7 +122,11 @@ async function main() {
   await app.register(mcpRoutes);
   await app.register(skillRoutes);
   await app.register(artifactsRoutes);
+  await app.register(memoriesRoutes);
+  await app.register(backupRoutes);
+  await app.register(speechRoutes);
 
+  await tryLoadSqliteVec();
   initModelSync();
 
   // If the frontend has been built (frontend/dist), serve it directly so the

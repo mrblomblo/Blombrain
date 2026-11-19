@@ -90,6 +90,12 @@ export interface CachedModelRow {
 // Conversation / message types
 // ---------------------------------------------------------------------------
 
+export interface ConversationSummaryOverrides {
+  temperature?: number | null;
+  maxTokens?: number | null;
+  reasoningEffort?: string | null;
+}
+
 export interface ConversationRow {
   id: string;
   title: string;
@@ -97,6 +103,11 @@ export interface ConversationRow {
   created_at: number;
   updated_at: number;
   tools_enabled?: number;
+  is_pinned?: number;
+  is_archived?: number;
+  memory_enabled?: number | null;
+  system_prompt_override?: string | null;
+  sampling_overrides?: string | null;
 }
 
 export interface MessageRow {
@@ -121,6 +132,11 @@ export interface ConversationSummary {
   createdAt: number;
   updatedAt: number;
   toolsEnabled?: boolean;
+  isPinned?: boolean;
+  isArchived?: boolean;
+  memoryEnabled?: boolean | null;
+  systemPromptOverride?: string | null;
+  samplingOverrides?: ConversationSummaryOverrides | null;
 }
 
 /** Full conversation with messages, sent on GET /api/conversations/:id */
@@ -128,6 +144,54 @@ export interface ConversationDetail extends ConversationSummary {
   messages: MessageOut[];
   excludedMcps?: string[];
   excludedSkills?: string[];
+  scratchpad?: ScratchpadEntryOut[];
+}
+
+export interface ScratchpadEntryRow {
+  conversation_id: string;
+  key: string;
+  content: string;
+  updated_at: number;
+}
+
+export interface ScratchpadEntryOut {
+  conversationId: string;
+  key: string;
+  content: string;
+  updatedAt: number;
+}
+
+export interface MemoryRow {
+  id: string;
+  content: string;
+  category: string;
+  tags: string; // JSON string[]
+  source_conversation_id: string | null;
+  embedding: Buffer | null;
+  is_enabled: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface MemoryOut {
+  id: string;
+  content: string;
+  category: string;
+  tags: string[];
+  sourceConversationId: string | null;
+  hasEmbedding: boolean;
+  isEnabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+  score?: number;
+}
+
+export interface MemoryWriteBody {
+  content: string;
+  category?: string;
+  tags?: string[];
+  sourceConversationId?: string | null;
+  isEnabled?: boolean;
 }
 
 export interface ToolCallItem {
@@ -179,6 +243,11 @@ export interface ConversationPatchBody {
   excludedMcps?: string[];
   excludedSkills?: string[];
   toolsEnabled?: boolean;
+  isPinned?: boolean;
+  isArchived?: boolean;
+  memoryEnabled?: boolean | null;
+  systemPromptOverride?: string | null;
+  samplingOverrides?: ConversationSummaryOverrides | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +263,8 @@ export interface McpServerRow {
   env: string;  // JSON object
   headers: string; // JSON object
   is_enabled: number;
+  summary?: string | null;
+  keywords?: string | null;
 }
 
 export interface McpServerOut {
@@ -205,6 +276,8 @@ export interface McpServerOut {
   env: Record<string, string>;
   headers: Record<string, string>;
   isEnabled: boolean;
+  summary?: string | null;
+  keywords?: string | null;
   status?: "connected" | "connecting" | "error" | "stopped" | "disabled";
   error?: string;
 }
@@ -218,6 +291,21 @@ export interface McpServerWriteBody {
   env?: Record<string, string>;
   headers?: Record<string, string>;
   isEnabled?: boolean;
+  summary?: string | null;
+  keywords?: string | null;
+}
+
+export interface McpToolOut {
+  serverId: string;
+  serverName: string;
+  name: string;
+  description?: string;
+}
+
+export interface SlashToolSelection {
+  kind: "builtin_tool" | "skill" | "mcp_server" | "mcp_tool";
+  id: string;
+  name: string;
 }
 
 export interface SkillRow {
@@ -230,6 +318,8 @@ export interface SkillRow {
   content_hash: string;
   is_enabled: number;
   created_at: number;
+  summary?: string | null;
+  keywords?: string | null;
 }
 
 export interface SkillOut {
@@ -242,6 +332,8 @@ export interface SkillOut {
   contentHash: string;
   isEnabled: boolean;
   createdAt: number;
+  summary?: string | null;
+  keywords?: string | null;
 }
 
 export interface SkillWriteBody {
@@ -252,6 +344,8 @@ export interface SkillWriteBody {
   dirPath?: string;
   sourceUrl?: string;
   isEnabled?: boolean;
+  summary?: string | null;
+  keywords?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -368,6 +462,8 @@ export type AutoNameMode = "first_words" | "active_model" | "designated_model";
 export type ToolRoutingMode = "off" | "active_model" | "designated_model";
 export type CtxOverflowBehavior = "truncate_middle" | "rolling" | "stop";
 export type ReasoningInjectionMode = "all" | "latest" | "none";
+export type SpeechProviderType = "browser" | "openai_compatible" | "local_cli";
+export type SpeechDeviceType = "cpu" | "gpu";
 
 export interface GlobalSettingsRow {
   id: string;
@@ -383,6 +479,20 @@ export interface GlobalSettingsRow {
   network_tools_enabled?: number;
   artifact_network_enabled?: number;
   disabled_builtin_tools?: string;
+  memory_enabled?: number;
+  cross_chat_recall_enabled?: number;
+  cross_chat_include_archived?: number;
+  embedding_model?: string | null;
+  stt_provider?: string;
+  stt_endpoint?: string | null;
+  stt_model?: string | null;
+  stt_device?: string;
+  tts_provider?: string;
+  tts_endpoint?: string | null;
+  tts_model?: string | null;
+  tts_voice?: string | null;
+  tts_device?: string;
+  speech_idle_timeout_sec?: number;
 }
 
 export interface GlobalSettingsOut {
@@ -399,6 +509,20 @@ export interface GlobalSettingsOut {
   networkToolsEnabled: boolean;
   artifactNetworkEnabled: boolean;
   disabledBuiltInTools: string[];
+  memoryEnabled: boolean;
+  crossChatRecallEnabled: boolean;
+  crossChatIncludeArchived: boolean;
+  embeddingModel: string | null;
+  sttProvider: SpeechProviderType;
+  sttEndpoint: string | null;
+  sttModel: string | null;
+  sttDevice: SpeechDeviceType;
+  ttsProvider: SpeechProviderType;
+  ttsEndpoint: string | null;
+  ttsModel: string | null;
+  ttsVoice: string | null;
+  ttsDevice: SpeechDeviceType;
+  speechIdleTimeoutSec: number;
 }
 
 export interface GlobalSettingsWriteBody {
@@ -414,5 +538,19 @@ export interface GlobalSettingsWriteBody {
   networkToolsEnabled?: boolean;
   artifactNetworkEnabled?: boolean;
   disabledBuiltInTools?: string[];
+  memoryEnabled?: boolean;
+  crossChatRecallEnabled?: boolean;
+  crossChatIncludeArchived?: boolean;
+  embeddingModel?: string | null;
+  sttProvider?: SpeechProviderType;
+  sttEndpoint?: string | null;
+  sttModel?: string | null;
+  sttDevice?: SpeechDeviceType;
+  ttsProvider?: SpeechProviderType;
+  ttsEndpoint?: string | null;
+  ttsModel?: string | null;
+  ttsVoice?: string | null;
+  ttsDevice?: SpeechDeviceType;
+  speechIdleTimeoutSec?: number;
   password?: string;
 }

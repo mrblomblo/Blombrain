@@ -7,13 +7,16 @@
     Play,
     Check,
     ChevronDown,
+    Volume2,
+    Square,
   } from "@lucide/svelte";
   import type { ChatMessage } from "../types";
   import { chatStore } from "../stores/chat.svelte";
+  import { settingsStore } from "../stores/settings.svelte";
   import { copyToClipboard } from "../utils/clipboard";
   import { confirmStore } from "../stores/confirmStore.svelte";
   import { getCleanVisibleText } from "../utils/segmentParser";
-  import { fetchModels } from "../api";
+  import { fetchModels, synthesizeSpeechAudio } from "../api";
   import { createQuery } from "@tanstack/svelte-query";
 
   interface Props {
@@ -26,6 +29,84 @@
   let copied = $state(false);
   let showRegenModels = $state(false);
   let regenMenuEl: HTMLDivElement | undefined = $state();
+  let isSpeaking = $state(false);
+  let isLoadingTts = $state(false);
+  let activeAudio: HTMLAudioElement | null = null;
+  let activeAudioUrl: string | null = null;
+
+  function stopSpeaking() {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      try { window.speechSynthesis.cancel(); } catch { }
+    }
+    if (activeAudio) {
+      try { activeAudio.pause(); } catch { }
+      activeAudio = null;
+    }
+    if (activeAudioUrl) {
+      URL.revokeObjectURL(activeAudioUrl);
+      activeAudioUrl = null;
+    }
+    isSpeaking = false;
+    isLoadingTts = false;
+  }
+
+  async function handleToggleSpeak() {
+    if (isSpeaking || isLoadingTts) {
+      stopSpeaking();
+      return;
+    }
+
+    const cleanText = getCleanVisibleText(
+      message.content,
+      message.thinkingContent,
+    ).trim();
+    if (!cleanText) return;
+
+    if (
+      settingsStore.ttsProvider === "browser" &&
+      typeof window !== "undefined" &&
+      "speechSynthesis" in window
+    ) {
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        if (settingsStore.ttsVoice) {
+          const matchVoice = window.speechSynthesis
+            .getVoices()
+            .find((v) => v.name.toLowerCase().includes(settingsStore.ttsVoice!.toLowerCase()));
+          if (matchVoice) utterance.voice = matchVoice;
+        }
+        utterance.onend = () => {
+          isSpeaking = false;
+        };
+        utterance.onerror = () => {
+          isSpeaking = false;
+        };
+        isSpeaking = true;
+        window.speechSynthesis.speak(utterance);
+        return;
+      } catch (err) {
+        console.error("[TTS] Browser speechSynthesis failed:", err);
+      }
+    }
+
+    isLoadingTts = true;
+    try {
+      const blob = await synthesizeSpeechAudio(cleanText);
+      const url = URL.createObjectURL(blob);
+      activeAudioUrl = url;
+      const audio = new Audio(url);
+      activeAudio = audio;
+      audio.onended = () => stopSpeaking();
+      audio.onerror = () => stopSpeaking();
+      isLoadingTts = false;
+      isSpeaking = true;
+      await audio.play();
+    } catch (err) {
+      console.error("[TTS] Speech synthesis failed:", err);
+      stopSpeaking();
+    }
+  }
 
   const modelsQuery = createQuery(() => ({
     queryKey: ["models"],
@@ -199,6 +280,26 @@
       class="flex h-5 w-5 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
     >
       <Play size={13} />
+    </button>
+
+    <!-- Read Aloud (TTS) -->
+    <button
+      type="button"
+      onclick={handleToggleSpeak}
+      disabled={chatStore.isStreaming}
+      aria-label={isSpeaking ? "Stop reading aloud" : "Read response aloud (TTS)"}
+      title={isSpeaking ? "Stop reading aloud" : "Read Aloud (TTS)"}
+      class="flex h-5 w-5 items-center justify-center rounded-md transition-colors cursor-pointer hover:bg-bg-hover disabled:opacity-30 disabled:pointer-events-none {isSpeaking
+        ? 'text-accent'
+        : 'text-fg-muted hover:text-fg'}"
+    >
+      {#if isLoadingTts}
+        <span class="animate-spin text-[10px]">⟳</span>
+      {:else if isSpeaking}
+        <Square size={11} />
+      {:else}
+        <Volume2 size={13} />
+      {/if}
     </button>
   {/if}
 

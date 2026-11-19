@@ -6,6 +6,7 @@
     updateMcpServer,
     deleteMcpServer,
     reconnectMcpServer,
+    summarizeMcpServer,
   } from "../../api";
   import type { McpServerInfo, McpServerWriteBody } from "../../types";
   import Button from "../ui/Button.svelte";
@@ -18,6 +19,7 @@
     CheckCircle,
     Server,
     RefreshCw,
+    Sparkles,
   } from "@lucide/svelte";
   import { slide } from "svelte/transition";
 
@@ -42,10 +44,13 @@
   let argsText = $state("");
   let envText = $state("");
   let headersText = $state("");
+  let summaryText = $state("");
+  let keywordsText = $state("");
   let isEnabled = $state(true);
 
   let formError = $state<string | null>(null);
   let formBusy = $state(false);
+  let summarizing = $state(false);
   let reconnectingId = $state<string | null>(null);
 
   function resetForm() {
@@ -57,9 +62,12 @@
     argsText = "";
     envText = "";
     headersText = "";
+    summaryText = "";
+    keywordsText = "";
     isEnabled = true;
     formError = null;
     formBusy = false;
+    summarizing = false;
   }
 
   function startEdit(server: McpServerInfo) {
@@ -70,9 +78,27 @@
     argsText = (server.args || []).join(" ");
     envText = JSON.stringify(server.env || {}, null, 2);
     headersText = JSON.stringify(server.headers || {}, null, 2);
+    summaryText = server.summary || "";
+    keywordsText = server.keywords || "";
     isEnabled = server.isEnabled;
     isAdding = true;
     formError = null;
+  }
+
+  async function handleGenerateSummary() {
+    if (!editingId) return;
+    summarizing = true;
+    formError = null;
+    try {
+      const res = await summarizeMcpServer(editingId);
+      summaryText = res.summary;
+      keywordsText = res.keywords;
+      await queryClient.invalidateQueries({ queryKey: ["mcpServers"] });
+    } catch (err: any) {
+      formError = err?.message || "Failed to generate summary from MCP tools.";
+    } finally {
+      summarizing = false;
+    }
   }
 
   async function handleToggleEnabled(server: McpServerInfo, checked: boolean) {
@@ -146,6 +172,8 @@
         env: parsedEnv,
         headers: parsedHeaders,
         isEnabled,
+        summary: summaryText.trim() || null,
+        keywords: keywordsText.trim() || null,
       };
 
       if (editingId) {
@@ -325,6 +353,53 @@
           {/if}
         </div>
       {/if}
+
+      <!-- Router Summary & Keywords -->
+      <div class="rounded-lg border border-line bg-bg p-3 space-y-2.5">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <span class="block text-xs font-semibold text-fg">
+              Context-Scoped Router Summary &amp; Keywords (Optional)
+            </span>
+            <span class="text-[11px] text-fg-subtle">
+              Used by the lightweight tool router pre-pass to identify when this server's tools are needed.
+            </span>
+          </div>
+          {#if editingId}
+            <Button
+              variant="default"
+              size="sm"
+              onclick={handleGenerateSummary}
+              disabled={summarizing}
+            >
+              <Sparkles size={13} class={summarizing ? "animate-pulse text-accent" : "text-accent"} />
+              <span>{summarizing ? "Generating..." : "Generate with AI"}</span>
+            </Button>
+          {/if}
+        </div>
+        <div>
+          <label for="mcp-summary" class="block text-xs font-medium text-fg-muted mb-1">
+            1-Sentence Description
+          </label>
+          <input
+            id="mcp-summary"
+            bind:value={summaryText}
+            placeholder="e.g. Queries and modifies local SQLite database tables."
+            class="w-full rounded-md border border-line bg-bg-elevated px-3 py-1.5 text-xs text-fg focus:outline-none focus:border-accent"
+          />
+        </div>
+        <div>
+          <label for="mcp-keywords" class="block text-xs font-medium text-fg-muted mb-1">
+            Keywords (comma separated)
+          </label>
+          <input
+            id="mcp-keywords"
+            bind:value={keywordsText}
+            placeholder="e.g. sqlite, sql, database, query, schema"
+            class="w-full rounded-md border border-line bg-bg-elevated px-3 py-1.5 text-xs text-fg focus:outline-none focus:border-accent"
+          />
+        </div>
+      </div>
 
       {#if formError}
         <p class="text-xs text-danger font-medium">{formError}</p>

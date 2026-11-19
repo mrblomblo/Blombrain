@@ -12,7 +12,9 @@ import type {
   AttachmentOut,
   McpServerInfo,
   McpServerWriteBody,
+  McpToolInfo,
   BuiltInToolInfo,
+  SlashToolSelection,
   SkillInfo,
   SkillWriteBody,
   ModelSettingWriteBody,
@@ -20,8 +22,21 @@ import type {
   ToolExecutionEvent,
   CtxOverflowBehavior,
   ReasoningInjectionMode,
+  ConversationSamplingOverrides,
+  ScratchpadEntryInfo,
+  MemoryInfo,
+  MemoryWriteBody,
+  ChatHistorySearchHit,
+  ArtifactInfo,
+  SpeechProviderType,
+  SpeechDeviceType,
 } from "./types";
-export type { CtxOverflowBehavior, ReasoningInjectionMode };
+export type {
+  CtxOverflowBehavior,
+  ReasoningInjectionMode,
+  SpeechProviderType,
+  SpeechDeviceType,
+};
 
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const res = await globalThis.fetch(input, { ...init, credentials: "include" });
@@ -106,6 +121,17 @@ export async function reconnectMcpServer(id: string): Promise<McpServerInfo> {
     method: "POST",
   });
   return jsonOrThrow<McpServerInfo>(res);
+}
+export async function summarizeMcpServer(
+  id: string,
+  modelId?: string,
+): Promise<{ summary: string; keywords: string; server: McpServerInfo }> {
+  const res = await apiFetch(`/api/mcp/${encodeURIComponent(id)}/summarize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ modelId }),
+  });
+  return jsonOrThrow<{ summary: string; keywords: string; server: McpServerInfo }>(res);
 }
 export async function fetchBuiltInTools(): Promise<BuiltInToolInfo[]> {
   const res = await apiFetch("/api/builtin-tools");
@@ -253,7 +279,18 @@ export async function createConversation(opts?: { title?: string; model?: string
   });
   return jsonOrThrow<ConversationSummary>(res);
 }
-export async function updateConversation(id: string, patch: { title?: string; model?: string }): Promise<ConversationSummary> {
+export async function updateConversation(
+  id: string,
+  patch: {
+    title?: string;
+    model?: string;
+    isPinned?: boolean;
+    isArchived?: boolean;
+    memoryEnabled?: boolean | null;
+    systemPromptOverride?: string | null;
+    samplingOverrides?: ConversationSamplingOverrides | null;
+  },
+): Promise<ConversationSummary> {
   const res = await apiFetch(`/api/conversations/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -261,9 +298,28 @@ export async function updateConversation(id: string, patch: { title?: string; mo
   });
   return jsonOrThrow<ConversationSummary>(res);
 }
+export async function searchConversations(
+  query: string,
+  includeArchived = false,
+): Promise<ChatHistorySearchHit[]> {
+  const params = new URLSearchParams({ q: query });
+  if (includeArchived) params.set("includeArchived", "1");
+  const res = await apiFetch(`/api/conversations/search?${params.toString()}`);
+  return jsonOrThrow<ChatHistorySearchHit[]>(res);
+}
+export function exportConversationUrl(id: string, format: "md" | "json" = "md"): string {
+  return `/api/conversations/${encodeURIComponent(id)}/export?format=${format}`;
+}
 export async function patchConversationTools(
   id: string,
-  patch: { excludedMcps?: string[]; excludedSkills?: string[]; toolsEnabled?: boolean },
+  patch: {
+    excludedMcps?: string[];
+    excludedSkills?: string[];
+    toolsEnabled?: boolean;
+    memoryEnabled?: boolean | null;
+    systemPromptOverride?: string | null;
+    samplingOverrides?: ConversationSamplingOverrides | null;
+  },
 ): Promise<void> {
   const res = await apiFetch(`/api/conversations/${encodeURIComponent(id)}`, {
     method: "PATCH",
@@ -328,6 +384,10 @@ export interface StreamChatOptions {
   excludedMcps?: string[];
   excludedSkills?: string[];
   forcedTools?: string[];
+  injectedTools?: SlashToolSelection[];
+  memoryEnabled?: boolean | null;
+  systemPromptOverride?: string | null;
+  samplingOverrides?: ConversationSamplingOverrides | null;
   signal?: AbortSignal;
   onToken: (delta: string) => void;
   onMeta: (meta: {
@@ -349,6 +409,7 @@ export interface StreamChatOptions {
   onToolsPruned?: (evt: { prunedCount: number; remainingCount: number; droppedToolNames: string[] }) => void;
   onArtifactCreated?: (evt: { artifactId: string; conversationId: string; filename: string; title: string; language: string }) => void;
   onArtifactUpdated?: (evt: { artifactId: string; conversationId: string; filename: string; title: string; language: string }) => void;
+  onScratchpadUpdated?: (evt: { conversationId: string; entries: ScratchpadEntryInfo[] }) => void;
   onDone: () => void;
   onError: (message: string) => void;
 }
@@ -391,6 +452,10 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
         excludedMcps: opts.excludedMcps,
         excludedSkills: opts.excludedSkills,
         forcedTools: opts.forcedTools,
+        injectedTools: opts.injectedTools,
+        memoryEnabled: opts.memoryEnabled,
+        systemPromptOverride: opts.systemPromptOverride,
+        samplingOverrides: opts.samplingOverrides,
         stream: true,
       }),
       signal,
@@ -485,8 +550,12 @@ export async function streamChatCompletion(opts: StreamChatOptions): Promise<voi
               opts.onArtifactCreated?.(parsed);
               continue;
             }
-            if (parsed?.type === "artifact_updated") {
+            if (parsed?.type === "artifact_Updated" || parsed?.type === "artifact_updated") {
               opts.onArtifactUpdated?.(parsed);
+              continue;
+            }
+            if (parsed?.type === "scratchpad_updated") {
+              opts.onScratchpadUpdated?.(parsed);
               continue;
             }
 
@@ -587,6 +656,20 @@ export interface GlobalSettingsOut {
   networkToolsEnabled: boolean;
   artifactNetworkEnabled: boolean;
   disabledBuiltInTools: string[];
+  memoryEnabled: boolean;
+  crossChatRecallEnabled: boolean;
+  crossChatIncludeArchived: boolean;
+  embeddingModel: string | null;
+  sttProvider: SpeechProviderType;
+  sttEndpoint: string | null;
+  sttModel: string | null;
+  sttDevice: SpeechDeviceType;
+  ttsProvider: SpeechProviderType;
+  ttsEndpoint: string | null;
+  ttsModel: string | null;
+  ttsVoice: string | null;
+  ttsDevice: SpeechDeviceType;
+  speechIdleTimeoutSec: number;
 }
 
 export async function fetchGlobalSettings(): Promise<GlobalSettingsOut> {
@@ -607,6 +690,20 @@ export async function updateGlobalSettings(
     networkToolsEnabled: boolean;
     artifactNetworkEnabled: boolean;
     disabledBuiltInTools: string[];
+    memoryEnabled: boolean;
+    crossChatRecallEnabled: boolean;
+    crossChatIncludeArchived: boolean;
+    embeddingModel: string | null;
+    sttProvider: SpeechProviderType;
+    sttEndpoint: string | null;
+    sttModel: string | null;
+    sttDevice: SpeechDeviceType;
+    ttsProvider: SpeechProviderType;
+    ttsEndpoint: string | null;
+    ttsModel: string | null;
+    ttsVoice: string | null;
+    ttsDevice: SpeechDeviceType;
+    speechIdleTimeoutSec: number;
     password?: string;
   }>,
 ): Promise<GlobalSettingsOut> {
@@ -623,9 +720,16 @@ export async function fetchInstanceInfo(): Promise<{ theme: string }> {
   return jsonOrThrow<{ theme: string }>(res);
 }
 
-export async function fetchArtifacts(conversationId: string): Promise<any[]> {
+export async function fetchArtifacts(conversationId: string): Promise<ArtifactInfo[]> {
   const res = await apiFetch(`/api/artifacts?conversationId=${encodeURIComponent(conversationId)}`);
-  return jsonOrThrow<any[]>(res);
+  return jsonOrThrow<ArtifactInfo[]>(res);
+}
+
+export async function deleteArtifact(artifactId: string): Promise<void> {
+  const res = await apiFetch(`/api/artifacts/${encodeURIComponent(artifactId)}`, {
+    method: "DELETE",
+  });
+  await jsonOrThrow<{ success: boolean }>(res);
 }
 
 export async function fetchArtifactContent(artifactId: string): Promise<string> {
@@ -638,4 +742,141 @@ export async function fetchArtifactContent(artifactId: string): Promise<string> 
     throw new Error(`Failed to fetch artifact content: ${res.statusText}`);
   }
   return res.text();
+}
+
+// ---------------------------------------------------------------------------
+// Memories & Scratchpad
+// ---------------------------------------------------------------------------
+export async function fetchMemories(query?: string): Promise<MemoryInfo[]> {
+  const qs = query?.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
+  const res = await apiFetch(`/api/memories${qs}`);
+  return jsonOrThrow<MemoryInfo[]>(res);
+}
+export async function createMemoryApi(data: MemoryWriteBody): Promise<MemoryInfo> {
+  const res = await apiFetch("/api/memories", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return jsonOrThrow<MemoryInfo>(res);
+}
+export async function updateMemoryApi(id: string, data: Partial<MemoryWriteBody>): Promise<MemoryInfo> {
+  const res = await apiFetch(`/api/memories/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return jsonOrThrow<MemoryInfo>(res);
+}
+export async function deleteMemoryApi(id: string): Promise<void> {
+  const res = await apiFetch(`/api/memories/${encodeURIComponent(id)}`, { method: "DELETE" });
+  await jsonOrThrow<{ success: boolean }>(res);
+}
+export async function clearAllMemoriesApi(): Promise<void> {
+  const res = await apiFetch("/api/memories", { method: "DELETE" });
+  await jsonOrThrow<{ success: boolean }>(res);
+}
+export async function fetchScratchpad(conversationId: string): Promise<ScratchpadEntryInfo[]> {
+  const res = await apiFetch(`/api/conversations/${encodeURIComponent(conversationId)}/scratchpad`);
+  return jsonOrThrow<ScratchpadEntryInfo[]>(res);
+}
+export async function upsertScratchpadEntry(
+  conversationId: string,
+  key: string,
+  content: string,
+): Promise<ScratchpadEntryInfo[]> {
+  const res = await apiFetch(`/api/conversations/${encodeURIComponent(conversationId)}/scratchpad`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, content }),
+  });
+  return jsonOrThrow<ScratchpadEntryInfo[]>(res);
+}
+export async function deleteScratchpadEntryApi(
+  conversationId: string,
+  key: string,
+): Promise<ScratchpadEntryInfo[]> {
+  const res = await apiFetch(
+    `/api/conversations/${encodeURIComponent(conversationId)}/scratchpad/${encodeURIComponent(key)}`,
+    { method: "DELETE" },
+  );
+  return jsonOrThrow<ScratchpadEntryInfo[]>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Backups
+// ---------------------------------------------------------------------------
+export function exportBackupUrl(includeSecrets = false, includeFiles = true): string {
+  const params = new URLSearchParams();
+  if (includeSecrets) params.set("includeSecrets", "1");
+  if (!includeFiles) params.set("includeFiles", "0");
+  return `/api/backup/export?${params.toString()}`;
+}
+export async function importBackupBundle(
+  bundle: any,
+  mode: "merge" | "replace" = "merge",
+): Promise<{ success: boolean; counts: Record<string, number> }> {
+  const res = await apiFetch("/api/backup/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bundle, mode }),
+  });
+  return jsonOrThrow(res);
+}
+
+// ---------------------------------------------------------------------------
+// Speech (STT / TTS / VRAM Resource Manager)
+// ---------------------------------------------------------------------------
+export interface SpeechStatusOut {
+  sttLoaded: boolean;
+  ttsLoaded: boolean;
+  sttLastUsed: number | null;
+  ttsLastUsed: number | null;
+  activeSttProcesses: number;
+  activeTtsProcesses: number;
+}
+export async function fetchSpeechStatus(): Promise<SpeechStatusOut> {
+  const res = await apiFetch("/api/speech/status");
+  return jsonOrThrow<SpeechStatusOut>(res);
+}
+export async function ejectSpeechModelsApi(
+  target: "stt" | "tts" | "all" = "all",
+): Promise<{ success: boolean; status: SpeechStatusOut }> {
+  const res = await apiFetch("/api/speech/eject", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target }),
+  });
+  return jsonOrThrow(res);
+}
+export async function transcribeAudioBlob(
+  blob: Blob,
+  filename = "recording.wav",
+  activeModelId?: string | null,
+): Promise<{ text: string }> {
+  const formData = new FormData();
+  formData.append("file", blob, filename);
+  const qs = activeModelId ? `?model=${encodeURIComponent(activeModelId)}` : "";
+  const res = await apiFetch(`/api/speech/transcribe${qs}`, {
+    method: "POST",
+    body: formData,
+  });
+  return jsonOrThrow<{ text: string }>(res);
+}
+export async function synthesizeSpeechAudio(text: string): Promise<Blob> {
+  const res = await apiFetch("/api/speech/synthesize", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
+  }
+  return res.blob();
+}
+
+export async function fetchMcpTools(): Promise<McpToolInfo[]> {
+  const res = await apiFetch("/api/mcp/tools");
+  return jsonOrThrow<McpToolInfo[]>(res);
 }

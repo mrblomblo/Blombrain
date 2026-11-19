@@ -1,16 +1,73 @@
 <script lang="ts">
-  import { createQuery } from "@tanstack/svelte-query";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import {
     type AutoNameMode,
     type ToolRoutingMode,
     type CtxOverflowBehavior,
     type ReasoningInjectionMode,
     fetchBuiltInTools,
+    exportBackupUrl,
+    importBackupBundle,
   } from "../../api";
   import { settingsStore } from "../../stores/settings.svelte";
+  import { confirmStore } from "../../stores/confirmStore.svelte";
   import Dropdown, { type DropdownOption } from "../ui/Dropdown.svelte";
   import ModelDropdown from "../ui/ModelDropdown.svelte";
   import ToggleSwitch from "../ui/ToggleSwitch.svelte";
+  import Button from "../ui/Button.svelte";
+  import { Download, Upload, Database } from "@lucide/svelte";
+
+  const queryClient = useQueryClient();
+
+  let backupIncludeSecrets = $state(false);
+  let backupImportMode = $state<"merge" | "replace">("merge");
+  let backupBusy = $state(false);
+  let backupStatusMsg = $state<string | null>(null);
+  let backupIsError = $state(false);
+  let backupFileInput: HTMLInputElement | undefined = $state();
+
+  async function handleImportBackupFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+
+    if (backupImportMode === "replace") {
+      const confirmed = await confirmStore.confirm({
+        title: "Replace Entire Instance Data",
+        message:
+          "Are you sure you want to replace all current conversations, settings, presets, skills, and memories with this backup file?",
+        confirmText: "Replace Instance",
+        confirmStyle: "danger",
+        cancelText: "Cancel",
+        cancelStyle: "ghost",
+        cancelOutline: true,
+      });
+      if (!confirmed) {
+        input.value = "";
+        return;
+      }
+    }
+
+    backupBusy = true;
+    backupStatusMsg = null;
+    backupIsError = false;
+
+    try {
+      const text = await file.text();
+      const bundle = JSON.parse(text);
+      const res = await importBackupBundle(bundle, backupImportMode);
+      await settingsStore.init();
+      await queryClient.invalidateQueries();
+      const c = res.counts || {};
+      backupStatusMsg = `Backup restored (${c.conversations ?? 0} chats, ${c.messages ?? 0} messages, ${c.modelSettings ?? 0} model settings, ${c.skills ?? 0} skills, ${c.memories ?? 0} memories).`;
+    } catch (err: any) {
+      backupIsError = true;
+      backupStatusMsg = err?.message || "Failed to import backup file.";
+    } finally {
+      backupBusy = false;
+      input.value = "";
+    }
+  }
 
   const builtInToolsQuery = createQuery(() => ({
     queryKey: ["builtinTools"],
@@ -350,5 +407,88 @@
         label="Toggle default artifact network access"
       />
     </div>
+  </div>
+
+  <!-- Instance Backup & Restore Section -->
+  <div
+    class="rounded-lg border border-line bg-bg-elevated p-4 flex flex-col gap-4"
+  >
+    <div class="flex items-center gap-2 border-b border-line pb-3">
+      <Database size={16} class="text-accent" />
+      <div>
+        <h3 class="text-sm font-semibold text-fg">Instance Backup &amp; Restore</h3>
+        <p class="text-xs text-fg-subtle mt-0.5">
+          Export a complete backup of your Blombrain instance (settings, backends, presets, MCP servers, skills, memories, conversations, and artifacts) or restore from a backup file.
+        </p>
+      </div>
+    </div>
+
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5">
+        <ToggleSwitch
+          id="backup-include-secrets-toggle"
+          bind:checked={backupIncludeSecrets}
+          label="Include API keys and MCP secrets in export"
+        />
+        <label
+          for="backup-include-secrets-toggle"
+          class="text-xs text-fg-muted cursor-pointer"
+        >
+          Include backend API keys &amp; MCP secrets in export
+        </label>
+      </div>
+
+      <a
+        href={exportBackupUrl(backupIncludeSecrets, true)}
+        download
+        class="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs font-medium text-accent-fg hover:opacity-90 transition-opacity shrink-0"
+      >
+        <Download size={13} />
+        <span>Export Backup</span>
+      </a>
+    </div>
+
+    <div class="h-px bg-line/60"></div>
+
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-medium text-fg-muted shrink-0">Restore Mode:</span>
+        <div class="w-56">
+          <Dropdown
+            id="backup-import-mode"
+            bind:value={backupImportMode}
+            options={[
+              { label: "Merge with existing data", value: "merge" },
+              { label: "Replace entire instance", value: "replace" },
+            ]}
+          />
+        </div>
+      </div>
+
+      <div>
+        <input
+          bind:this={backupFileInput}
+          type="file"
+          accept=".json,application/json"
+          class="hidden"
+          onchange={handleImportBackupFile}
+        />
+        <Button
+          variant="default"
+          size="sm"
+          onclick={() => backupFileInput?.click()}
+          disabled={backupBusy}
+        >
+          <Upload size={13} />
+          <span>{backupBusy ? "Restoring..." : "Import Backup File"}</span>
+        </Button>
+      </div>
+    </div>
+
+    {#if backupStatusMsg}
+      <p class="text-xs {backupIsError ? 'text-danger' : 'text-success'}">
+        {backupStatusMsg}
+      </p>
+    {/if}
   </div>
 </div>

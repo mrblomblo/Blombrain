@@ -2,6 +2,7 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { fetchMcpServers, fetchSkills } from "../api";
   import { chatStore } from "../stores/chat.svelte";
+  import { settingsStore } from "../stores/settings.svelte";
   import {
     Server,
     BookOpen,
@@ -9,6 +10,7 @@
     CheckSquare,
     Square,
     Pin,
+    Brain,
   } from "@lucide/svelte";
   import { slide } from "svelte/transition";
   import ToggleSwitch from "./ui/ToggleSwitch.svelte";
@@ -125,6 +127,20 @@
             {activeCount} / {totalCount} active
           {/if}
         </span>
+      </div>
+
+      <!-- Per-Conversation Persistent Memory Toggle -->
+      <div class="px-3 py-2 border-b border-line flex items-center justify-between bg-bg/40">
+        <div class="flex items-center gap-2">
+          <Brain size={13} class="text-accent shrink-0" />
+          <span class="text-xs font-medium text-fg">Persistent Memory</span>
+        </div>
+        <ToggleSwitch
+          id="conv-memory-enable-toggle"
+          checked={chatStore.conversationMemoryEnabled ?? settingsStore.memoryEnabled}
+          onchange={(checked) => chatStore.setConversationMemoryEnabled(checked)}
+          label="Toggle persistent memory for this conversation"
+        />
       </div>
 
       <div class="max-h-64 overflow-y-auto p-2 space-y-1">
