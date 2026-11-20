@@ -46,6 +46,88 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
   return res;
 }
 
+function parseContentDispositionFilename(header: string | null): string | null {
+  if (!header) return null;
+  const starMatch = /filename\*\s*=\s*(?:UTF-8''|utf-8'')([^;\r\n]+)/i.exec(header);
+  if (starMatch?.[1]) {
+    try {
+      return decodeURIComponent(starMatch[1].trim().replace(/^"|"$/g, ""));
+    } catch {
+      return starMatch[1].trim().replace(/^"|"$/g, "");
+    }
+  }
+  const plainMatch = /filename\s*=\s*"([^"]+)"|filename\s*=\s*([^;\r\n]+)/i.exec(header);
+  const raw = plainMatch?.[1] ?? plainMatch?.[2];
+  return raw ? raw.trim() : null;
+}
+
+export async function saveBytesDownload(
+  bytes: Uint8Array | ArrayBuffer,
+  filename: string,
+  mimeType = "application/octet-stream",
+): Promise<boolean> {
+  const invoke =
+    typeof window !== "undefined" ? (window as any).__TAURI_INTERNALS__?.invoke : null;
+
+  const raw =
+    bytes instanceof ArrayBuffer
+      ? new Uint8Array(bytes)
+      : new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const copy = new Uint8Array(raw.byteLength);
+  copy.set(raw);
+  const buffer = copy.buffer;
+
+  if (invoke) {
+    return Boolean(
+      await invoke("save_download_bytes", buffer, {
+        headers: { "x-filename": encodeURIComponent(filename) },
+      }),
+    );
+  }
+
+  const blob = new Blob([buffer], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return true;
+}
+
+export async function triggerDownload(url: string, fallbackFilename = "download"): Promise<boolean> {
+  const invoke =
+    typeof window !== "undefined" ? (window as any).__TAURI_INTERNALS__?.invoke : null;
+
+  if (!invoke) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fallbackFilename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    return true;
+  }
+
+  const res = await apiFetch(url);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Download failed (${res.status} ${res.statusText})${body ? `: ${body}` : ""}`);
+  }
+
+  const headerName = parseContentDispositionFilename(res.headers.get("content-disposition"));
+  const filename = headerName || fallbackFilename;
+  const buf = await res.arrayBuffer();
+
+  return Boolean(
+    await invoke("save_download_bytes", buf, {
+      headers: { "x-filename": encodeURIComponent(filename) },
+    }),
+  );
+}
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -87,6 +169,27 @@ export async function deleteBackend(id: string): Promise<void> {
     const body = await res.text().catch(() => "");
     throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
   }
+}
+export async function setBackendEnabled(id: string, enabled: boolean): Promise<BackendInfo> {
+  const res = await apiFetch(`/api/backends/${encodeURIComponent(id)}/enabled`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  return jsonOrThrow<BackendInfo>(res);
+}
+export async function controlBackendProcess(
+  id: string,
+  action: "start" | "stop" | "restart",
+): Promise<BackendInfo> {
+  const res = await apiFetch(`/api/backends/${encodeURIComponent(id)}/process/${action}`, {
+    method: "POST",
+  });
+  return jsonOrThrow<BackendInfo>(res);
+}
+export async function fetchBackendLogs(id: string): Promise<{ lines: string[] }> {
+  const res = await apiFetch(`/api/backends/${encodeURIComponent(id)}/logs`);
+  return jsonOrThrow<{ lines: string[] }>(res);
 }
 
 // ---------------------------------------------------------------------------
@@ -670,6 +773,27 @@ export interface GlobalSettingsOut {
   ttsVoice: string | null;
   ttsDevice: SpeechDeviceType;
   speechIdleTimeoutSec: number;
+  webEnabled: boolean;
+  webHost: string;
+  webPort: number;
+}
+
+export interface WebServerStatus {
+  enabled: boolean;
+  host: string;
+  port: number;
+  listening: boolean;
+  activeHost: string | null;
+  activePort: number | null;
+  frontendAvailable: boolean;
+  urls: string[];
+  interfaces: Array<{ name: string; address: string; family: "IPv4" | "IPv6" }>;
+  error: string | null;
+}
+
+export async function fetchWebServerStatus(): Promise<WebServerStatus> {
+  const res = await apiFetch("/api/settings/web-status");
+  return jsonOrThrow<WebServerStatus>(res);
 }
 
 export async function fetchGlobalSettings(): Promise<GlobalSettingsOut> {
@@ -704,6 +828,9 @@ export async function updateGlobalSettings(
     ttsVoice: string | null;
     ttsDevice: SpeechDeviceType;
     speechIdleTimeoutSec: number;
+    webEnabled: boolean;
+    webHost: string;
+    webPort: number;
     password?: string;
   }>,
 ): Promise<GlobalSettingsOut> {

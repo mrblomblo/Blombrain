@@ -617,7 +617,7 @@
             {:else if seg.type === "tool" && seg.execution}
               <ToolTranscriptBlock execution={seg.execution} />
             {:else if seg.type === "text" && seg.content}
-              <Markdown content={seg.content} streaming={message.streaming} />
+              <Markdown content={seg.content} streaming={message.streaming} highlightTriggers={true} />
             {/if}
           {/each}
         {:else if message.streaming && message.status !== "routing"}

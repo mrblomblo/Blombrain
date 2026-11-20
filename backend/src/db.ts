@@ -562,7 +562,41 @@ const migration4: Migration = {
   },
 };
 
-const migrations: Migration[] = [migration1, migration2, migration3, migration4];
+const migration5: Migration = {
+  version: 5,
+  description: "Add per-backend enabled flag and managed launch command / working directory",
+  run: () => {
+    const cols = (db.pragma("table_info(backends)") as { name: string }[]).map((c) => c.name);
+    if (!cols.includes("is_enabled")) {
+      db.exec(`ALTER TABLE backends ADD COLUMN is_enabled INTEGER NOT NULL DEFAULT 1`);
+    }
+    if (!cols.includes("launch_command")) {
+      db.exec(`ALTER TABLE backends ADD COLUMN launch_command TEXT`);
+    }
+    if (!cols.includes("launch_cwd")) {
+      db.exec(`ALTER TABLE backends ADD COLUMN launch_cwd TEXT`);
+    }
+  },
+};
+
+const migration6: Migration = {
+  version: 6,
+  description: "Add web browser exposure settings (web_enabled, web_host, web_port) to global_settings",
+  run: () => {
+    const cols = (db.pragma("table_info(global_settings)") as { name: string }[]).map((c) => c.name);
+    if (!cols.includes("web_enabled")) {
+      db.exec(`ALTER TABLE global_settings ADD COLUMN web_enabled INTEGER NOT NULL DEFAULT 0`);
+    }
+    if (!cols.includes("web_host")) {
+      db.exec(`ALTER TABLE global_settings ADD COLUMN web_host TEXT NOT NULL DEFAULT '127.0.0.1'`);
+    }
+    if (!cols.includes("web_port")) {
+      db.exec(`ALTER TABLE global_settings ADD COLUMN web_port INTEGER NOT NULL DEFAULT 4300`);
+    }
+  },
+};
+
+const migrations: Migration[] = [migration1, migration2, migration3, migration4, migration5, migration6];
 
 const currentVersion = db.pragma("user_version", { simple: true }) as number;
 

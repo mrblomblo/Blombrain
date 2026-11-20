@@ -56,6 +56,9 @@ export async function authRoutes(app: FastifyInstance) {
     } catch { }
   }, 3600 * 1000);
   cleanupTimer.unref?.();
+  app.addHook("onClose", async () => {
+    clearInterval(cleanupTimer);
+  });
 
   // GET /api/auth/check
   app.get("/api/auth/check", async (req, reply) => {

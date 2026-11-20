@@ -1,6 +1,6 @@
 <script lang="ts">
   import { chatStore } from "../stores/chat.svelte";
-  import { serveUploadUrl, fetchUploadText } from "../api";
+  import { serveUploadUrl, fetchUploadText, triggerDownload } from "../api";
   import { X, Download, FileText, ExternalLink } from "@lucide/svelte";
   import { fade, scale } from "svelte/transition";
   import hljs from "highlight.js";
@@ -12,6 +12,7 @@
   let isLoadingText = $state(false);
   let isBinary = $state(false);
   let showExtractedPdfText = $state(false);
+  let downloadError = $state<string | null>(null);
 
   let isPdf = $derived(
     Boolean(
@@ -183,14 +184,23 @@
               {showExtractedPdfText ? "PDF Preview" : "Extracted Text"}
             </button>
           {/if}
-          <a
-            href={serveUploadUrl(attachment.id, true)}
-            download={attachment.originalName}
+          <button
+            type="button"
+            onclick={() => {
+              downloadError = null;
+              void triggerDownload(
+                serveUploadUrl(attachment.id, true),
+                attachment.originalName,
+              ).catch((err) => {
+                downloadError = `Failed to download file: ${(err as Error).message}`;
+              });
+            }}
             title="Download file"
-            class="flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-bg text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg"
+            aria-label="Download file"
+            class="flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-bg text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg cursor-pointer"
           >
             <Download size={14} />
-          </a>
+          </button>
           <a
             href={serveUploadUrl(attachment.id)}
             target="_blank"
@@ -213,6 +223,11 @@
 
       <!-- Body Content -->
       <div class="modal-body flex-1 overflow-auto bg-bg">
+        {#if downloadError}
+          <div class="mx-4 mt-3 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+            {downloadError}
+          </div>
+        {/if}
         <div class="w-full">
           {#if !isMediaAttachment(attachment)}
             {#if isPdf && !showExtractedPdfText}
@@ -287,21 +302,3 @@
     </div>
   </div>
 {/if}
-
-<style>
-  .modal-body {
-    scrollbar-width: thin;
-    scrollbar-color: var(--line-strong) transparent;
-  }
-  .modal-body::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  .modal-body::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .modal-body::-webkit-scrollbar-thumb {
-    background: var(--line-strong);
-    border-radius: 9999px;
-  }
-</style>

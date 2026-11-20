@@ -37,6 +37,9 @@ class SettingsStore {
   ttsVoice = $state<string | null>(null);
   ttsDevice = $state<SpeechDeviceType>("cpu");
   speechIdleTimeoutSec = $state<number>(60);
+  webEnabled = $state<boolean>(false);
+  webHost = $state<string>("127.0.0.1");
+  webPort = $state<number>(4300);
   loaded = $state(false);
 
   async init() {
@@ -68,6 +71,9 @@ class SettingsStore {
       this.ttsVoice = data.ttsVoice ?? null;
       this.ttsDevice = data.ttsDevice ?? "cpu";
       this.speechIdleTimeoutSec = data.speechIdleTimeoutSec ?? 60;
+      this.webEnabled = !!data.webEnabled;
+      this.webHost = data.webHost ?? "127.0.0.1";
+      this.webPort = data.webPort ?? 4300;
       themeStore.set(this.theme);
       this.loaded = true;
     } catch (err) {
@@ -103,6 +109,9 @@ class SettingsStore {
       ttsVoice: string | null;
       ttsDevice: SpeechDeviceType;
       speechIdleTimeoutSec: number;
+      webEnabled: boolean;
+      webHost: string;
+      webPort: number;
       password?: string;
     }>,
   ) {
@@ -133,6 +142,9 @@ class SettingsStore {
       ttsVoice: this.ttsVoice,
       ttsDevice: this.ttsDevice,
       speechIdleTimeoutSec: this.speechIdleTimeoutSec,
+      webEnabled: this.webEnabled,
+      webHost: this.webHost,
+      webPort: this.webPort,
     };
 
     if (patch.userName !== undefined) this.userName = patch.userName;
@@ -164,6 +176,9 @@ class SettingsStore {
     if (patch.ttsVoice !== undefined) this.ttsVoice = patch.ttsVoice;
     if (patch.ttsDevice !== undefined) this.ttsDevice = patch.ttsDevice;
     if (patch.speechIdleTimeoutSec !== undefined) this.speechIdleTimeoutSec = patch.speechIdleTimeoutSec;
+    if (patch.webEnabled !== undefined) this.webEnabled = patch.webEnabled;
+    if (patch.webHost !== undefined) this.webHost = patch.webHost;
+    if (patch.webPort !== undefined) this.webPort = patch.webPort;
 
     try {
       await updateGlobalSettings(patch);
@@ -195,6 +210,9 @@ class SettingsStore {
       this.ttsVoice = prev.ttsVoice;
       this.ttsDevice = prev.ttsDevice;
       this.speechIdleTimeoutSec = prev.speechIdleTimeoutSec;
+      this.webEnabled = prev.webEnabled;
+      this.webHost = prev.webHost;
+      this.webPort = prev.webPort;
       console.error("Failed to persist settings to server:", err);
       throw err;
     }

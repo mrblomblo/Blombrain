@@ -1,21 +1,37 @@
 <script lang="ts">
-  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
+import { onMount } from "svelte";
+import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import {
     type AutoNameMode,
     type ToolRoutingMode,
     type CtxOverflowBehavior,
     type ReasoningInjectionMode,
+    type WebServerStatus,
     fetchBuiltInTools,
+    fetchWebServerStatus,
     exportBackupUrl,
     importBackupBundle,
+    triggerDownload,
   } from "../../api";
   import { settingsStore } from "../../stores/settings.svelte";
+  import { authStore } from "../../stores/auth.svelte";
+  import { desktopWindow } from "../../stores/window.svelte";
   import { confirmStore } from "../../stores/confirmStore.svelte";
+  import { copyToClipboard } from "../../utils/clipboard";
   import Dropdown, { type DropdownOption } from "../ui/Dropdown.svelte";
   import ModelDropdown from "../ui/ModelDropdown.svelte";
   import ToggleSwitch from "../ui/ToggleSwitch.svelte";
   import Button from "../ui/Button.svelte";
-  import { Download, Upload, Database } from "@lucide/svelte";
+  import {
+    Download,
+    Upload,
+    Database,
+    Globe,
+    Copy,
+    Check,
+    ExternalLink,
+    AlertTriangle,
+  } from "@lucide/svelte";
 
   const queryClient = useQueryClient();
 
@@ -25,6 +41,76 @@
   let backupStatusMsg = $state<string | null>(null);
   let backupIsError = $state(false);
   let backupFileInput: HTMLInputElement | undefined = $state();
+
+  let webHostDraft = $state(settingsStore.webHost);
+  let webPortDraft = $state(String(settingsStore.webPort));
+  let webDirty = $state(false);
+  let webSaving = $state(false);
+  let webFormError = $state<string | null>(null);
+  let webStatus = $state<WebServerStatus | null>(null);
+  let copiedUrl = $state<string | null>(null);
+
+  $effect(() => {
+    if (!webDirty) {
+      webHostDraft = settingsStore.webHost;
+      webPortDraft = String(settingsStore.webPort);
+    }
+  });
+
+  async function refreshWebStatus() {
+    try {
+      webStatus = await fetchWebServerStatus();
+    } catch { }
+  }
+
+  onMount(() => {
+    void refreshWebStatus();
+  });
+
+  function isLoopbackHostStr(raw: string): boolean {
+    const clean = raw.trim().toLowerCase().replace(/^\[|\]$/g, "");
+    return clean === "127.0.0.1" || clean === "localhost" || clean === "::1";
+  }
+
+  async function saveWebConfig(nextEnabled = settingsStore.webEnabled) {
+    webFormError = null;
+    const host = webHostDraft.trim();
+    const port = Number(webPortDraft.trim());
+
+    if (!host || /[\s/?#\\]/.test(host) || host.includes("://")) {
+      webFormError = "Enter a valid IP or hostname (e.g. 127.0.0.1 or 0.0.0.0), without http:// or port.";
+      return;
+    }
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      webFormError = "Port must be an integer between 1 and 65535.";
+      return;
+    }
+
+    webSaving = true;
+    try {
+      await settingsStore.update({
+        webEnabled: nextEnabled,
+        webHost: host,
+        webPort: port,
+      });
+      webDirty = false;
+      await refreshWebStatus();
+    } catch (err: any) {
+      webFormError = err?.message || "Failed to update web server settings.";
+    } finally {
+      webSaving = false;
+    }
+  }
+
+  async function handleCopyUrl(url: string) {
+    const ok = await copyToClipboard(url);
+    if (ok) {
+      copiedUrl = url;
+      setTimeout(() => {
+        if (copiedUrl === url) copiedUrl = null;
+      }, 1500);
+    }
+  }
 
   async function handleImportBackupFile(e: Event) {
     const input = e.target as HTMLInputElement;
@@ -409,6 +495,201 @@
     </div>
   </div>
 
+  <!-- Web Browser Access Section -->
+  <div
+    class="rounded-lg border border-line bg-bg-elevated p-4 flex flex-col gap-4"
+  >
+    <div class="flex items-center justify-between gap-4 border-b border-line pb-3">
+      <div class="flex items-center gap-2 min-w-0">
+        <Globe size={16} class="text-accent shrink-0" />
+        <div class="min-w-0">
+          <h3 class="text-sm font-semibold text-fg">Web Browser Access</h3>
+          <p class="text-xs text-fg-subtle mt-0.5">
+            Expose the Blombrain web interface on a port and host so you can access it from a web browser.
+          </p>
+        </div>
+      </div>
+      <ToggleSwitch
+        id="web-access-enable-toggle"
+        checked={settingsStore.webEnabled}
+        disabled={webSaving}
+        onchange={(checked) => void saveWebConfig(checked)}
+        label="Toggle web browser access"
+      />
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div class="flex flex-col gap-1 sm:col-span-2">
+        <label for="web-access-host" class="text-xs font-medium text-fg-muted">
+          Accessible Host (Bind Address)
+        </label>
+        <input
+          id="web-access-host"
+          type="text"
+          value={webHostDraft}
+          oninput={(e) => {
+            webHostDraft = (e.currentTarget as HTMLInputElement).value;
+            webDirty = true;
+            webFormError = null;
+          }}
+          onkeydown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void saveWebConfig();
+            }
+          }}
+          placeholder="127.0.0.1 or 0.0.0.0"
+          class="h-9 w-full rounded-md border border-line bg-bg px-3 font-mono text-xs text-fg transition-colors focus:border-accent"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label for="web-access-port" class="text-xs font-medium text-fg-muted">
+          Port
+        </label>
+        <input
+          id="web-access-port"
+          type="number"
+          min="1"
+          max="65535"
+          value={webPortDraft}
+          oninput={(e) => {
+            webPortDraft = (e.currentTarget as HTMLInputElement).value;
+            webDirty = true;
+            webFormError = null;
+          }}
+          onkeydown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void saveWebConfig();
+            }
+          }}
+          placeholder="4300"
+          class="h-9 w-full rounded-md border border-line bg-bg px-3 font-mono text-xs text-fg transition-colors focus:border-accent"
+        />
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          onclick={() => {
+            webHostDraft = "127.0.0.1";
+            webDirty = webHostDraft !== settingsStore.webHost || Number(webPortDraft) !== settingsStore.webPort;
+            webFormError = null;
+          }}
+          class="rounded-md border px-2 py-1 text-[11px] font-mono transition-colors cursor-pointer {webHostDraft.trim() === '127.0.0.1'
+            ? 'border-accent bg-accent/10 text-accent'
+            : 'border-line bg-bg text-fg-muted hover:text-fg hover:bg-bg-hover'}"
+        >
+          127.0.0.1 (Local only)
+        </button>
+        <button
+          type="button"
+          onclick={() => {
+            webHostDraft = "0.0.0.0";
+            webDirty = webHostDraft !== settingsStore.webHost || Number(webPortDraft) !== settingsStore.webPort;
+            webFormError = null;
+          }}
+          class="rounded-md border px-2 py-1 text-[11px] font-mono transition-colors cursor-pointer {webHostDraft.trim() === '0.0.0.0'
+            ? 'border-accent bg-accent/10 text-accent'
+            : 'border-line bg-bg text-fg-muted hover:text-fg hover:bg-bg-hover'}"
+        >
+          0.0.0.0 (All / LAN)
+        </button>
+        {#if webStatus?.interfaces}
+          {#each webStatus.interfaces as iface (iface.address + iface.name)}
+            <button
+              type="button"
+              onclick={() => {
+                webHostDraft = iface.address;
+                webDirty = webHostDraft !== settingsStore.webHost || Number(webPortDraft) !== settingsStore.webPort;
+                webFormError = null;
+              }}
+              class="rounded-md border px-2 py-1 text-[11px] font-mono transition-colors cursor-pointer {webHostDraft.trim() === iface.address
+                ? 'border-accent bg-accent/10 text-accent'
+                : 'border-line bg-bg text-fg-muted hover:text-fg hover:bg-bg-hover'}"
+              title="Bind only to {iface.name} ({iface.address})"
+            >
+              {iface.address} ({iface.name})
+            </button>
+          {/each}
+        {/if}
+      </div>
+
+      <Button
+        variant={webDirty ? "accent" : "default"}
+        size="sm"
+        disabled={webSaving || !webDirty}
+        onclick={() => void saveWebConfig()}
+      >
+        {webSaving ? "Applying..." : "Apply"}
+      </Button>
+    </div>
+
+    {#if webFormError}
+      <div class="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+        {webFormError}
+      </div>
+    {:else if webStatus?.error}
+      <div class="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+        {webStatus.error}
+      </div>
+    {/if}
+
+    {#if settingsStore.webEnabled && !isLoopbackHostStr(settingsStore.webHost) && !authStore.authEnabled}
+      <div class="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+        <AlertTriangle size={14} class="shrink-0 mt-0.5" />
+        <span>
+          Blombrain is exposed on a non-loopback address without an Instance Password. Consider setting one in the <strong>User</strong> tab.
+        </span>
+      </div>
+    {/if}
+
+    {#if webStatus?.listening && webStatus.urls.length > 0}
+      <div class="rounded-md border border-line bg-bg px-3 py-2.5 flex flex-col gap-2">
+        <div class="flex items-center justify-between gap-2 text-[11px] text-success font-medium">
+          <span>
+            Listening on {webStatus.activeHost}:{webStatus.activePort}
+          </span>
+          {#if !webStatus.frontendAvailable}
+            <span class="text-warning">Built frontend dist not found (dev API only)</span>
+          {/if}
+        </div>
+        <div class="flex flex-wrap gap-2">
+          {#each webStatus.urls as url (url)}
+            <div class="inline-flex items-center gap-1 rounded-md border border-line bg-bg-elevated px-2 py-1 text-xs font-mono text-fg">
+              <a
+                href={url}
+                target={desktopWindow.isTauri ? undefined : "_blank"}
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1 hover:text-accent transition-colors"
+                title="Open in browser"
+              >
+                <span>{url}</span>
+                <ExternalLink size={11} class="text-fg-subtle" />
+              </a>
+              <button
+                type="button"
+                onclick={() => void handleCopyUrl(url)}
+                aria-label="Copy URL {url}"
+                title="Copy URL"
+                class="ml-1 text-fg-subtle hover:text-fg cursor-pointer"
+              >
+                {#if copiedUrl === url}
+                  <Check size={12} class="text-success" />
+                {:else}
+                  <Copy size={12} />
+                {/if}
+              </button>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
+  </div>
+
   <!-- Instance Backup & Restore Section -->
   <div
     class="rounded-lg border border-line bg-bg-elevated p-4 flex flex-col gap-4"
@@ -438,14 +719,31 @@
         </label>
       </div>
 
-      <a
-        href={exportBackupUrl(backupIncludeSecrets, true)}
-        download
-        class="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs font-medium text-accent-fg hover:opacity-90 transition-opacity shrink-0"
+      <button
+        type="button"
+        disabled={backupBusy}
+        onclick={async () => {
+          backupBusy = true;
+          backupStatusMsg = null;
+          try {
+            const saved = await triggerDownload(
+              exportBackupUrl(backupIncludeSecrets, true),
+              "blombrain-backup.zip",
+            );
+            if (saved) {
+              backupStatusMsg = "Backup exported.";
+            }
+          } catch (err) {
+            backupStatusMsg = `Export failed: ${(err as Error).message}`;
+          } finally {
+            backupBusy = false;
+          }
+        }}
+        class="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs font-medium text-accent-fg hover:opacity-90 disabled:opacity-50 transition-opacity shrink-0 cursor-pointer"
       >
         <Download size={13} />
-        <span>Export Backup</span>
-      </a>
+        <span>{backupBusy ? "Exporting..." : "Export Backup"}</span>
+      </button>
     </div>
 
     <div class="h-px bg-line/60"></div>

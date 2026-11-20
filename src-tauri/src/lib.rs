@@ -200,8 +200,9 @@ fn shutdown_sidecar(app: &AppHandle) {
         .args(["-TERM", &pid.to_string()])
         .status();
 
-    // Give Fastify/SQLite/MCP up to 2.5s to flush before hard kill.
-    for _ in 0..25 {
+    // Give Fastify/SQLite/MCP and any managed backend processes (llama-server, ollama, ...)
+    // up to 8s to shut down before hard kill. The sidecar force-exits after 6s on its own.
+    for _ in 0..80 {
         let alive = Command::new("kill")
             .args(["-0", &pid.to_string()])
             .status()
@@ -245,6 +246,96 @@ fn is_allowed_app_origin(url: &tauri::Url, allowed_port: u16, is_dev: bool) -> b
     false
 }
 
+fn decode_percent(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) {
+                if let Ok(val) = u8::from_str_radix(hex, 16) {
+                    out.push(val);
+                    i += 3;
+                    continue;
+                }
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn sanitize_download_filename(name: &str) -> String {
+    let leaf = Path::new(name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("download")
+        .trim();
+    if leaf.is_empty() || leaf == "." || leaf == ".." {
+        "download".to_string()
+    } else {
+        leaf.replace(['/', '\\', '\0'], "_")
+    }
+}
+
+fn unique_download_path(dir: &Path, filename: &str) -> PathBuf {
+    let candidate = dir.join(filename);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let path = Path::new(filename);
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("download");
+    let ext = path.extension().and_then(|e| e.to_str());
+    for idx in 1..10000u32 {
+        let numbered = match ext {
+            Some(e) if !e.is_empty() => format!("{stem} ({idx}).{e}"),
+            _ => format!("{stem} ({idx})"),
+        };
+        let next = dir.join(numbered);
+        if !next.exists() {
+            return next;
+        }
+    }
+    candidate
+}
+
+#[tauri::command]
+async fn save_download_bytes(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<bool, String> {
+    let raw_name = request
+        .headers()
+        .get("x-filename")
+        .and_then(|v| v.to_str().ok())
+        .map(decode_percent)
+        .unwrap_or_else(|| "download".to_string());
+    let filename = sanitize_download_filename(&raw_name);
+
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(data) => data.clone(),
+        tauri::ipc::InvokeBody::Json(_) => return Err("Expected raw binary payload".to_string()),
+    };
+
+    let (tx, mut rx) = tauri::async_runtime::channel(1);
+    app.dialog()
+        .file()
+        .set_file_name(&filename)
+        .save_file(move |chosen| {
+            let path = chosen.and_then(|fp| fp.into_path().ok());
+            let _ = tx.try_send(path);
+        });
+
+    let Some(chosen_path) = rx.recv().await.flatten() else {
+        return Ok(false);
+    };
+
+    tauri::async_runtime::spawn_blocking(move || fs::write(&chosen_path, &bytes))
+        .await
+        .map_err(|e| format!("Save task failed: {e}"))?
+        .map_err(|e| format!("Failed to write file: {e}"))?;
+
+    Ok(true)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -257,7 +348,8 @@ pub fn run() {
                 let _ = window.show();
                 let _ = window.set_focus();
             }
-        }));
+        }))
+        .invoke_handler(tauri::generate_handler![save_download_bytes]);
 
     let app = builder
         .setup(|app| {
@@ -279,11 +371,20 @@ pub fn run() {
             };
 
             let app_for_dl = app.handle().clone();
-            let _window = WebviewWindowBuilder::new(app, "main", main_url)
+            let window = WebviewWindowBuilder::new(app, "main", main_url)
                 .title("Blombrain")
                 .inner_size(1280.0, 840.0)
                 .min_inner_size(720.0, 540.0)
                 .resizable(true)
+                .decorations(false)
+                .transparent(true)
+                .disable_drag_drop_handler()
+                .on_permission_request(|_webview, kind| match kind {
+                    tauri::webview::PermissionKind::Microphone => {
+                        tauri::webview::PermissionResponse::Allow
+                    }
+                    _ => tauri::webview::PermissionResponse::Default,
+                })
                 .on_navigation(move |url| {
                     if is_allowed_app_origin(url, port, is_dev) {
                         return true;
@@ -295,28 +396,32 @@ pub fn run() {
                     false
                 })
                 .on_download(move |_webview, event| {
+                    // Never block inside on_download on WebKitGTK; doing a synchronous dialog here deadlocks GTK.
                     if let tauri::webview::DownloadEvent::Requested { url: _, destination } = event {
-                        let suggested = destination
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("download")
-                            .to_string();
-                        if let Some(chosen) = app_for_dl
-                            .dialog()
-                            .file()
-                            .set_file_name(&suggested)
-                            .blocking_save_file()
-                        {
-                            if let Ok(path) = chosen.into_path() {
-                                *destination = path;
-                            }
-                        } else {
-                            return false;
+                        if let Ok(download_dir) = app_for_dl.path().download_dir() {
+                            let suggested = destination
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .map(sanitize_download_filename)
+                                .unwrap_or_else(|| "download".to_string());
+                            let _ = fs::create_dir_all(&download_dir);
+                            *destination = unique_download_path(&download_dir, &suggested);
                         }
                     }
                     true
                 })
                 .build()?;
+
+            #[cfg(target_os = "linux")]
+            {
+                let _ = window.with_webview(|platform_webview| {
+                    use webkit2gtk::{SettingsExt, WebViewExt};
+                    let webview = platform_webview.inner();
+                    if let Some(settings) = WebViewExt::settings(&webview) {
+                        settings.set_enable_media_stream(true);
+                    }
+                });
+            }
 
             if is_dev {
                 return Ok(());

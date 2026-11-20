@@ -14,6 +14,7 @@
   import { chatStore } from "../stores/chat.svelte";
   import { artifactStore } from "../stores/artifact.svelte";
   import { settingsStore } from "../stores/settings.svelte";
+  import { triggerCatalogStore } from "../stores/triggerCatalog.svelte";
   import Button from "./ui/Button.svelte";
   import {
     serveUploadUrl,
@@ -103,54 +104,7 @@
     isDisabled: boolean;
   };
 
-  let sessionFiles = $derived.by((): SessionFileItem[] => {
-    const byName = new Map<string, SessionFileItem>();
-
-    for (const att of chatStore.pendingAttachments) {
-      const key = att.originalName.trim().toLowerCase();
-      if (!byName.has(key)) {
-        byName.set(key, {
-          id: att.id,
-          name: att.originalName,
-          source: "pending",
-          subtitle: "Pending upload",
-          mimeType: att.mimeType,
-        });
-      }
-    }
-
-    for (const art of artifactStore.conversationArtifacts) {
-      const key = art.filename.trim().toLowerCase();
-      if (!byName.has(key)) {
-        byName.set(key, {
-          id: art.id,
-          name: art.filename,
-          source: "artifact",
-          subtitle: art.language ? `Artifact (${art.language})` : "Artifact",
-        });
-      }
-    }
-
-    const activeMsgs = chatStore.activePath;
-    for (let i = activeMsgs.length - 1; i >= 0; i--) {
-      const msg = activeMsgs[i];
-      if (!msg.attachments) continue;
-      for (const att of msg.attachments) {
-        const key = att.originalName.trim().toLowerCase();
-        if (!byName.has(key)) {
-          byName.set(key, {
-            id: att.id,
-            name: att.originalName,
-            source: "attachment",
-            subtitle: "Session attachment",
-            mimeType: att.mimeType,
-          });
-        }
-      }
-    }
-
-    return Array.from(byName.values());
-  });
+  let sessionFiles = $derived(triggerCatalogStore.sessionFiles);
 
   let slashCatalog = $derived.by((): SlashCatalogItem[] => {
     const items: SlashCatalogItem[] = [];
@@ -215,6 +169,10 @@
     }
 
     return items;
+  });
+
+  $effect(() => {
+    triggerCatalogStore.setSlashNames(slashCatalog.map((s) => s.name));
   });
 
   let activeTrigger = $state.raw<EditorTriggerState | null>(null);
@@ -960,6 +918,8 @@
         onPasteFiles={processFilesForUpload}
         onTriggerChange={handleTriggerChange}
         onTriggerKeydown={handleTriggerKeydown}
+        validAtNames={sessionFiles.map((f) => f.name)}
+        validSlashNames={slashCatalog.map((s) => s.name)}
         disabled={isUploading}
         disableSubmit={chatStore.isStreaming}
         placeholder={chatStore.isStreaming

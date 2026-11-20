@@ -4,6 +4,7 @@
     searchConversations,
     fetchModels,
     exportBackupUrl,
+    triggerDownload,
   } from "../api";
   import { chatStore } from "../stores/chat.svelte";
   import { settingsStore } from "../stores/settings.svelte";
@@ -144,13 +145,10 @@
         label: "Export Full Instance Backup",
         icon: Download,
         action: () => {
-          const a = document.createElement("a");
-          a.href = exportBackupUrl(false, true);
-          a.download = "";
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
           onClose();
+          void triggerDownload(exportBackupUrl(false, true), "blombrain-backup.zip").catch(
+            (err) => console.error("Failed to export backup:", err),
+          );
         },
       },
       {

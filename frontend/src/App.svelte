@@ -22,6 +22,7 @@
   import ArtifactPanel from "./lib/components/ArtifactPanel.svelte";
   import LoginScreen from "./lib/components/LoginScreen.svelte";
   import CommandPaletteModal from "./lib/components/CommandPaletteModal.svelte";
+  import WindowControls from "./lib/components/WindowControls.svelte";
   import {
     upsertScratchpadEntry,
     deleteScratchpadEntryApi,
@@ -33,6 +34,7 @@
   import { settingsStore } from "./lib/stores/settings.svelte";
   import { artifactStore } from "./lib/stores/artifact.svelte";
   import { authStore, checkAuth } from "./lib/stores/auth.svelte";
+  import { desktopWindow } from "./lib/stores/window.svelte";
 
   settingsStore.init();
 
@@ -139,10 +141,17 @@
   );
 
   let isNewChat = $derived(chatStore.activePath.length === 0);
+  let frameClass = $derived(
+    desktopWindow.isTauri && !desktopWindow.isMaximized
+      ? "rounded-xl border border-line"
+      : "",
+  );
 
   let hasInitialized = $state(false);
 
   onMount(() => {
+    const detachWindowListeners = desktopWindow.attachListeners();
+
     checkAuth().then(() => {
       const match = window.location.pathname.match(/^\/chat\/([a-zA-Z0-9-]+)$/);
       if (match) {
@@ -155,14 +164,20 @@
       }
     });
 
-    window.addEventListener("popstate", () => {
+    const onPopstate = () => {
       const match = window.location.pathname.match(/^\/chat\/([a-zA-Z0-9-]+)$/);
       if (match) {
         chatStore.loadConversation({ id: match[1] } as any);
       } else {
         chatStore.newConversation();
       }
-    });
+    };
+    window.addEventListener("popstate", onPopstate);
+
+    return () => {
+      detachWindowListeners();
+      window.removeEventListener("popstate", onPopstate);
+    };
   });
 
   $effect(() => {
@@ -194,15 +209,34 @@
 
 {#if !authStore.initialized}
   <div
-    class="flex items-center justify-center h-screen w-screen bg-bg text-fg font-medium"
+    data-tauri-drag-region={desktopWindow.isTauri ? "deep" : undefined}
+    class="relative flex items-center justify-center h-dvh w-screen bg-bg text-fg font-medium overflow-hidden {frameClass}"
   >
+    {#if desktopWindow.isTauri}
+      <div
+        data-tauri-drag-region="deep"
+        class="fixed top-0 left-0 right-0 flex h-11 items-center justify-end px-2.5 z-50"
+      >
+        <WindowControls />
+      </div>
+    {/if}
     Loading...
   </div>
 {:else if authStore.authEnabled && !authStore.authenticated}
-  <LoginScreen />
+  <div class="relative h-dvh w-screen bg-bg overflow-hidden {frameClass}">
+    {#if desktopWindow.isTauri}
+      <div
+        data-tauri-drag-region="deep"
+        class="fixed top-0 left-0 right-0 flex h-11 items-center justify-end px-2.5 z-50"
+      >
+        <WindowControls />
+      </div>
+    {/if}
+    <LoginScreen />
+  </div>
 {:else}
   <QueryClientProvider client={queryClient}>
-    <div class="relative flex h-dvh w-screen bg-bg text-fg overflow-hidden">
+    <div class="relative flex h-dvh w-screen bg-bg text-fg overflow-hidden {frameClass}">
       <!-- Desktop Sidebar -->
       <div class="hidden md:flex h-full">
         <Sidebar
@@ -250,26 +284,27 @@
             : ''}"
         >
           <header
-            class="flex items-center justify-between border-b border-line px-2.5 py-2.5 bg-bg shrink-0 z-30"
+            data-tauri-drag-region={desktopWindow.isTauri ? "deep" : undefined}
+            class="@container flex h-14 items-center justify-between gap-1.5 border-b border-line px-2.5 bg-bg shrink-0 z-30"
           >
-            <div class="flex items-center gap-2 min-w-0 flex-1">
+            <div class="flex items-center gap-1.5 min-w-0 flex-1">
               <!-- Mobile Menu -->
               <button
                 type="button"
                 onclick={() => (mobileSidebarOpen = true)}
                 aria-label="Open menu"
-                class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted md:hidden hover:bg-bg-elevated hover:text-fg"
+                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-muted md:hidden hover:bg-bg-elevated hover:text-fg"
               >
                 <Menu size={18} />
               </button>
 
               <!-- Model Picker -->
-              <div class="min-w-0">
+              <div class="min-w-0 shrink max-w-[240px]">
                 <ModelPicker />
               </div>
 
               <!-- Per-Conversation Session Parameters Override Popover -->
-              <div class="relative">
+              <div class="relative shrink-0">
                 <button
                   type="button"
                   onclick={() => {
@@ -285,17 +320,19 @@
                     : 'border-line bg-bg-elevated text-fg-muted hover:text-fg hover:bg-bg-hover'}"
                 >
                   <SlidersHorizontal size={13} />
-                  <span class="hidden sm:inline">Params</span>
+                  <span class="hidden @[440px]:inline">Params</span>
                 </button>
 
                 {#if showSessionParams}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <!-- svelte-ignore a11y_click_events_have_key_events -->
                   <div
+                    data-tauri-drag-region={desktopWindow.isTauri ? "false" : undefined}
                     class="fixed inset-0 z-40"
                     onclick={() => (showSessionParams = false)}
                   ></div>
                   <div
+                    data-tauri-drag-region={desktopWindow.isTauri ? "false" : undefined}
                     transition:fly={{ y: -6, duration: 150 }}
                     class="absolute left-0 top-full mt-1.5 z-50 w-72 sm:w-80 rounded-xl border border-line bg-bg-elevated p-3.5 shadow-2xl space-y-3 text-xs"
                   >
@@ -390,7 +427,7 @@
 
               <!-- Ephemeral Conversation Scratchpad Inspector -->
               {#if chatStore.activeConversationId && (chatStore.scratchpadEntries.length > 0 || showScratchpad)}
-                <div class="relative">
+                <div class="relative shrink-0">
                   <button
                     type="button"
                     onclick={() => {
@@ -405,7 +442,7 @@
                       : 'border-line bg-bg-elevated text-fg-muted hover:text-fg hover:bg-bg-hover'}"
                   >
                     <StickyNote size={13} class="text-accent" />
-                    <span class="hidden sm:inline">Scratchpad</span>
+                    <span class="hidden @[540px]:inline">Scratchpad</span>
                     <span class="rounded-full bg-accent/20 px-1.5 py-0.2 font-mono text-[10px] text-accent">
                       {chatStore.scratchpadEntries.length}
                     </span>
@@ -415,10 +452,12 @@
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <div
+                      data-tauri-drag-region={desktopWindow.isTauri ? "false" : undefined}
                       class="fixed inset-0 z-40"
                       onclick={() => (showScratchpad = false)}
                     ></div>
                     <div
+                      data-tauri-drag-region={desktopWindow.isTauri ? "false" : undefined}
                       transition:fly={{ y: -6, duration: 150 }}
                       class="absolute left-0 top-full mt-1.5 z-50 w-80 rounded-xl border border-line bg-bg-elevated p-3.5 shadow-2xl space-y-2.5 text-xs"
                     >
@@ -488,7 +527,7 @@
             </div>
 
             <!-- Right Header Controls: Conversation Artifacts Pill & Command Palette -->
-            <div class="flex items-center gap-2 shrink-0">
+            <div class="flex items-center gap-1.5 shrink-0">
               {#if artifactStore.conversationArtifacts.length > 0}
                 <button
                   type="button"
@@ -513,12 +552,12 @@
                   }}
                   aria-label="Toggle conversation artifacts panel"
                   title="Browse artifacts in this conversation (Ctrl+.)"
-                  class="flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-colors cursor-pointer {artifactStore.isOpen
+                  class="flex h-8 items-center gap-1.5 rounded-lg border px-2 text-xs transition-colors cursor-pointer {artifactStore.isOpen
                     ? 'border-accent bg-accent/15 text-accent font-medium'
                     : 'border-line bg-bg-elevated text-fg-muted hover:text-fg hover:bg-bg-hover'}"
                 >
                   <Code size={13} />
-                  <span class="hidden sm:inline">Artifacts</span>
+                  <span class="hidden @[360px]:inline">Artifacts</span>
                   <span class="rounded-full bg-accent/20 px-1.5 py-0.2 font-mono text-[10px] text-accent">
                     {artifactStore.conversationArtifacts.length}
                   </span>
@@ -533,13 +572,17 @@
                 }}
                 aria-label="Open command palette and search"
                 title="Command Palette & Search (Ctrl+K)"
-                class="flex h-8 items-center gap-1.5 rounded-lg border border-line bg-bg-elevated px-2.5 text-xs text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors cursor-pointer"
+                class="flex h-8 items-center gap-1.5 rounded-lg border border-line bg-bg-elevated px-2 text-xs text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors cursor-pointer"
               >
                 <Search size={13} />
-                <kbd class="hidden sm:inline font-mono text-[10px] text-fg-subtle">
+                <kbd class="hidden @[400px]:inline font-mono text-[10px] text-fg-subtle">
                   Ctrl+K
                 </kbd>
               </button>
+
+              {#if !artifactStore.isOpen}
+                <WindowControls />
+              {/if}
             </div>
           </header>
 

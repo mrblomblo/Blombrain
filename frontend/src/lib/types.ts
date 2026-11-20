@@ -1,11 +1,26 @@
+export type BackendProcessState = "stopped" | "running" | "stopping" | "exited" | "failed";
+
+export interface BackendProcessInfo {
+  state: BackendProcessState;
+  pid: number | null;
+  startedAt: number | null;
+  exitCode: number | null;
+  signal: string | null;
+  error: string | null;
+}
+
 export interface BackendInfo {
   id: string;
   name: string;
   prefix: string;
   baseUrl: string;
   hasApiKey: boolean;
-  status: "online" | "offline" | "unknown";
+  status: "online" | "offline" | "unknown" | "disabled";
   apiType?: string;
+  isEnabled: boolean;
+  launchCommand: string | null;
+  launchCwd: string | null;
+  process: BackendProcessInfo | null;
 }
 
 export interface BackendProtocolInfo {
@@ -22,6 +37,9 @@ export interface BackendCreateBody {
   prefix: string;
   apiKey?: string;
   apiType?: string;
+  launchCommand?: string | null;
+  launchCwd?: string | null;
+  isEnabled?: boolean;
 }
 
 /** Body for PUT /api/backends/:id */
@@ -31,6 +49,9 @@ export interface BackendUpdateBody {
   prefix: string;
   apiKey?: string;
   apiType?: string;
+  launchCommand?: string | null;
+  launchCwd?: string | null;
+  isEnabled?: boolean;
 }
 
 export interface ModelInfo {

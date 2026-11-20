@@ -73,8 +73,16 @@ async function fetchRawModelsForBackend(backend: ResolvedBackend): Promise<Fetch
   return null;
 }
 
-export async function syncSingleBackend(backend: ResolvedBackend): Promise<"online" | "offline"> {
+export async function syncSingleBackend(backend: ResolvedBackend): Promise<BackendInfo["status"]> {
   const now = Date.now();
+
+  // A disabled backend is never contacted; its cached models are shown as offline.
+  if (!backend.isEnabled) {
+    backendStatusMap.set(backend.id, "disabled");
+    db.prepare("UPDATE cached_models SET is_online = 0 WHERE backend_id = ?").run(backend.id);
+    return "disabled";
+  }
+
   const fetched = await fetchRawModelsForBackend(backend);
 
   if (fetched === null) {

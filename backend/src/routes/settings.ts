@@ -3,6 +3,7 @@ import fs from "node:fs";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import db from "../db.js";
+import { webServerManager } from "../services/webServer.js";
 import type { GlobalSettingsRow, GlobalSettingsOut, GlobalSettingsWriteBody, AttachmentRow } from "../types.js";
 
 function isSecureRequest(req: FastifyRequest): boolean {
@@ -50,10 +51,27 @@ function rowToSettings(row: GlobalSettingsRow): GlobalSettingsOut {
     ttsVoice: row.tts_voice ?? null,
     ttsDevice: (row.tts_device as any) || "cpu",
     speechIdleTimeoutSec: row.speech_idle_timeout_sec ?? 60,
+    webEnabled: !!row.web_enabled,
+    webHost: row.web_host || "127.0.0.1",
+    webPort: row.web_port ?? 4300,
   };
 }
 
+function validateWebHost(raw: string): string | null {
+  let host = raw.trim();
+  if (host.startsWith("[") && host.endsWith("]")) {
+    host = host.slice(1, -1).trim();
+  }
+  if (!host || host.length > 255) return null;
+  if (/[\s/?#\\]/.test(host) || host.includes("://")) return null;
+  return host;
+}
+
 export async function settingsRoutes(app: FastifyInstance) {
+  // GET /api/settings/web-status
+  app.get("/api/settings/web-status", async (_req, reply) => {
+    return reply.send(webServerManager.getStatus());
+  });
   // GET /api/instance-info (Public)
   app.get("/api/instance-info", async (_req, reply) => {
     const row = db
@@ -141,6 +159,35 @@ export async function settingsRoutes(app: FastifyInstance) {
         ? Math.max(5, Math.min(3600, Number(body.speechIdleTimeoutSec) || 60))
         : (current.speech_idle_timeout_sec ?? 60);
 
+    const webEnabled =
+      body.webEnabled !== undefined
+        ? (body.webEnabled ? 1 : 0)
+        : (current.web_enabled ?? 0);
+
+    let webHost = current.web_host || "127.0.0.1";
+    if (body.webHost !== undefined) {
+      const cleaned = validateWebHost(String(body.webHost));
+      if (!cleaned) {
+        return reply.code(400).send({
+          error: {
+            message: "Invalid host address. Enter an IP (e.g. 127.0.0.1 or 0.0.0.0) or hostname without scheme or port.",
+          },
+        });
+      }
+      webHost = cleaned;
+    }
+
+    let webPort = current.web_port ?? 4300;
+    if (body.webPort !== undefined) {
+      const parsedPort = Number(body.webPort);
+      if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+        return reply.code(400).send({
+          error: { message: "Invalid port. Must be an integer between 1 and 65535." },
+        });
+      }
+      webPort = parsedPort;
+    }
+
     // Mark new avatar attachment as purpose = 'avatar', and clean up old avatar if replaced
     if (body.userAvatar !== undefined && body.userAvatar !== current.user_avatar) {
       if (body.userAvatar && body.userAvatar.startsWith("/api/uploads/")) {
@@ -191,7 +238,7 @@ export async function settingsRoutes(app: FastifyInstance) {
 
     db.prepare(`
       UPDATE global_settings
-      SET user_name = ?, user_avatar = ?, theme = ?, auto_name_mode = ?, auto_name_model = ?, tool_routing_mode = ?, tool_routing_model = ?, ctx_overflow_behavior = ?, reasoning_injection_mode = ?, network_tools_enabled = ?, artifact_network_enabled = ?, disabled_builtin_tools = ?, memory_enabled = ?, cross_chat_recall_enabled = ?, cross_chat_include_archived = ?, embedding_model = ?, stt_provider = ?, stt_endpoint = ?, stt_model = ?, stt_device = ?, tts_provider = ?, tts_endpoint = ?, tts_model = ?, tts_voice = ?, tts_device = ?, speech_idle_timeout_sec = ?
+      SET user_name = ?, user_avatar = ?, theme = ?, auto_name_mode = ?, auto_name_model = ?, tool_routing_mode = ?, tool_routing_model = ?, ctx_overflow_behavior = ?, reasoning_injection_mode = ?, network_tools_enabled = ?, artifact_network_enabled = ?, disabled_builtin_tools = ?, memory_enabled = ?, cross_chat_recall_enabled = ?, cross_chat_include_archived = ?, embedding_model = ?, stt_provider = ?, stt_endpoint = ?, stt_model = ?, stt_device = ?, tts_provider = ?, tts_endpoint = ?, tts_model = ?, tts_voice = ?, tts_device = ?, speech_idle_timeout_sec = ?, web_enabled = ?, web_host = ?, web_port = ?
       WHERE id = 'default'
     `).run(
       userName,
@@ -219,8 +266,23 @@ export async function settingsRoutes(app: FastifyInstance) {
       ttsModel,
       ttsVoice,
       ttsDevice,
-      speechIdleTimeoutSec
+      speechIdleTimeoutSec,
+      webEnabled,
+      webHost,
+      webPort
     );
+
+    if (
+      body.webEnabled !== undefined ||
+      body.webHost !== undefined ||
+      body.webPort !== undefined
+    ) {
+      await webServerManager.applyConfig({
+        enabled: Boolean(webEnabled),
+        host: webHost,
+        port: webPort,
+      });
+    }
 
     const updated = db
       .prepare<[string], GlobalSettingsRow>("SELECT * FROM global_settings WHERE id = ?")

@@ -16,8 +16,13 @@
       --danger: #dc4c46;
     }
     * { box-sizing: border-box; }
-    body {
+    html, body {
       margin: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+    }
+    body {
       min-height: 100vh;
       display: flex;
       align-items: center;
@@ -25,6 +30,9 @@
       background: var(--bg);
       color: var(--text);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      overflow: hidden;
     }
     .card {
       width: min(560px, 92vw);

@@ -22,9 +22,11 @@
     updateConversation,
     searchConversations,
     exportConversationUrl,
+    triggerDownload,
   } from "../api";
   import { chatStore } from "../stores/chat.svelte";
   import { confirmStore } from "../stores/confirmStore.svelte";
+  import { desktopWindow } from "../stores/window.svelte";
   import type { ConversationSummary } from "../types";
   import Dropdown from "./ui/Dropdown.svelte";
   import TextInputModal from "./ui/TextInputModal.svelte";
@@ -127,13 +129,17 @@
     }
   }
 
-  function handleExportConversation(conv: ConversationSummary, format: "md" | "json") {
-    const a = document.createElement("a");
-    a.href = exportConversationUrl(conv.id, format);
-    a.download = "";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  async function handleExportConversation(conv: ConversationSummary, format: "md" | "json") {
+    try {
+      sidebarError = null;
+      const base = (conv.title || "conversation")
+        .trim()
+        .replace(/[^a-zA-Z0-9._-]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "conversation";
+      await triggerDownload(exportConversationUrl(conv.id, format), `${base}.${format}`);
+    } catch (err) {
+      sidebarError = `Failed to export conversation: ${(err as Error).message}`;
+    }
   }
 
   function handleSelectConv(conv: ConversationSummary) {
@@ -227,6 +233,7 @@
 >
   <!-- Header -->
   <div
+    data-tauri-drag-region={desktopWindow.isTauri ? "deep" : undefined}
     class="flex items-center h-14 shrink-0 px-3 justify-between overflow-hidden"
   >
     <div class="flex items-center overflow-hidden">
@@ -320,29 +327,17 @@
   >
     <!-- Conversations -->
     <div class="flex-1 overflow-y-auto overscroll-contain px-2 py-1 w-64">
-      <div class="mb-1.5 flex items-center justify-between px-2">
+      <div class="mb-1.5 flex items-center justify-between gap-2 px-2">
         <p
-          class="text-[11px] font-semibold tracking-wider text-fg-subtle uppercase"
+          class="text-[11px] font-semibold tracking-wider text-fg-subtle uppercase truncate"
         >
           {showArchived ? "Archived Chats" : "Conversations"}
         </p>
-        <div class="flex items-center gap-2">
-          {#if archivedCount > 0 || showArchived}
-            <button
-              type="button"
-              onclick={() => (showArchived = !showArchived)}
-              class="text-[10px] font-medium text-fg-subtle hover:text-accent transition-colors cursor-pointer"
-              title={showArchived ? "View active conversations" : "View archived conversations"}
-            >
-              {showArchived ? "Active" : `Archived (${archivedCount})`}
-            </button>
-          {/if}
-          {#if filteredConversations.length > 0}
-            <span class="text-[10px] font-mono text-fg-subtle">
-              {filteredConversations.length}
-            </span>
-          {/if}
-        </div>
+        {#if filteredConversations.length > 0}
+          <span class="text-[10px] font-mono tabular-nums text-fg-subtle shrink-0">
+            {filteredConversations.length.toLocaleString()}
+          </span>
+        {/if}
       </div>
 
       {#if sidebarError}
@@ -362,25 +357,43 @@
         </div>
       {/if}
 
-      {#if (convsQuery.data ?? []).length > 4 || searchQuery.trim() !== ""}
-        <div class="mx-1 mb-2 flex items-center gap-1.5 rounded-lg border border-line bg-bg px-2.5 py-1">
-          <Search size={12} class="text-fg-subtle shrink-0" />
-          <input
-            type="text"
-            bind:value={searchQuery}
-            placeholder="Filter conversations…"
-            aria-label="Filter conversations"
-            class="w-full bg-transparent text-xs text-fg placeholder:text-fg-subtle focus:outline-none"
-          />
-          {#if searchQuery}
+      {#if archivedCount > 0 || showArchived || (convsQuery.data ?? []).length > 4 || searchQuery.trim() !== ""}
+        <div class="mx-1 mb-2 flex items-center gap-1.5">
+          {#if archivedCount > 0 || showArchived}
             <button
               type="button"
-              onclick={() => (searchQuery = "")}
-              aria-label="Clear filter"
-              class="text-fg-subtle hover:text-fg cursor-pointer"
+              onclick={() => (showArchived = !showArchived)}
+              aria-label={showArchived ? "Show active conversations" : "Show archived conversations"}
+              aria-pressed={showArchived}
+              title={showArchived ? "Show active conversations" : "Show archived conversations"}
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-colors cursor-pointer {showArchived
+                ? 'border-accent bg-accent/15 text-accent'
+                : 'border-line bg-bg text-fg-muted hover:bg-bg-hover hover:text-fg'}"
             >
-              <X size={11} />
+              <Archive size={13} />
             </button>
+          {/if}
+          {#if (convsQuery.data ?? []).length > 4 || searchQuery.trim() !== ""}
+            <div class="flex flex-1 min-w-0 items-center gap-1.5 rounded-lg border border-line bg-bg px-2.5 py-1 h-7">
+              <Search size={12} class="text-fg-subtle shrink-0" />
+              <input
+                type="text"
+                bind:value={searchQuery}
+                placeholder="Filter conversations…"
+                aria-label="Filter conversations"
+                class="w-full bg-transparent text-xs text-fg placeholder:text-fg-subtle focus:outline-none"
+              />
+              {#if searchQuery}
+                <button
+                  type="button"
+                  onclick={() => (searchQuery = "")}
+                  aria-label="Clear filter"
+                  class="text-fg-subtle hover:text-fg cursor-pointer"
+                >
+                  <X size={11} />
+                </button>
+              {/if}
+            </div>
           {/if}
         </div>
       {/if}
@@ -567,15 +580,23 @@
             <p class="text-xs text-fg-muted">No backends configured.</p>
           {:else}
             {#each backendsQuery.data ?? [] as backend (backend.id)}
-              <div class="flex items-center gap-2 rounded-md px-2 py-1 text-xs">
+              <div
+                class="flex items-center gap-2 rounded-md px-2 py-1 text-xs"
+                class:opacity-55={!backend.isEnabled}
+                title={backend.status === "disabled" ? "Disabled" : backend.status}
+              >
                 <span
                   class="h-1.5 w-1.5 shrink-0 rounded-full"
                   class:bg-success={backend.status === "online"}
                   class:bg-danger={backend.status === "offline"}
-                  class:bg-fg-subtle={backend.status === "unknown"}
+                  class:bg-fg-subtle={backend.status === "unknown" || backend.status === "disabled"}
                 ></span>
-                <span class="flex-1 truncate text-fg-muted">{backend.name}</span
-                >
+                <span class="flex-1 truncate text-fg-muted">{backend.name}</span>
+                {#if !backend.isEnabled}
+                  <span class="shrink-0 font-mono text-[9px] text-fg-subtle">off</span>
+                {:else if backend.process?.state === "running"}
+                  <span class="shrink-0 font-mono text-[9px] text-accent">proc</span>
+                {/if}
                 <span class="shrink-0 font-mono text-[10px] text-fg-subtle"
                   >{backend.prefix}</span
                 >

@@ -4,14 +4,18 @@
   import { cubicOut } from "svelte/easing";
   import morphdom from "morphdom";
   import { artifactStore } from "../stores/artifact.svelte";
+  import { chatStore } from "../stores/chat.svelte";
+  import { triggerCatalogStore } from "../stores/triggerCatalog.svelte";
   import { copyToClipboard } from "../utils/clipboard";
   import { decodeBase64 } from "../markdown";
+  import { decorateTriggerTokensInElement } from "../utils/inputTriggers";
 
   interface Props {
     content: string;
     class?: string;
     streaming?: boolean;
     isArtifactPreview?: boolean;
+    highlightTriggers?: boolean;
   }
 
   const {
@@ -19,6 +23,7 @@
     class: className = "",
     streaming = false,
     isArtifactPreview = false,
+    highlightTriggers = false,
   }: Props = $props();
 
   let html = $derived(renderMarkdown(content, { isArtifactPreview, isStreaming: streaming }));
@@ -92,11 +97,17 @@
   /** Update container DOM incrementally using morphdom */
   $effect(() => {
     const currentHtml = html;
+    const validAt = highlightTriggers ? triggerCatalogStore.validAtSet : null;
+    const validSlash = highlightTriggers ? triggerCatalogStore.validSlashSet : null;
     if (!containerEl) return;
 
     const tempDiv = document.createElement("div");
     tempDiv.className = containerEl.className;
     tempDiv.innerHTML = currentHtml;
+
+    if (highlightTriggers && validAt && validSlash) {
+      decorateTriggerTokensInElement(tempDiv, validAt, validSlash);
+    }
 
     morphdom(containerEl, tempDiv, {
       onNodeAdded: (node) => {
@@ -272,8 +283,63 @@
     });
   });
 
+  function openTriggerFileReference(rawName: string) {
+    const targetLower = rawName.trim().toLowerCase();
+    if (!targetLower) return;
+
+    const artifact = artifactStore.conversationArtifacts.find(
+      (a) => a.filename.trim().toLowerCase() === targetLower,
+    );
+    if (artifact) {
+      void artifactStore.loadArtifact(
+        artifact.id,
+        artifact.conversationId,
+        artifact.filename,
+        artifact.title,
+        artifact.language,
+      );
+      return;
+    }
+
+    for (const pending of chatStore.pendingAttachments) {
+      if (pending.originalName.trim().toLowerCase() === targetLower) {
+        chatStore.selectedAttachment = pending;
+        return;
+      }
+    }
+
+    const activeMsgs = chatStore.activePath;
+    for (let i = activeMsgs.length - 1; i >= 0; i--) {
+      const msg = activeMsgs[i];
+      if (!msg.attachments) continue;
+      for (const att of msg.attachments) {
+        if (att.originalName.trim().toLowerCase() === targetLower) {
+          chatStore.selectedAttachment = att;
+          return;
+        }
+      }
+    }
+  }
+
+  function handleContainerKeydown(e: KeyboardEvent) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const target = e.target as HTMLElement | null;
+    const atChip = target?.closest<HTMLElement>("[data-trigger-kind='at']");
+    if (!atChip) return;
+    e.preventDefault();
+    openTriggerFileReference(atChip.getAttribute("data-trigger-value") || "");
+  }
+
   function handleContainerClick(e: MouseEvent) {
     const target = e.target as HTMLElement;
+
+    // Handle @ file reference chip click
+    const atChip = target.closest<HTMLElement>("[data-trigger-kind='at']");
+    if (atChip) {
+      e.preventDefault();
+      openTriggerFileReference(atChip.getAttribute("data-trigger-value") || "");
+      return;
+    }
 
     // Handle Artifact Card Click
     const artifactCard = target.closest<HTMLElement>(".artifact-card");
@@ -416,6 +482,7 @@
   bind:this={containerEl}
   class="prose max-w-none text-fg leading-relaxed text-sm {className}"
   onclick={handleContainerClick}
+  onkeydown={handleContainerKeydown}
   onmouseover={handleContainerMouseOver}
   onmouseout={handleContainerMouseOut}
 ></div>

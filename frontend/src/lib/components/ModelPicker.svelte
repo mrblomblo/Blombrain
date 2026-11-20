@@ -4,6 +4,7 @@
   import { fly, fade } from "svelte/transition";
   import { fetchModels } from "../api";
   import { chatStore } from "../stores/chat.svelte";
+  import { desktopWindow } from "../stores/window.svelte";
   import type { ModelInfo } from "../types";
 
   const modelsQuery = createQuery(() => ({
@@ -114,13 +115,13 @@
 
 <svelte:window onclick={handleWindowClick} onkeydown={handleKeydown} />
 
-<div class="model-picker-container relative z-50">
+<div class="model-picker-container relative z-50 w-full max-w-full min-w-0">
   {#if modelsQuery.isLoading}
-    <span class="text-xs text-fg-muted">Loading models…</span>
+    <span class="text-xs text-fg-muted truncate block">Loading models…</span>
   {:else if modelsQuery.isError}
-    <span class="text-xs text-danger font-medium">Failed to load models</span>
+    <span class="text-xs text-danger font-medium truncate block">Failed to load models</span>
   {:else if visibleModels.length === 0}
-    <span class="text-xs text-fg-muted">No models available</span>
+    <span class="text-xs text-fg-muted truncate block">No models available</span>
   {:else}
     <!-- Trigger Button -->
     <button
@@ -129,13 +130,13 @@
       aria-expanded={isOpen}
       aria-label="Select AI model"
       onclick={() => (isOpen = !isOpen)}
-      class="flex h-8 items-center gap-2 rounded-lg border border-line bg-bg-elevated px-2.5 text-xs text-fg transition-colors cursor-pointer hover:bg-bg-hover hover:border-line-strong"
+      class="flex h-8 max-w-full min-w-0 items-center gap-1.5 rounded-lg border border-line bg-bg-elevated px-2.5 text-xs text-fg transition-colors cursor-pointer hover:bg-bg-hover hover:border-line-strong"
     >
       {#if selectedModel?.icon}
         <img
           src={selectedModel.icon}
           alt="Icon"
-          class="h-4 w-4 rounded-xs object-cover"
+          class="h-4 w-4 rounded-xs object-cover shrink-0"
         />
       {:else}
         <img
@@ -145,7 +146,7 @@
         />
       {/if}
 
-      <span class="font-medium truncate max-w-[180px] sm:max-w-[240px]">
+      <span class="font-medium truncate min-w-0 flex-1 text-left">
         {selectedModel?.name || selectedModel?.id || "Select model"}
       </span>
 
@@ -164,6 +165,7 @@
     <!-- Popover Dropdown -->
     {#if isOpen}
       <div
+        data-tauri-drag-region={desktopWindow.isTauri ? "false" : undefined}
         transition:fly={{ y: -6, duration: 150 }}
         class="absolute left-0 top-full z-[100] mt-1 w-72 sm:w-80 rounded-xl border border-line bg-bg shadow-2xl overflow-hidden"
       >

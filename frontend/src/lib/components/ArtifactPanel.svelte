@@ -20,7 +20,10 @@
   import Markdown from "./Markdown.svelte";
   import ToggleSwitch from "./ui/ToggleSwitch.svelte";
   import Dropdown from "./ui/Dropdown.svelte";
+  import WindowControls from "./WindowControls.svelte";
   import { confirmStore } from "../stores/confirmStore.svelte";
+  import { desktopWindow } from "../stores/window.svelte";
+  import { saveBytesDownload } from "../api";
 
   let viewMode = $state<"preview" | "code">("preview");
   let copied = $state(false);
@@ -208,7 +211,7 @@ document.addEventListener('submit', function(e) {
     }
   }
 
-  function handleDownload() {
+  async function handleDownload() {
     if (!artifactStore.code) return;
     let ext = artifactStore.language;
     if (ext === "markdown") ext = "md";
@@ -238,20 +241,17 @@ document.addEventListener('submit', function(e) {
         "artifact";
 
     const filename = `${baseName}.${ext}`;
-    const blob = new Blob([artifactStore.code], {
-      type: "text/plain;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
     showDownloadMenu = false;
+
+    try {
+      await saveBytesDownload(
+        new TextEncoder().encode(artifactStore.code),
+        filename,
+        "text/plain;charset=utf-8",
+      );
+    } catch (err) {
+      console.error("Failed to download artifact:", err);
+    }
   }
 </script>
 
@@ -262,17 +262,21 @@ document.addEventListener('submit', function(e) {
 >
   <!-- Top Bar / Header matching Chat header height and padding -->
   <div
-    class="flex min-h-13.25 shrink-0 items-center justify-between border-b border-line bg-bg-elevated px-4 py-2.5 z-30"
+    data-tauri-drag-region={desktopWindow.isTauri ? "deep" : undefined}
+    class="@container flex h-14 shrink-0 items-center justify-between gap-2 border-b border-line bg-bg-elevated px-2.5 z-30"
   >
     <!-- Title & Language / Switcher -->
-    <div class="flex items-center gap-2.5 min-w-0">
+    <div class="flex items-center gap-2 min-w-0 flex-1">
       <span
-        class="text-xs font-mono font-bold uppercase px-2 py-0.5 rounded bg-bg-inset border border-line text-accent"
+        class="hidden @[340px]:inline-block shrink-0 text-[11px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-bg-inset border border-line text-accent"
       >
         {artifactStore.language === "markdown" ? "md" : artifactStore.language}
       </span>
       {#if artifactStore.conversationArtifacts.length > 1}
-        <div class="min-w-40 max-w-64">
+        <div
+          class="min-w-0 flex-1 max-w-60"
+          data-tauri-drag-region={desktopWindow.isTauri ? "false" : undefined}
+        >
           <Dropdown
             value={artifactStore.activeId ?? undefined}
             options={artifactStore.conversationArtifacts.map((a) => ({
@@ -294,7 +298,7 @@ document.addEventListener('submit', function(e) {
           />
         </div>
       {:else}
-        <h3 class="text-sm font-semibold text-fg truncate">
+        <h3 class="text-sm font-semibold text-fg truncate min-w-0">
           {artifactStore.title}
         </h3>
       {/if}
@@ -302,7 +306,7 @@ document.addEventListener('submit', function(e) {
 
     <!-- Toggle View Mode Switcher -->
     <div
-      class="flex items-center h-7 sm:h-8 rounded-lg border border-line bg-bg-inset py-0.5 px-1 sm:px-0.5 shadow-xs"
+      class="flex items-center h-8 shrink-0 rounded-lg border border-line bg-bg-inset p-0.5 shadow-xs"
     >
       <button
         type="button"
@@ -311,48 +315,49 @@ document.addEventListener('submit', function(e) {
         title={isCurrentArtifactGenerating
           ? "Preview is unavailable while artifact is generating"
           : "Switch to Preview"}
-        class="flex items-center justify-center gap-1.5 h-full rounded-md px-1 sm:px-2.5 aspect-square sm:aspect-auto text-xs font-medium transition-all {isCurrentArtifactGenerating
+        class="flex items-center justify-center gap-1.5 h-full rounded-md px-2 @[480px]:px-2.5 text-xs font-medium transition-all {isCurrentArtifactGenerating
           ? 'opacity-40 cursor-not-allowed text-fg-muted'
           : viewMode === 'preview'
             ? 'bg-bg-elevated text-fg shadow-xs font-semibold'
             : 'text-fg-muted hover:text-fg'}"
       >
         <Eye size={13} />
-        <span class="hidden sm:inline">Preview</span>
+        <span class="hidden @[480px]:inline">Preview</span>
       </button>
-      <div class="h-3.5 w-px bg-line/60 mx-0.5 sm:hidden"></div>
       <button
         type="button"
         onclick={() => (viewMode = "code")}
-        class="flex items-center justify-center gap-1.5 h-full rounded-md px-1 sm:px-2.5 aspect-square sm:aspect-auto text-xs font-medium transition-all {viewMode ===
+        title="View Code"
+        aria-label="View Code"
+        class="flex items-center justify-center gap-1.5 h-full rounded-md px-2 @[480px]:px-2.5 text-xs font-medium transition-all {viewMode ===
         'code'
           ? 'bg-bg-elevated text-fg shadow-xs font-semibold'
           : 'text-fg-muted hover:text-fg'}"
       >
         <Code size={13} />
-        <span class="hidden sm:inline">Code</span>
+        <span class="hidden @[480px]:inline">Code</span>
       </button>
     </div>
 
     <!-- Action Buttons -->
-    <div class="flex items-center gap-1.5">
+    <div class="flex items-center gap-1.5 shrink-0">
       <!-- Copy / Download Split Button -->
       <div
-        class="relative flex items-center h-7 sm:h-8 rounded-lg border border-line bg-bg-inset shadow-xs"
+        class="relative flex items-center h-8 rounded-lg border border-line bg-bg-inset shadow-xs"
       >
         <button
           type="button"
           onclick={handleCopy}
           aria-label="Copy artifact code"
           title="Copy code"
-          class="flex items-center gap-1.5 h-full px-2 sm:px-2.5 text-xs font-medium text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors rounded-l-lg border-r border-line"
+          class="flex items-center gap-1.5 h-full px-2 @[380px]:px-2.5 text-xs font-medium text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors rounded-l-lg border-r border-line"
         >
           {#if copied}
-            <Check class="hidden sm:block w-3.5 h-3.5 text-success" />
-            <span class="text-success">Copied</span>
+            <Check class="w-3.5 h-3.5 text-success" />
+            <span class="hidden @[380px]:inline text-success">Copied</span>
           {:else}
-            <Copy class="hidden sm:block w-3.5 h-3.5" />
-            <span>Copy</span>
+            <Copy class="w-3.5 h-3.5" />
+            <span class="hidden @[380px]:inline">Copy</span>
           {/if}
         </button>
         <button
@@ -374,10 +379,12 @@ document.addEventListener('submit', function(e) {
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <div
+            data-tauri-drag-region={desktopWindow.isTauri ? "false" : undefined}
             class="fixed inset-0 z-40"
             onclick={() => (showDownloadMenu = false)}
           ></div>
           <div
+            data-tauri-drag-region={desktopWindow.isTauri ? "false" : undefined}
             transition:fly={{ y: -6, duration: 150 }}
             class="absolute right-0 top-full mt-1 z-50 min-w-44 rounded-lg border border-line bg-bg-elevated p-1 shadow-xl overflow-hidden"
           >
@@ -450,7 +457,7 @@ document.addEventListener('submit', function(e) {
           ? "Collapse artifact panel"
           : "Expand artifact panel"}
         title={artifactStore.isExpanded ? "Collapse" : "Expand"}
-        class="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted hover:bg-bg-hover hover:text-fg transition-colors"
+        class="hidden @[420px]:flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted hover:bg-bg-hover hover:text-fg transition-colors cursor-pointer"
       >
         {#if artifactStore.isExpanded}
           <Minimize2 size={15} />
@@ -459,17 +466,17 @@ document.addEventListener('submit', function(e) {
         {/if}
       </button>
 
-      <div class="h-4 w-px bg-line mx-1 hidden sm:block"></div>
-
       <button
         type="button"
         onclick={() => artifactStore.close()}
         aria-label="Close artifact panel"
         title="Close side panel"
-        class="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg text-fg-muted hover:bg-bg-hover hover:text-fg transition-colors"
+        class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted hover:bg-bg-hover hover:text-fg transition-colors cursor-pointer"
       >
         <X size={16} />
       </button>
+
+      <WindowControls />
     </div>
   </div>
 

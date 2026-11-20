@@ -10,6 +10,9 @@ export interface BackendRow {
   prefix: string;
   api_key: string | null;
   api_type: "openai" | "ollama" | "lmstudio";
+  is_enabled?: number;
+  launch_command?: string | null;
+  launch_cwd?: string | null;
 }
 
 /** A backend after loading from DB with snake_case mapped to camelCase. */
@@ -20,6 +23,23 @@ export interface ResolvedBackend {
   prefix: string;
   apiKey?: string;
   apiType?: "openai" | "ollama" | "lmstudio";
+  /** Disabled backends are never contacted and their managed process (if any) is stopped. */
+  isEnabled: boolean;
+  /** Shell command started with the app and stopped when the backend is disabled. */
+  launchCommand: string | null;
+  launchCwd: string | null;
+}
+
+export type BackendProcessState = "stopped" | "running" | "stopping" | "exited" | "failed";
+
+/** Runtime state of a backend's managed launch command. */
+export interface BackendProcessInfo {
+  state: BackendProcessState;
+  pid: number | null;
+  startedAt: number | null;
+  exitCode: number | null;
+  signal: string | null;
+  error: string | null;
 }
 
 /** Public shape sent to the frontend -- never includes the API key. */
@@ -29,8 +49,13 @@ export interface BackendInfo {
   prefix: string;
   baseUrl: string;
   hasApiKey: boolean;
-  status: "online" | "offline" | "unknown";
+  status: "online" | "offline" | "unknown" | "disabled";
   apiType: "openai" | "ollama" | "lmstudio";
+  isEnabled: boolean;
+  launchCommand: string | null;
+  launchCwd: string | null;
+  /** Null when the backend has no launch command configured. */
+  process: BackendProcessInfo | null;
 }
 
 /** Body accepted by POST /api/backends and PUT /api/backends/:id */
@@ -41,6 +66,10 @@ export interface BackendWriteBody {
   prefix: string;
   apiKey?: string;
   apiType?: "openai" | "ollama" | "lmstudio";
+  /** undefined keeps the current value; null or "" clears it. */
+  launchCommand?: string | null;
+  launchCwd?: string | null;
+  isEnabled?: boolean;
 }
 
 export interface ModelInfo {
@@ -493,6 +522,9 @@ export interface GlobalSettingsRow {
   tts_voice?: string | null;
   tts_device?: string;
   speech_idle_timeout_sec?: number;
+  web_enabled?: number;
+  web_host?: string;
+  web_port?: number;
 }
 
 export interface GlobalSettingsOut {
@@ -523,6 +555,9 @@ export interface GlobalSettingsOut {
   ttsVoice: string | null;
   ttsDevice: SpeechDeviceType;
   speechIdleTimeoutSec: number;
+  webEnabled: boolean;
+  webHost: string;
+  webPort: number;
 }
 
 export interface GlobalSettingsWriteBody {
@@ -552,5 +587,8 @@ export interface GlobalSettingsWriteBody {
   ttsVoice?: string | null;
   ttsDevice?: SpeechDeviceType;
   speechIdleTimeoutSec?: number;
+  webEnabled?: boolean;
+  webHost?: string;
+  webPort?: number;
   password?: string;
 }

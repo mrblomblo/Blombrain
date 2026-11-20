@@ -8,8 +8,11 @@
   import Blockquote from "@tiptap/extension-blockquote";
   import { createLowlight, common } from "lowlight";
   import { Markdown } from "tiptap-markdown";
+  import { Plugin, PluginKey } from "@tiptap/pm/state";
+  import { Decoration, DecorationSet } from "@tiptap/pm/view";
   import {
     detectInputTrigger,
+    findValidPrefixMatchesInText,
     type ActiveInputTrigger,
   } from "../utils/inputTriggers";
 
@@ -27,6 +30,8 @@
     onPasteFiles?: (files: File[]) => void;
     onTriggerChange?: (trigger: EditorTriggerState | null) => void;
     onTriggerKeydown?: (key: string) => boolean;
+    validAtNames?: string[];
+    validSlashNames?: string[];
     class?: string;
   }
 
@@ -39,6 +44,8 @@
     onPasteFiles,
     onTriggerChange,
     onTriggerKeydown,
+    validAtNames = [],
+    validSlashNames = [],
     class: className = "",
   }: Props = $props();
 
@@ -73,6 +80,86 @@
   let getOnPasteFiles = $derived(() => onPasteFiles);
   let getOnTriggerChange = $derived(() => onTriggerChange);
   let getOnTriggerKeydown = $derived(() => onTriggerKeydown);
+
+  const tokenHighlightPluginKey = new PluginKey("tokenHighlight");
+  let validAtSet = new Set<string>();
+  let validSlashSet = new Set<string>();
+
+  function buildTokenDecorations(doc: any): DecorationSet {
+    if (validAtSet.size === 0 && validSlashSet.size === 0) {
+      return DecorationSet.empty;
+    }
+    const decos: Decoration[] = [];
+    doc.descendants((node: any, pos: number) => {
+      if (node.type?.name === "codeBlock") return false;
+      if (!node.isTextblock) return true;
+
+      let text = "";
+      const charPositions: number[] = [];
+      node.forEach((child: any, offsetInBlock: number) => {
+        if (child.isText && child.text) {
+          for (let i = 0; i < child.text.length; i++) {
+            text += child.text[i];
+            charPositions.push(pos + 1 + offsetInBlock + i);
+          }
+        } else {
+          text += "\n";
+          charPositions.push(pos + 1 + offsetInBlock);
+        }
+      });
+
+      for (const m of findValidPrefixMatchesInText(text, "@", validAtSet)) {
+        const from = charPositions[m.start];
+        const toChar = charPositions[m.end - 1];
+        if (from !== undefined && toChar !== undefined) {
+          decos.push(
+            Decoration.inline(from, toChar + 1, {
+              class: "input-mention-chip input-mention-at",
+              title: "Session file",
+            }),
+          );
+        }
+      }
+
+      for (const m of findValidPrefixMatchesInText(text, "/", validSlashSet)) {
+        const from = charPositions[m.start];
+        const toChar = charPositions[m.end - 1];
+        if (from !== undefined && toChar !== undefined) {
+          decos.push(
+            Decoration.inline(from, toChar + 1, {
+              class: "input-mention-chip input-mention-slash",
+              title: "Injected tool, skill, or MCP",
+            }),
+          );
+        }
+      }
+      return false;
+    });
+    return DecorationSet.create(doc, decos);
+  }
+
+  const TokenHighlight = Extension.create({
+    name: "tokenHighlight",
+    addProseMirrorPlugins() {
+      return [
+        new Plugin({
+          key: tokenHighlightPluginKey,
+          state: {
+            init: (_config, state) => buildTokenDecorations(state.doc),
+            apply: (tr, prev, _oldState, newState) => {
+              if (tr.docChanged || tr.getMeta(tokenHighlightPluginKey)) {
+                return buildTokenDecorations(newState.doc);
+              }
+              return prev;
+            },
+          },
+          props: {
+            decorations: (state) => tokenHighlightPluginKey.getState(state),
+          },
+        }),
+      ];
+    },
+  });
 
   // True while the component itself is pushing content into the editor, so the
   // resulting selection/update events do not feed back into trigger state.
@@ -259,6 +346,7 @@
         }),
         Markdown,
         CustomShortcuts,
+        TokenHighlight,
       ],
       editorProps: {
         handleDrop: () => true,
@@ -333,6 +421,20 @@
   $effect(() => {
     if (editor) {
       editor.setEditable(!disabled);
+    }
+  });
+
+  // Refresh inline @ and / token decorations whenever valid file/tool catalogs change
+  $effect(() => {
+    const nextAt = new Set(validAtNames.map((n) => n.trim().toLowerCase()).filter(Boolean));
+    const nextSlash = new Set(validSlashNames.map((n) => n.trim().toLowerCase()).filter(Boolean));
+    validAtSet = nextAt;
+    validSlashSet = nextSlash;
+    const ed = editor;
+    if (ed) {
+      untrack(() => {
+        ed.view.dispatch(ed.state.tr.setMeta(tokenHighlightPluginKey, true));
+      });
     }
   });
 

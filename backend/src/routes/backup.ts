@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import db, { DATA_DIR } from "../db.js";
 import { syncModels } from "../services/modelSync.js";
+import { backendProcessManager } from "../services/backendProcesses.js";
+import { webServerManager } from "../services/webServer.js";
 
 const SECRET_KEY_REGEX = /(key|token|secret|password|auth|credential|bearer|cookie|jwt|private)/i;
 const MASKED_VALUE = "••••••••";
@@ -249,7 +251,10 @@ export async function backupRoutes(app: FastifyInstance) {
                   tts_model = ?,
                   tts_voice = ?,
                   tts_device = COALESCE(?, tts_device),
-                  speech_idle_timeout_sec = COALESCE(?, speech_idle_timeout_sec)
+                  speech_idle_timeout_sec = COALESCE(?, speech_idle_timeout_sec),
+                  web_enabled = COALESCE(?, web_enabled),
+                  web_host = COALESCE(?, web_host),
+                  web_port = COALESCE(?, web_port)
                 WHERE id = 'default'`
               ).run(
                 gs.user_name ?? null,
@@ -277,16 +282,22 @@ export async function backupRoutes(app: FastifyInstance) {
                 gs.tts_model ?? null,
                 gs.tts_voice ?? null,
                 gs.tts_device ?? null,
-                gs.speech_idle_timeout_sec ?? null
+                gs.speech_idle_timeout_sec ?? null,
+                gs.web_enabled ?? null,
+                gs.web_host ?? null,
+                gs.web_port ?? null
               );
             }
           }
 
           // 2. Backends
           if (Array.isArray(d.backends)) {
+            // Launch commands are restored but newly imported backends that carry one are
+            // inserted DISABLED: a backup file must never make the app run a shell command
+            // until the user has reviewed it and explicitly enabled the backend.
             const stmt = db.prepare(
-              `INSERT INTO backends (id, name, base_url, prefix, api_key, api_type)
-               VALUES (?, ?, ?, ?, ?, ?)
+              `INSERT INTO backends (id, name, base_url, prefix, api_key, api_type, is_enabled, launch_command, launch_cwd)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(id) DO UPDATE SET
                  name = excluded.name,
                  base_url = excluded.base_url,
@@ -297,13 +308,20 @@ export async function backupRoutes(app: FastifyInstance) {
             for (const b of d.backends) {
               if (!b.id || !b.name || !b.base_url || !b.prefix) continue;
               try {
+                const launchCommand =
+                  typeof b.launch_command === "string" && b.launch_command.trim() ? b.launch_command.trim() : null;
+                const launchCwd =
+                  typeof b.launch_cwd === "string" && b.launch_cwd.trim() ? b.launch_cwd.trim() : null;
                 stmt.run(
                   b.id,
                   b.name,
                   b.base_url,
                   b.prefix,
                   b.api_key ?? null,
-                  b.api_type || "openai"
+                  b.api_type || "openai",
+                  launchCommand || b.is_enabled === 0 ? 0 : 1,
+                  launchCommand,
+                  launchCwd
                 );
                 counts.backends++;
               } catch { }
@@ -601,6 +619,9 @@ export async function backupRoutes(app: FastifyInstance) {
         });
 
         tx();
+        // A replace-import may have removed or disabled backends that have a live launch command.
+        await backendProcessManager.reconcile();
+        await webServerManager.applyFromDb();
         syncModels().catch(() => {});
       } finally {
         db.pragma("foreign_keys = ON");

@@ -672,6 +672,9 @@ export async function chatRoutes(app: FastifyInstance) {
       return sendJsonError(reply, 400, `Model id "${body.model}" (resolved to "${targetModelId}") doesn't match any configured backend prefix.`);
     }
     const { backend, rawModelId } = resolved;
+    if (!backend.isEnabled) {
+      return sendJsonError(reply, 409, `Backend "${backend.name}" is disabled. Enable it in Settings > Backends to use this model.`);
+    }
 
     // -----------------------------------------------------------------------
     // 3. Fetch per-conversation excluded MCP/Skill IDs, tools_enabled, memory_enabled, and overrides from DB

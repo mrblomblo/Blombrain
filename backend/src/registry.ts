@@ -2,6 +2,12 @@ import fs from "node:fs";
 import db from "./db.js";
 import type { BackendRow, ResolvedBackend, BackendWriteBody, AttachmentRow } from "./types.js";
 
+function normalizeOptionalText(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function rowToResolved(row: BackendRow): ResolvedBackend {
   return {
     id: row.id,
@@ -10,6 +16,9 @@ function rowToResolved(row: BackendRow): ResolvedBackend {
     prefix: row.prefix,
     apiKey: row.api_key ?? undefined,
     apiType: (row.api_type as "openai" | "ollama" | "lmstudio") ?? "openai",
+    isEnabled: row.is_enabled === undefined || row.is_enabled === null ? true : row.is_enabled !== 0,
+    launchCommand: normalizeOptionalText(row.launch_command),
+    launchCwd: normalizeOptionalText(row.launch_cwd),
   };
 }
 
@@ -49,8 +58,8 @@ class BackendRegistry {
 
   add(body: BackendWriteBody & { id: string }): ResolvedBackend {
     db.prepare(
-      `INSERT INTO backends (id, name, base_url, prefix, api_key, api_type)
-       VALUES (@id, @name, @baseUrl, @prefix, @apiKey, @apiType)`,
+      `INSERT INTO backends (id, name, base_url, prefix, api_key, api_type, is_enabled, launch_command, launch_cwd)
+       VALUES (@id, @name, @baseUrl, @prefix, @apiKey, @apiType, @isEnabled, @launchCommand, @launchCwd)`,
     ).run({
       id: body.id,
       name: body.name,
@@ -58,8 +67,17 @@ class BackendRegistry {
       prefix: body.prefix,
       apiKey: body.apiKey ?? null,
       apiType: body.apiType ?? "openai",
+      isEnabled: body.isEnabled === false ? 0 : 1,
+      launchCommand: normalizeOptionalText(body.launchCommand),
+      launchCwd: normalizeOptionalText(body.launchCwd),
     });
     return this.getById(body.id)!;
+  }
+
+  setEnabled(id: string, enabled: boolean): ResolvedBackend | undefined {
+    const result = db.prepare("UPDATE backends SET is_enabled = ? WHERE id = ?").run(enabled ? 1 : 0, id);
+    if (result.changes === 0) return undefined;
+    return this.getById(id);
   }
 
   update(id: string, body: BackendWriteBody): ResolvedBackend | undefined {
@@ -73,13 +91,20 @@ class BackendRegistry {
           ? null
           : body.apiKey;
 
+    const nextLaunchCommand =
+      body.launchCommand === undefined ? existing.launchCommand : normalizeOptionalText(body.launchCommand);
+    const nextLaunchCwd =
+      body.launchCwd === undefined ? existing.launchCwd : normalizeOptionalText(body.launchCwd);
+    const nextEnabled = body.isEnabled === undefined ? existing.isEnabled : body.isEnabled;
+
     const oldPrefix = `${existing.prefix}:`;
     const newPrefix = `${body.prefix}:`;
 
     const tx = db.transaction(() => {
       db.prepare(
         `UPDATE backends
-         SET name = @name, base_url = @baseUrl, prefix = @prefix, api_key = @apiKey, api_type = @apiType
+         SET name = @name, base_url = @baseUrl, prefix = @prefix, api_key = @apiKey, api_type = @apiType,
+             is_enabled = @isEnabled, launch_command = @launchCommand, launch_cwd = @launchCwd
          WHERE id = @id`,
       ).run({
         id,
@@ -88,6 +113,9 @@ class BackendRegistry {
         prefix: body.prefix,
         apiKey: nextApiKey,
         apiType: body.apiType ?? existing.apiType ?? "openai",
+        isEnabled: nextEnabled ? 1 : 0,
+        launchCommand: nextLaunchCommand,
+        launchCwd: nextLaunchCwd,
       });
 
       if (existing.prefix !== body.prefix) {

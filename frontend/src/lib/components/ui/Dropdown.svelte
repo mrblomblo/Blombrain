@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ChevronDown, Check } from "@lucide/svelte";
   import { fly } from "svelte/transition";
+  import { desktopWindow } from "../../stores/window.svelte";
 
   export interface DropdownOption {
     label: string;
@@ -139,6 +140,7 @@
 
   {#if isOpen}
     <div
+      data-tauri-drag-region={desktopWindow.isTauri ? "false" : undefined}
       transition:fly={{ y: -4, duration: 150 }}
       class="absolute {align === 'right'
         ? 'right-0'
