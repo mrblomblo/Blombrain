@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import crypto from "node:crypto";
 import { copyFileSync, cpSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { DATA_DIR, MIGRATE_FROM_DIR } from "./paths.js";
@@ -596,7 +597,66 @@ const migration6: Migration = {
   },
 };
 
-const migrations: Migration[] = [migration1, migration2, migration3, migration4, migration5, migration6];
+const migration7: Migration = {
+  version: 7,
+  description: "Add folder column to conversations for sidebar organization",
+  run: () => {
+    const cols = (db.pragma("table_info(conversations)") as { name: string }[]).map((c) => c.name);
+    if (!cols.includes("folder")) {
+      db.exec(`ALTER TABLE conversations ADD COLUMN folder TEXT`);
+    }
+  },
+};
+
+const migration8: Migration = {
+  version: 8,
+  description: "Create folders table and migrate conversations.folder to folder_id",
+  run: () => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS folders (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        is_expanded INTEGER NOT NULL DEFAULT 1,
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL
+      );
+    `);
+
+    const convCols = (db.pragma("table_info(conversations)") as { name: string }[]).map((c) => c.name);
+    if (!convCols.includes("folder_id")) {
+      db.exec(`ALTER TABLE conversations ADD COLUMN folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL`);
+    }
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_folder ON conversations(folder_id);`);
+
+    if (convCols.includes("folder")) {
+      const distinctFolders = db
+        .prepare<[], { folder: string }>(
+          "SELECT DISTINCT TRIM(folder) as folder FROM conversations WHERE folder IS NOT NULL AND TRIM(folder) != ''"
+        )
+        .all();
+      const now = Date.now();
+      const insertFolder = db.prepare(
+        "INSERT INTO folders (id, name, description, is_expanded, created_at, updated_at) VALUES (?, ?, '', 1, ?, ?)"
+      );
+      const linkConvs = db.prepare(
+        "UPDATE conversations SET folder_id = ? WHERE TRIM(folder) = ?"
+      );
+      for (const row of distinctFolders) {
+        const existing = db
+          .prepare<[string], { id: string }>("SELECT id FROM folders WHERE LOWER(name) = LOWER(?)")
+          .get(row.folder);
+        const folderId = existing?.id ?? crypto.randomUUID();
+        if (!existing) {
+          insertFolder.run(folderId, row.folder, now, now);
+        }
+        linkConvs.run(folderId, row.folder);
+      }
+    }
+  },
+};
+
+const migrations: Migration[] = [migration1, migration2, migration3, migration4, migration5, migration6, migration7, migration8];
 
 const currentVersion = db.pragma("user_version", { simple: true }) as number;
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fade, fly } from "svelte/transition";
   import type { Snippet } from "svelte";
+  import { desktopWindow } from "../../stores/window.svelte";
 
   interface Props {
     isOpen: boolean;
@@ -22,6 +23,12 @@
 
   let dialogEl: HTMLDivElement | undefined = $state();
   let previousFocusedElement: HTMLElement | null = null;
+
+  $effect(() => {
+    if (isOpen) {
+      return desktopWindow.registerActiveModal();
+    }
+  });
 
   $effect(() => {
     if (isOpen) {
@@ -68,13 +75,15 @@
     aria-label={title || "Modal"}
     tabindex="-1"
     transition:fade={{ duration: 150 }}
-    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm p-4"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm p-4 {desktopWindow.isTauri
+      ? 'pt-14'
+      : ''}"
     onclick={handleBackdropClick}
     onkeydown={handleKeydown}
   >
     <div
       transition:fly={{ y: 15, duration: 200 }}
-      class="relative flex w-full {maxWidth} flex-col rounded-xl border border-line bg-bg shadow-2xl overflow-hidden p-6 gap-5"
+      class="relative flex w-full {maxWidth} max-h-full flex-col rounded-xl border border-line bg-bg shadow-2xl overflow-hidden p-6 gap-5"
     >
       {#if title || children}
         <div class="flex flex-col gap-1.5">

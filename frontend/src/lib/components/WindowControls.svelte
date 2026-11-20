@@ -1,11 +1,19 @@
 <script lang="ts">
   import { Minus, Square, Copy, X } from "@lucide/svelte";
   import { desktopWindow } from "../stores/window.svelte";
+
+  interface Props {
+    standalone?: boolean;
+  }
+
+  let { standalone = false }: Props = $props();
 </script>
 
 {#if desktopWindow.isTauri}
   <div
-    class="flex items-center gap-0.5 pl-1.5 ml-0.5 border-l border-line shrink-0"
+    class="flex items-center gap-0.5 shrink-0 {standalone
+      ? ''
+      : 'pl-1.5 ml-0.5 border-l border-line'}"
     aria-label="Window controls"
   >
     <button

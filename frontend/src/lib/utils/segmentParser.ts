@@ -2,10 +2,11 @@ import type { ToolExecutionEvent } from "../types.js";
 
 export interface MessageSegment {
   id: string;
-  type: "router" | "think" | "tool" | "text";
+  type: "router" | "think" | "tool" | "notice" | "text";
   content?: string;
   isDone?: boolean;
   execution?: ToolExecutionEvent;
+  noticeKind?: "trimmed" | "tools_pruned";
 }
 
 /**
@@ -61,23 +62,26 @@ export function parseMessageSegments(
   const segments: MessageSegment[] = [];
   let pos = 0;
   let segIndex = 0;
-  let lastParsedTagType: "router" | "think" | "tool" | null = null;
+  let lastParsedTagType: "router" | "think" | "tool" | "notice" | null = null;
 
   const ROUTER_OPEN = "<router_execution>";
   const ROUTER_CLOSE = "</router_execution>";
   const TOOL_OPEN = "<tool_execution>";
   const TOOL_CLOSE = "</tool_execution>";
+  const NOTICE_OPEN = "<context_notice>";
+  const NOTICE_CLOSE = "</context_notice>";
 
   while (pos < fullRaw.length) {
     const nextRouter = fullRaw.indexOf(ROUTER_OPEN, pos);
     const openThink = findNextOpenTag(fullRaw, pos);
     const nextThink = openThink ? openThink.pos : -1;
     const nextTool = fullRaw.indexOf(TOOL_OPEN, pos);
+    const nextNotice = fullRaw.indexOf(NOTICE_OPEN, pos);
     const closeThink = findNextCloseTag(fullRaw, pos);
     const nextEndThink = closeThink ? closeThink.pos : -1;
     const endThinkLen = closeThink ? closeThink.len : 0;
 
-    let firstTagType: "router" | "think" | "endThink" | "tool" | null = null;
+    let firstTagType: "router" | "think" | "endThink" | "tool" | "notice" | null = null;
     let firstTagPos = -1;
 
     // Find the earliest tag without allocating arrays/sorting
@@ -92,6 +96,10 @@ export function parseMessageSegments(
     if (nextTool !== -1 && (firstTagPos === -1 || nextTool < firstTagPos)) {
       firstTagType = "tool";
       firstTagPos = nextTool;
+    }
+    if (nextNotice !== -1 && (firstTagPos === -1 || nextNotice < firstTagPos)) {
+      firstTagType = "notice";
+      firstTagPos = nextNotice;
     }
     // Only consider an orphan closing tag if it appears before the next opening tag
     if (nextEndThink !== -1 && (nextThink === -1 || nextEndThink < nextThink)) {
@@ -179,6 +187,31 @@ export function parseMessageSegments(
         pos = endTag + TOOL_CLOSE.length;
         lastParsedTagType = "tool";
       }
+    } else if (firstTagType === "notice") {
+      const endTag = fullRaw.indexOf(NOTICE_CLOSE, firstTagPos + NOTICE_OPEN.length);
+      if (endTag === -1) {
+        pos = fullRaw.length;
+        lastParsedTagType = "notice";
+        break;
+      } else {
+        const jsonStr = fullRaw.slice(firstTagPos + NOTICE_OPEN.length, endTag).trim();
+        try {
+          const parsedNotice = JSON.parse(jsonStr) as {
+            kind?: "trimmed" | "tools_pruned";
+            message?: string;
+          };
+          if (parsedNotice.message) {
+            segments.push({
+              id: `notice_${segIndex++}`,
+              type: "notice",
+              noticeKind: parsedNotice.kind ?? "trimmed",
+              content: parsedNotice.message,
+            });
+          }
+        } catch { }
+        pos = endTag + NOTICE_CLOSE.length;
+        lastParsedTagType = "notice";
+      }
     }
   }
 
@@ -227,6 +260,7 @@ export function getCleanVisibleText(rawContent: string, fallbackThinking?: strin
   if (!rawContent) return fallbackThinking ?? "";
 
   let cleaned = rawContent
+    .replace(/<context_notice>[\s\S]*?<\/context_notice>/gi, "")
     .replace(/<router_execution>[\s\S]*?<\/router_execution>/gi, "")
     .replace(/<tool_execution>[\s\S]*?<\/tool_execution>/gi, "")
     .replace(/<(?:think|thought|reason|reasoning)>[\s\S]*?<\/(?:think|thought|reason|reasoning)>/gi, "")
@@ -256,6 +290,11 @@ export function reconstructEditedMessageContent(
   const raw = originalRawContent || "";
   const preservedPrefixBlocks: string[] = [];
 
+  const noticeMatches = raw.match(/<context_notice>[\s\S]*?<\/context_notice>/gi);
+  if (noticeMatches) {
+    preservedPrefixBlocks.push(...noticeMatches);
+  }
+
   const routerMatches = raw.match(/<router_execution>[\s\S]*?<\/router_execution>/gi);
   if (routerMatches) {
     preservedPrefixBlocks.push(...routerMatches);
@@ -277,6 +316,7 @@ export function reconstructEditedMessageContent(
 
   // Strip any internal tags if the user pasted them into newVisibleText to prevent duplication
   const cleanUserEdit = newVisibleText
+    .replace(/<context_notice>[\s\S]*?<\/context_notice>/gi, "")
     .replace(/<router_execution>[\s\S]*?<\/router_execution>/gi, "")
     .replace(/<tool_execution>[\s\S]*?<\/tool_execution>/gi, "")
     .replace(/<(?:think|thought|reason|reasoning)>[\s\S]*?<\/(?:think|thought|reason|reasoning)>/gi, "")

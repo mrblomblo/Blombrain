@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import {
     Send,
     Square,
@@ -9,12 +10,15 @@
     Wrench,
     Sparkles,
     Server,
+    Clock,
+    Pencil,
   } from "@lucide/svelte";
   import { fade } from "svelte/transition";
   import { chatStore } from "../stores/chat.svelte";
   import { artifactStore } from "../stores/artifact.svelte";
   import { settingsStore } from "../stores/settings.svelte";
   import { triggerCatalogStore } from "../stores/triggerCatalog.svelte";
+  import { desktopWindow } from "../stores/window.svelte";
   import Button from "./ui/Button.svelte";
   import {
     serveUploadUrl,
@@ -39,9 +43,8 @@
   import MarkdownInput, { type EditorTriggerState } from "./MarkdownInput.svelte";
   import ToolsPopover from "./ToolsPopover.svelte";
 
-  let draft = $state("");
   let fileInput: HTMLInputElement | undefined = $state();
-  let isUploading = $state(false);
+  let isUploading = $derived(chatStore.isUploadingDraft);
   let markdownInputRef:
     | {
         focus: () => void;
@@ -179,8 +182,20 @@
   let lastTriggerKey: string | null = null;
   let dismissedTriggerKey = $state<string | null>(null);
   let highlightedIndex = $state(0);
-  let selectedSlashTools = $state<SlashToolSelection[]>([]);
   let popoverListEl: HTMLDivElement | undefined = $state();
+  let prevDraftKey = chatStore.currentDraftKey;
+
+  $effect(() => {
+    const nextKey = chatStore.currentDraftKey;
+    if (nextKey !== prevDraftKey) {
+      prevDraftKey = nextKey;
+      activeTrigger = null;
+      lastTriggerKey = null;
+      dismissedTriggerKey = null;
+      highlightedIndex = 0;
+      uploadError = null;
+    }
+  });
 
   function triggerKeyOf(t: EditorTriggerState | null): string | null {
     return t ? `${t.from}:${t.type}:${t.query}:${t.quoted}` : null;
@@ -239,12 +254,12 @@
   }
 
   let activeInjectedTools = $derived.by((): SlashToolSelection[] => {
-    const tokens = extractPrefixTokens(draft, "/");
+    const tokens = extractPrefixTokens(chatStore.draftText, "/");
     const tokenSet = new Set(tokens.map((t) => t.toLowerCase()));
     const result: SlashToolSelection[] = [];
     const seen = new Set<string>();
 
-    for (const sel of selectedSlashTools) {
+    for (const sel of chatStore.draftSlashTools) {
       if (tokenSet.has(sel.name.toLowerCase())) {
         const key = `${sel.kind}:${sel.id}`;
         if (!seen.has(key)) {
@@ -298,12 +313,12 @@
     const formatted = formatTriggerToken("/", item.name);
     markdownInputRef?.replaceRange(activeTrigger.from, activeTrigger.to, formatted);
     if (
-      !selectedSlashTools.some(
+      !chatStore.draftSlashTools.some(
         (s) => s.kind === item.kind && s.id === item.id,
       )
     ) {
-      selectedSlashTools = [
-        ...selectedSlashTools,
+      chatStore.draftSlashTools = [
+        ...chatStore.draftSlashTools,
         { kind: item.kind, id: item.id, name: item.name },
       ];
     }
@@ -312,13 +327,13 @@
   }
 
   function removeSlashSelection(sel: SlashToolSelection) {
-    selectedSlashTools = selectedSlashTools.filter(
+    chatStore.draftSlashTools = chatStore.draftSlashTools.filter(
       (s) => !(s.kind === sel.kind && s.id === sel.id),
     );
     const escaped = sel.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const quotedRe = new RegExp(`(^|\\s)\\/"${escaped}"\\s?`, "gi");
     const plainRe = new RegExp(`(^|\\s)\\/${escaped}(?=\\s|$)\\s?`, "gi");
-    draft = draft
+    chatStore.draftText = chatStore.draftText
       .replace(quotedRe, "$1")
       .replace(plainRe, "$1")
       .replace(/[ \t]{2,}/g, " ")
@@ -402,19 +417,20 @@
 
   async function handleSend() {
     if (
-      (!draft.trim() && chatStore.pendingAttachments.length === 0) ||
-      chatStore.isStreaming ||
+      (!chatStore.draftText.trim() && chatStore.pendingAttachments.length === 0) ||
       isUploading
     )
       return;
-    const toSend = draft;
+    const toSend = chatStore.draftText;
     const injected =
       activeInjectedTools.length > 0 ? [...activeInjectedTools] : undefined;
-    draft = "";
-    selectedSlashTools = [];
     activeTrigger = null;
     lastTriggerKey = null;
     dismissedTriggerKey = null;
+    if (chatStore.isStreaming || chatStore.activeEditingQueuedItem) {
+      chatStore.enqueueMessage(toSend, injected);
+      return;
+    }
     await chatStore.send(toSend, injected);
   }
 
@@ -454,7 +470,14 @@
     });
   }
 
+  function isFileDragEvent(e: DragEvent): boolean {
+    const types = e.dataTransfer?.types;
+    if (!types) return false;
+    return Array.from(types).includes("Files");
+  }
+
   function handleDragEnter(e: DragEvent) {
+    if (!isFileDragEvent(e)) return;
     e.preventDefault();
     if (isUploading) return;
     dragCounter++;
@@ -465,6 +488,7 @@
   }
 
   function handleDragOver(e: DragEvent) {
+    if (!isFileDragEvent(e)) return;
     e.preventDefault();
     if (isUploading) return;
     if (e.dataTransfer) {
@@ -473,6 +497,7 @@
   }
 
   function handleDragLeave(e: DragEvent) {
+    if (!isDragging && dragCounter === 0) return;
     e.preventDefault();
     dragCounter--;
     if (dragCounter <= 0) {
@@ -501,15 +526,17 @@
 
     if (allowed.length === 0) return;
 
-    isUploading = true;
+    const targetKey = chatStore.currentDraftKey;
+    const targetConvId = chatStore.activeConversationId;
     for (const file of allowed) {
       try {
-        await chatStore.addAttachment(file);
+        await chatStore.addAttachment(file, targetKey, targetConvId);
       } catch (err) {
-        uploadError = `Failed to upload "${file.name}": ${(err as Error).message || "Unknown error"}`;
+        if (chatStore.currentDraftKey === targetKey) {
+          uploadError = `Failed to upload "${file.name}": ${(err as Error).message || "Unknown error"}`;
+        }
       }
     }
-    isUploading = false;
   }
 
   async function handleDrop(e: DragEvent) {
@@ -520,6 +547,58 @@
     if (!e.dataTransfer?.files || e.dataTransfer.files.length === 0) return;
     await processFilesForUpload(Array.from(e.dataTransfer.files));
   }
+
+  function decodeBase64ToUint8Array(b64: string): Uint8Array {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) {
+      bytes[i] = bin.charCodeAt(i);
+    }
+    return bytes;
+  }
+
+  onMount(() => {
+    if (!desktopWindow.isTauri) return;
+    const win = window as any;
+
+    const onDragState = (state: "enter" | "leave") => {
+      if (isUploading) return;
+      isDragging = state === "enter";
+      if (state === "leave") dragCounter = 0;
+    };
+
+    const onDragDrop = async (paths: string[]) => {
+      dragCounter = 0;
+      isDragging = false;
+      if (!Array.isArray(paths) || paths.length === 0 || isUploading) return;
+      const invoke = win.__TAURI_INTERNALS__?.invoke;
+      if (!invoke) return;
+      try {
+        const items = (await invoke("read_dropped_files", { paths })) as Array<{
+          name: string;
+          mimeType: string;
+          base64: string;
+        }>;
+        const files = (items || []).map(
+          (item) =>
+            new File([decodeBase64ToUint8Array(item.base64) as BlobPart], item.name, {
+              type: item.mimeType || "application/octet-stream",
+            }),
+        );
+        await processFilesForUpload(files);
+      } catch (err) {
+        uploadError = `Failed to read dropped files: ${(err as Error)?.message || "Unknown error"}`;
+      }
+    };
+
+    win.__blombrainDragState = onDragState;
+    win.__blombrainDragDrop = onDragDrop;
+
+    return () => {
+      if (win.__blombrainDragState === onDragState) delete win.__blombrainDragState;
+      if (win.__blombrainDragDrop === onDragDrop) delete win.__blombrainDragDrop;
+    };
+  });
 
   async function handleFileSelect(e: Event) {
     const input = e.target as HTMLInputElement;
@@ -534,12 +613,41 @@
   let activeRecorder: MediaRecorder | null = null;
   let activeStream: MediaStream | null = null;
   let activeBrowserRec: any = null;
+  let nativeRecordingActive = false;
+  let recordingDraftKey: string | null = null;
 
   async function toggleVoiceRecording() {
     if (isTranscribing) return;
 
     if (isRecording) {
       isRecording = false;
+      if (nativeRecordingActive) {
+        nativeRecordingActive = false;
+        const targetKey = recordingDraftKey ?? chatStore.currentDraftKey;
+        recordingDraftKey = null;
+        isTranscribing = true;
+        try {
+          const invoke = (window as any).__TAURI_INTERNALS__?.invoke;
+          const b64 = (await invoke("stop_audio_recording", {})) as string;
+          const wavBytes = decodeBase64ToUint8Array(b64);
+          const wavFile = new File([wavBytes as BlobPart], "recording.wav", {
+            type: "audio/wav",
+          });
+          const { text } = await transcribeAudioBlob(
+            wavFile,
+            wavFile.name,
+            chatStore.selectedModel,
+          );
+          if (text.trim()) {
+            chatStore.appendDraftText(targetKey, text);
+          }
+        } catch (err: any) {
+          uploadError = `Voice recording failed: ${err?.message || "Check microphone and Speech settings."}`;
+        } finally {
+          isTranscribing = false;
+        }
+        return;
+      }
       if (activeBrowserRec) {
         try { activeBrowserRec.stop(); } catch { }
         activeBrowserRec = null;
@@ -564,6 +672,7 @@
 
     if (settingsStore.sttProvider === "browser" && SpeechRec) {
       try {
+        const targetKey = chatStore.currentDraftKey;
         const rec = new SpeechRec();
         rec.continuous = true;
         rec.interimResults = false;
@@ -575,7 +684,7 @@
             }
           }
           if (transcript.trim()) {
-            draft = (draft ? draft.trimEnd() + " " : "") + transcript.trim();
+            chatStore.appendDraftText(targetKey, transcript);
           }
         };
         rec.onerror = (ev: any) => {
@@ -599,9 +708,44 @@
       }
     }
 
+    // In Tauri desktop on Linux, use native PipeWire/ALSA recording directly to 16kHz WAV
+    // (avoids WebKitGTK's broken GStreamer getUserMedia constraints).
+    if (desktopWindow.isTauri) {
+      try {
+        const invoke = (window as any).__TAURI_INTERNALS__?.invoke;
+        recordingDraftKey = chatStore.currentDraftKey;
+        await invoke("start_audio_recording", {});
+        nativeRecordingActive = true;
+        isRecording = true;
+      } catch (err: any) {
+        uploadError = `Microphone access denied or unavailable: ${err?.message || "Unknown error"}`;
+        nativeRecordingActive = false;
+        recordingDraftKey = null;
+        isRecording = false;
+      }
+      return;
+    }
+
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      uploadError =
+        "Microphone recording requires HTTPS or localhost (browsers disable navigator.mediaDevices on insecure HTTP origins).";
+      return;
+    }
+
     // MediaRecorder -> WAV -> Backend /api/speech/transcribe
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const targetKey = chatStore.currentDraftKey;
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (firstErr: any) {
+        const msg = String(firstErr?.message || "");
+        if (firstErr?.name === "OverconstrainedError" || /invalid constraint/i.test(msg)) {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: {} });
+        } else {
+          throw firstErr;
+        }
+      }
       activeStream = stream;
       const chunks: BlobPart[] = [];
       const recorder = new MediaRecorder(stream);
@@ -628,7 +772,7 @@
             chatStore.selectedModel,
           );
           if (text.trim()) {
-            draft = (draft ? draft.trimEnd() + " " : "") + text.trim();
+            chatStore.appendDraftText(targetKey, text);
           }
         } catch (err: any) {
           uploadError = `Transcription failed: ${err?.message || "Check Speech settings."}`;
@@ -672,8 +816,83 @@
       </div>
     {/if}
 
+    <!-- Queued Follow-Up Messages -->
+    {#if chatStore.queuedMessages.length > 0}
+      <div class="flex flex-col gap-1 px-1">
+        {#if chatStore.queuedMessages.length > 2}
+          <div class="flex items-center justify-between px-1 text-[10px] font-medium text-fg-subtle">
+            <span>Queued follow-ups ({chatStore.queuedMessages.length})</span>
+            <button
+              type="button"
+              onclick={() => chatStore.clearQueuedMessages()}
+              class="text-fg-muted hover:text-danger transition-colors cursor-pointer"
+            >
+              Clear all
+            </button>
+          </div>
+        {/if}
+        <div class="flex max-h-32 flex-col gap-1 overflow-y-auto overscroll-contain pr-0.5">
+          {#each chatStore.queuedMessages as qm, qIdx (qm.id)}
+            <div
+              transition:fade={{ duration: 120 }}
+              class="flex shrink-0 items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition-colors {qm.isEditing
+                ? 'border-accent bg-accent/20'
+                : 'border-accent/35 bg-accent/10'}"
+            >
+              <div class="flex items-center gap-2 min-w-0">
+                <Clock size={12} class="shrink-0 text-accent" />
+                <span class="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-accent">
+                  {qm.isEditing ? "Editing" : "Queued"}{chatStore.queuedMessages.length > 1 ? ` #${qIdx + 1}` : ""}
+                </span>
+                <span class="truncate text-fg">
+                  {qm.text || `${qm.attachments.length} attachment(s)`}
+                </span>
+                {#if qm.text && qm.attachments.length > 0}
+                  <span class="shrink-0 rounded bg-bg-elevated px-1.5 py-0.5 text-[10px] text-fg-muted border border-line">
+                    +{qm.attachments.length} file{qm.attachments.length === 1 ? "" : "s"}
+                  </span>
+                {/if}
+              </div>
+              <div class="flex items-center gap-1 shrink-0">
+                {#if qm.isEditing}
+                  <button
+                    type="button"
+                    onclick={() => chatStore.cancelEditQueuedMessage()}
+                    aria-label="Cancel editing queued message"
+                    title="Cancel edit"
+                    class="rounded px-1.5 py-0.5 text-[10px] font-medium text-fg-muted hover:bg-bg-elevated hover:text-fg cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                {:else}
+                  <button
+                    type="button"
+                    onclick={() => chatStore.editQueuedMessage(qm.id)}
+                    aria-label="Edit queued message"
+                    title="Edit queued message"
+                    class="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg cursor-pointer"
+                  >
+                    <Pencil size={11} />
+                  </button>
+                {/if}
+                <button
+                  type="button"
+                  onclick={() => chatStore.removeQueuedMessage(qm.id)}
+                  aria-label="Cancel queued message"
+                  title="Cancel queued message"
+                  class="rounded p-1 text-fg-muted hover:bg-danger/15 hover:text-danger cursor-pointer"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
+
     <!-- Attachment Thumbnails -->
-    {#if chatStore.pendingAttachments.length > 0}
+    {#if chatStore.pendingAttachments.length > 0 || isUploading}
       <div class="flex flex-wrap gap-2 px-1">
         {#each chatStore.pendingAttachments as att (att.id)}
           <div
@@ -904,7 +1123,7 @@
           type="file"
           bind:this={fileInput}
           onchange={handleFileSelect}
-          accept={allowedAccepts}
+          accept={desktopWindow.isTauri ? undefined : allowedAccepts}
           multiple
           class="hidden"
         />
@@ -913,7 +1132,7 @@
       <!-- Textarea Row replaced with MarkdownInput -->
       <MarkdownInput
         bind:this={markdownInputRef}
-        bind:value={draft}
+        bind:value={chatStore.draftText}
         onSubmit={handleSend}
         onPasteFiles={processFilesForUpload}
         onTriggerChange={handleTriggerChange}
@@ -921,9 +1140,9 @@
         validAtNames={sessionFiles.map((f) => f.name)}
         validSlashNames={slashCatalog.map((s) => s.name)}
         disabled={isUploading}
-        disableSubmit={chatStore.isStreaming}
+        disableSubmit={false}
         placeholder={chatStore.isStreaming
-          ? "Typing next message..."
+          ? "Queue follow-up message… (Enter to queue)"
           : "Message Blombrain… (@ files, / tools)"}
       />
 
@@ -968,9 +1187,55 @@
           </Button>
         </div>
 
-        <!-- Right Side Actions (Send / Stop) -->
+        <!-- Right Side Actions (Queue / Send / Stop) -->
         <div class="flex items-center gap-2">
-          {#if chatStore.isStreaming}
+          {#if chatStore.activeEditingQueuedItem}
+            {@const editingItem = chatStore.activeEditingQueuedItem}
+            <Button
+              variant="ghost"
+              outline
+              onclick={() => chatStore.cancelEditQueuedMessage()}
+              class="px-2.5! py-1.5! h-8 text-xs font-medium"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="accent"
+              onclick={handleSend}
+              disabled={(!chatStore.draftText.trim() &&
+                chatStore.pendingAttachments.length === 0) ||
+                isUploading}
+              aria-label="Save queued message"
+              class="px-3! py-1.5! h-8 text-xs font-semibold"
+            >
+              Save #{editingItem.index + 1}
+            </Button>
+            {#if chatStore.isStreaming}
+              <Button
+                variant="danger"
+                onclick={() => chatStore.stop()}
+                aria-label="Stop generating"
+                class="px-3! py-1.5! h-8 text-xs font-semibold"
+              >
+                <Square size={13} />
+                Stop
+              </Button>
+            {/if}
+          {:else if chatStore.isStreaming}
+            {#if chatStore.draftText.trim() || chatStore.pendingAttachments.length > 0}
+              <Button
+                variant="default"
+                outline
+                onclick={handleSend}
+                disabled={isUploading}
+                aria-label="Queue follow-up message"
+                title="Send automatically when current response finishes"
+                class="px-2.5! py-1.5! h-8 text-xs font-medium"
+              >
+                <Clock size={12} />
+                Queue
+              </Button>
+            {/if}
             <Button
               variant="danger"
               onclick={() => chatStore.stop()}
@@ -984,7 +1249,7 @@
             <Button
               variant="accent"
               onclick={handleSend}
-              disabled={(!draft.trim() &&
+              disabled={(!chatStore.draftText.trim() &&
                 chatStore.pendingAttachments.length === 0) ||
                 isUploading}
               aria-label="Send message"

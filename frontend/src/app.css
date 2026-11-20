@@ -395,6 +395,15 @@ html.tauri-rounded body {
   background-color: transparent;
 }
 
+html.tauri-rounded .tauri-window-frame {
+  clip-path: inset(0 round 0.75rem);
+}
+
+html.tauri-rounded .tauri-window-inner {
+  transform: translateZ(0);
+  clip-path: inset(0 round 11px);
+}
+
 #app {
   height: 100%;
 }

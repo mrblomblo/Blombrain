@@ -16,6 +16,7 @@
   import { copyToClipboard } from "../utils/clipboard";
   import { confirmStore } from "../stores/confirmStore.svelte";
   import { getCleanVisibleText } from "../utils/segmentParser";
+  import { markdownToPlainText } from "../markdown";
   import { fetchModels, synthesizeSpeechAudio } from "../api";
   import { createQuery } from "@tanstack/svelte-query";
 
@@ -27,6 +28,8 @@
   const { message, isLast, onStartEdit }: Props = $props();
 
   let copied = $state(false);
+  let showCopyMenu = $state(false);
+  let copyMenuEl: HTMLDivElement | undefined = $state();
   let showRegenModels = $state(false);
   let regenMenuEl: HTMLDivElement | undefined = $state();
   let isSpeaking = $state(false);
@@ -121,15 +124,19 @@
   );
 
   $effect(() => {
-    if (!showRegenModels) return;
+    if (!showRegenModels && !showCopyMenu) return;
     function handleOutsideClick(e: MouseEvent) {
       if (regenMenuEl && !regenMenuEl.contains(e.target as Node)) {
         showRegenModels = false;
+      }
+      if (copyMenuEl && !copyMenuEl.contains(e.target as Node)) {
+        showCopyMenu = false;
       }
     }
     function handleKeydown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         showRegenModels = false;
+        showCopyMenu = false;
       }
     }
     document.addEventListener("mousedown", handleOutsideClick);
@@ -140,12 +147,19 @@
     };
   });
 
-  async function handleCopy() {
+  async function handleCopy(mode: "markdown" | "plain" | "raw" = "markdown") {
+    showCopyMenu = false;
     try {
-      const textToCopy =
+      const visibleMarkdown =
         message.role === "assistant"
           ? getCleanVisibleText(message.content, message.thinkingContent)
           : message.content;
+      const textToCopy =
+        mode === "raw"
+          ? message.content
+          : mode === "plain"
+            ? markdownToPlainText(visibleMarkdown)
+            : visibleMarkdown;
       await copyToClipboard(textToCopy);
       copied = true;
       setTimeout(() => (copied = false), 2000);
@@ -184,20 +198,69 @@
   class="flex items-center gap-0.5 rounded-md border border-line bg-bg-elevated/90 p-0.75 shadow-sm backdrop-blur-sm"
 >
   <!-- Copy -->
-  <button
-    type="button"
-    onclick={handleCopy}
-    disabled={chatStore.isStreaming}
-    aria-label="Copy text"
-    title="Copy"
-    class="flex h-5 w-5 items-center justify-center rounded-md text-fg-muted transition-colors cursor-pointer hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
-  >
-    {#if copied}
-      <Check size={13} class="text-success" />
-    {:else}
-      <Copy size={13} />
+  <div bind:this={copyMenuEl} class="relative flex items-center">
+    <button
+      type="button"
+      onclick={() => handleCopy("markdown")}
+      disabled={chatStore.isStreaming}
+      aria-label="Copy markdown"
+      title="Copy Markdown"
+      class="flex h-5 w-5 items-center justify-center rounded-l-md text-fg-muted transition-colors cursor-pointer hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
+    >
+      {#if copied}
+        <Check size={13} class="text-success" />
+      {:else}
+        <Copy size={13} />
+      {/if}
+    </button>
+    <button
+      type="button"
+      onclick={() => (showCopyMenu = !showCopyMenu)}
+      disabled={chatStore.isStreaming}
+      aria-label="Copy format options"
+      aria-haspopup="menu"
+      aria-expanded={showCopyMenu}
+      title="Copy options..."
+      class="flex h-5 w-3.5 items-center justify-center rounded-r-md text-fg-subtle transition-colors cursor-pointer hover:bg-bg-hover hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
+    >
+      <ChevronDown size={10} />
+    </button>
+
+    {#if showCopyMenu}
+      <div
+        role="menu"
+        aria-label="Copy message format"
+        class="absolute bottom-full left-0 mb-1.5 z-30 min-w-40 rounded-lg border border-line bg-bg-elevated p-1 shadow-lg"
+      >
+        <button
+          type="button"
+          role="menuitem"
+          onclick={() => handleCopy("markdown")}
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs text-fg hover:bg-bg-hover transition-colors cursor-pointer"
+        >
+          <span>Copy Markdown</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onclick={() => handleCopy("plain")}
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs text-fg hover:bg-bg-hover transition-colors cursor-pointer"
+        >
+          <span>Copy Plain Text</span>
+        </button>
+        {#if message.role === "assistant" && message.thinkingContent}
+          <button
+            type="button"
+            role="menuitem"
+            onclick={() => handleCopy("raw")}
+            class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs text-fg hover:bg-bg-hover transition-colors cursor-pointer"
+          >
+            <span>Copy Full Raw</span>
+          </button>
+        {/if}
+      </div>
     {/if}
-  </button>
+  </div>
 
   <!-- Edit -->
   <button

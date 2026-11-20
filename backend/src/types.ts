@@ -125,6 +125,24 @@ export interface ConversationSummaryOverrides {
   reasoningEffort?: string | null;
 }
 
+export interface FolderRow {
+  id: string;
+  name: string;
+  description: string;
+  is_expanded: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface FolderOut {
+  id: string;
+  name: string;
+  description: string;
+  isExpanded: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface ConversationRow {
   id: string;
   title: string;
@@ -134,6 +152,8 @@ export interface ConversationRow {
   tools_enabled?: number;
   is_pinned?: number;
   is_archived?: number;
+  folder?: string | null;
+  folder_id?: string | null;
   memory_enabled?: number | null;
   system_prompt_override?: string | null;
   sampling_overrides?: string | null;
@@ -163,6 +183,8 @@ export interface ConversationSummary {
   toolsEnabled?: boolean;
   isPinned?: boolean;
   isArchived?: boolean;
+  folder?: string | null;
+  folderId?: string | null;
   memoryEnabled?: boolean | null;
   systemPromptOverride?: string | null;
   samplingOverrides?: ConversationSummaryOverrides | null;
@@ -274,6 +296,8 @@ export interface ConversationPatchBody {
   toolsEnabled?: boolean;
   isPinned?: boolean;
   isArchived?: boolean;
+  folder?: string | null;
+  folderId?: string | null;
   memoryEnabled?: boolean | null;
   systemPromptOverride?: string | null;
   samplingOverrides?: ConversationSummaryOverrides | null;

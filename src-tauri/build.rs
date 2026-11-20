@@ -15,7 +15,13 @@ fn main() {
     }
     tauri_build::try_build(
         tauri_build::Attributes::new().app_manifest(
-            tauri_build::AppManifest::new().commands(&["save_download_bytes"]),
+            tauri_build::AppManifest::new().commands(&[
+                "save_download_bytes",
+                "read_dropped_files",
+                "start_audio_recording",
+                "stop_audio_recording",
+                "open_external_url",
+            ]),
         ),
     )
     .expect("error while running tauri build");

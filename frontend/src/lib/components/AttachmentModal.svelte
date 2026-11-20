@@ -1,6 +1,7 @@
 <script lang="ts">
   import { chatStore } from "../stores/chat.svelte";
-  import { serveUploadUrl, fetchUploadText, triggerDownload } from "../api";
+  import { desktopWindow } from "../stores/window.svelte";
+  import { serveUploadUrl, fetchUploadViewUrl, fetchUploadText, triggerDownload } from "../api";
   import { X, Download, FileText, ExternalLink } from "@lucide/svelte";
   import { fade, scale } from "svelte/transition";
   import hljs from "highlight.js";
@@ -127,6 +128,24 @@
     chatStore.selectedAttachment = null;
   }
 
+  $effect(() => {
+    if (attachment) {
+      return desktopWindow.registerActiveModal();
+    }
+  });
+
+  async function handleOpenRawInBrowser() {
+    if (!attachment) return;
+    try {
+      downloadError = null;
+      const url = await fetchUploadViewUrl(attachment.id);
+      await desktopWindow.openExternal(url);
+    } catch (err) {
+      console.error("[AttachmentModal] failed to open file in browser:", err);
+      downloadError = `Failed to open in browser: ${(err as Error).message}`;
+    }
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
       close();
@@ -143,7 +162,9 @@
   <div
     transition:fade={{ duration: 150 }}
     onclick={close}
-    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm p-4 sm:p-6"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm p-4 sm:p-6 {desktopWindow.isTauri
+      ? 'pt-14 sm:pt-14'
+      : ''}"
   >
     <!-- Modal Card -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -151,7 +172,7 @@
     <div
       transition:scale={{ start: 0.95, duration: 150 }}
       onclick={(e) => e.stopPropagation()}
-      class="relative flex flex-col w-full max-w-4xl max-h-[90vh] rounded-2xl border border-line bg-bg shadow-2xl overflow-hidden"
+      class="relative flex flex-col w-full max-w-4xl max-h-[min(90vh,100%)] rounded-2xl border border-line bg-bg shadow-2xl overflow-hidden"
     >
       <!-- Header -->
       <div
@@ -201,15 +222,27 @@
           >
             <Download size={14} />
           </button>
-          <a
-            href={serveUploadUrl(attachment.id)}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Open raw file in new tab"
-            class="flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-bg text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg"
-          >
-            <ExternalLink size={14} />
-          </a>
+          {#if desktopWindow.isTauri}
+            <button
+              type="button"
+              onclick={() => void handleOpenRawInBrowser()}
+              title="Open raw file in new tab"
+              aria-label="Open raw file in browser"
+              class="flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-bg text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg cursor-pointer"
+            >
+              <ExternalLink size={14} />
+            </button>
+          {:else}
+            <a
+              href={serveUploadUrl(attachment.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open raw file in new tab"
+              class="flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-bg text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg"
+            >
+              <ExternalLink size={14} />
+            </a>
+          {/if}
           <button
             type="button"
             onclick={close}

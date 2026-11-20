@@ -9,6 +9,7 @@
   import { chatStore } from "../stores/chat.svelte";
   import { settingsStore } from "../stores/settings.svelte";
   import { artifactStore } from "../stores/artifact.svelte";
+  import { desktopWindow } from "../stores/window.svelte";
   import { THEMES, THEME_LABELS, type ThemeName } from "../theme.svelte";
   import {
     Search,
@@ -50,6 +51,7 @@
       view = initialView;
       query = "";
       selectedIdx = 0;
+      return desktopWindow.registerActiveModal();
     }
   });
 
@@ -82,6 +84,19 @@
 
     // 1. Quick Actions
     const actions: PaletteItem[] = [
+      {
+        id: "act-find-in-chat",
+        group: "Actions",
+        label: "Find in Current Conversation",
+        shortcut: "Ctrl+F",
+        icon: Search,
+        action: () => {
+          onClose();
+          if (chatStore.activePath.length > 0) {
+            chatStore.openInChatSearch();
+          }
+        },
+      },
       {
         id: "act-new-chat",
         group: "Actions",
@@ -279,6 +294,7 @@
 
   const SHORTCUTS_LIST = [
     { keys: "Ctrl/Cmd + K", desc: "Open Command Palette & Full-Text Search" },
+    { keys: "Ctrl/Cmd + F", desc: "Find in Current Conversation" },
     { keys: "Ctrl/Cmd + Shift + O", desc: "Start a New Chat" },
     { keys: "Ctrl/Cmd + B", desc: "Toggle Sidebar" },
     { keys: "Ctrl/Cmd + ,", desc: "Open Settings" },
@@ -301,11 +317,13 @@
     transition:fade={{ duration: 120 }}
     onclick={(e) => e.target === e.currentTarget && onClose()}
     onkeydown={handleKeydown}
-    class="fixed inset-0 z-50 flex items-start justify-center bg-overlay backdrop-blur-xs pt-[12vh] p-4"
+    class="fixed inset-0 z-50 flex items-start justify-center bg-overlay backdrop-blur-xs {desktopWindow.isTauri
+      ? 'pt-[max(3.75rem,12vh)]'
+      : 'pt-[12vh]'} p-4"
   >
     <div
       transition:fly={{ y: -12, duration: 150 }}
-      class="flex w-full max-w-xl flex-col rounded-xl border border-line bg-bg shadow-2xl overflow-hidden"
+      class="flex w-full max-w-xl max-h-full flex-col rounded-xl border border-line bg-bg shadow-2xl overflow-hidden"
     >
       {#if view === "commands"}
         <div class="flex items-center gap-2.5 border-b border-line bg-bg-elevated px-3.5 py-2.5">

@@ -262,7 +262,9 @@ export const readFileToolDef: BuiltInToolDefinition = {
       const lines = text.split("\n");
       const numberedText = lines.map((line, i) => `${String(i + 1).padStart(4)} | ${line}`).join("\n");
 
-      const header = `--- Content of ${filename} (${resolved.type}) ---${isTruncated ? " [TRUNCATED at 200KB]" : ""}\n`;
+      const header =
+        `--- Content of ${filename} (${resolved.type}) ---${isTruncated ? " [TRUNCATED at 200KB]" : ""}\n` +
+        `(Line numbers before '|' are for reference only; omit them when calling edit_file.)\n`;
       return { content: header + numberedText };
     } catch (err) {
       return { content: `Error reading file: ${err instanceof Error ? err.message : String(err)}`, isError: true };
@@ -270,14 +272,42 @@ export const readFileToolDef: BuiltInToolDefinition = {
   },
 };
 
+function isBinaryUploadForTextEdit(diskPath: string, mimeType?: string): boolean {
+  const mime = (mimeType || "").toLowerCase();
+  if (
+    mime.startsWith("image/") ||
+    mime.startsWith("audio/") ||
+    mime.startsWith("video/") ||
+    mime === "application/pdf" ||
+    mime === "application/zip" ||
+    mime === "application/gzip" ||
+    mime.startsWith("application/vnd.openxmlformats")
+  ) {
+    if (mime !== "image/svg+xml") return true;
+  }
+  try {
+    const fd = fs.openSync(diskPath, "r");
+    try {
+      const buf = Buffer.alloc(4096);
+      const n = fs.readSync(fd, buf, 0, buf.length, 0);
+      for (let i = 0; i < n; i++) {
+        if (buf[i] === 0) return true;
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch { }
+  return false;
+}
+
 export const writeFileToolDef: BuiltInToolDefinition = {
   name: "write_file",
   category: "artifact",
-  description: "Overwrite the ENTIRE content of an existing artifact. Use edit_file for partial changes.",
+  description: "Overwrite the ENTIRE content of an existing artifact or text/code attachment. Use edit_file for partial changes.",
   parameters: {
     type: "object",
     properties: {
-      filename: { type: "string", description: "Filename of the existing artifact." },
+      filename: { type: "string", description: "Filename of the existing artifact or uploaded text file." },
       content: { type: "string", description: "New full content to write." },
     },
     required: ["filename", "content"],
@@ -287,20 +317,31 @@ export const writeFileToolDef: BuiltInToolDefinition = {
     if (!convId) return { content: "Error: conversationId is missing.", isError: true };
 
     const filename = String(args.filename || args.name || "").trim();
-    const content = String(args.content ?? "");
+    const content = String(args.content ?? args.code ?? args.text ?? "");
 
-    const artifactRow = db.prepare<[string, string], ArtifactRow>(
-      "SELECT * FROM artifacts WHERE conversation_id = ? AND filename = ?"
-    ).get(convId, filename);
-
-    if (!artifactRow) {
-      const attachRow = db.prepare<[string, string], AttachmentRow>(
-        "SELECT * FROM attachments WHERE conversation_id = ? AND original_name = ?"
-      ).get(convId, filename);
-      if (attachRow) return { content: `Error: User uploads are read-only.`, isError: true };
-      return { content: `Error: Artifact '${filename}' not found. Use create_artifact first.`, isError: true };
+    const resolved = resolveFile(convId, filename, ctx);
+    if (!resolved) {
+      return { content: `Error: File '${filename}' not found. Use create_artifact to create a new file.`, isError: true };
     }
 
+    if (resolved.type === "attachment" && resolved.attachmentRow) {
+      if (isBinaryUploadForTextEdit(resolved.diskPath, resolved.attachmentRow.mime_type)) {
+        return {
+          content: `Error: Cannot overwrite binary file '${filename}' (${resolved.attachmentRow.mime_type}) with text.`,
+          isError: true,
+        };
+      }
+      try {
+        fs.writeFileSync(resolved.diskPath, content, "utf-8");
+        const stat = fs.statSync(resolved.diskPath);
+        db.prepare("UPDATE attachments SET size_bytes = ? WHERE id = ?").run(stat.size, resolved.attachmentRow.id);
+        return { content: `File '${filename}' overwritten (${stat.size} bytes).` };
+      } catch (err) {
+        return { content: `Failed to write file: ${err instanceof Error ? err.message : String(err)}`, isError: true };
+      }
+    }
+
+    const artifactRow = resolved.artifactRow!;
     try {
       const filePath = resolveSandboxedPath(getConvUploadsDir(ctx), "artifacts", filename);
       fs.writeFileSync(filePath, content, "utf-8");
@@ -320,11 +361,11 @@ export const writeFileToolDef: BuiltInToolDefinition = {
 export const editFileToolDef: BuiltInToolDefinition = {
   name: "edit_file",
   category: "artifact",
-  description: "Replace a specific block of text in an existing artifact. The old_text must match exactly.",
+  description: "Replace a specific block of text in an existing artifact or text/code attachment. The old_text must match exactly.",
   parameters: {
     type: "object",
     properties: {
-      filename: { type: "string", description: "Filename of the artifact to modify." },
+      filename: { type: "string", description: "Filename of the artifact or uploaded text file to modify." },
       old_text: { type: "string", description: "The exact text to find and replace. Must match perfectly including whitespace." },
       new_text: { type: "string", description: "The new text to replace the old text with." },
     },
@@ -338,37 +379,67 @@ export const editFileToolDef: BuiltInToolDefinition = {
     const oldText = String(args.old_text ?? "");
     const newText = String(args.new_text ?? "");
 
-    const artifactRow = db.prepare<[string, string], ArtifactRow>(
-      "SELECT * FROM artifacts WHERE conversation_id = ? AND filename = ?"
-    ).get(convId, filename);
+    const resolved = resolveFile(convId, filename, ctx);
+    if (!resolved) {
+      return { content: `Error: File '${filename}' not found.`, isError: true };
+    }
 
-    if (!artifactRow) {
-      const attachRow = db.prepare<[string, string], AttachmentRow>(
-        "SELECT * FROM attachments WHERE conversation_id = ? AND original_name = ?"
-      ).get(convId, filename);
-      if (attachRow) return { content: `Error: User uploads are read-only.`, isError: true };
-      return { content: `Error: Artifact '${filename}' not found.`, isError: true };
+    if (resolved.type === "attachment" && resolved.attachmentRow) {
+      if (isBinaryUploadForTextEdit(resolved.diskPath, resolved.attachmentRow.mime_type)) {
+        return {
+          content: `Error: Cannot text-edit binary file '${filename}' (${resolved.attachmentRow.mime_type}).`,
+          isError: true,
+        };
+      }
     }
 
     try {
-      const filePath = resolveSandboxedPath(getConvUploadsDir(ctx), "artifacts", filename);
+      const filePath =
+        resolved.type === "artifact"
+          ? resolveSandboxedPath(getConvUploadsDir(ctx), "artifacts", filename)
+          : resolved.diskPath;
       let content = fs.readFileSync(filePath, "utf-8");
 
-      if (!content.includes(oldText)) {
-        return { content: `Error: old_text not found in '${filename}'. Ensure it matches the file content exactly, including whitespace and indentation.`, isError: true };
+      let matchedOldText = oldText;
+      let matchedNewText = newText;
+      if (!content.includes(matchedOldText)) {
+        const normContent = content.replace(/\r\n/g, "\n");
+        const normOld = oldText.replace(/\r\n/g, "\n");
+        if (normContent.includes(normOld)) {
+          content = normContent;
+          matchedOldText = normOld;
+          matchedNewText = newText.replace(/\r\n/g, "\n");
+        } else {
+          const looksNumbered = /^\s*\d+\s*\|\s?/m.test(oldText);
+          const hint = looksNumbered
+            ? " It looks like old_text contains 'N | ' line-number prefixes from read_file; remove those prefixes and pass raw file text, or use write_file."
+            : " Call read_file to inspect exact text and whitespace, or use write_file to replace the full file.";
+          return { content: `Error: old_text not found in '${filename}'.${hint}`, isError: true };
+        }
       }
 
       // Replace only the first occurrence to prevent accidental mass replacements
-      content = content.replace(oldText, newText);
+      content = content.replace(matchedOldText, matchedNewText);
       fs.writeFileSync(filePath, content, "utf-8");
 
       const stat = fs.statSync(filePath);
-      const now = Date.now();
-      db.prepare("UPDATE artifacts SET size_bytes = ?, updated_at = ? WHERE id = ?").run(stat.size, now, artifactRow.id);
+      if (resolved.type === "artifact" && resolved.artifactRow) {
+        const now = Date.now();
+        db.prepare("UPDATE artifacts SET size_bytes = ?, updated_at = ? WHERE id = ?").run(stat.size, now, resolved.artifactRow.id);
+        ctx.emitEvent?.("artifact_updated", {
+          artifactId: resolved.artifactRow.id,
+          conversationId: convId,
+          filename,
+          title: resolved.artifactRow.title,
+          language: resolved.artifactRow.language,
+        });
+        return { content: `Artifact '${filename}' updated successfully (${stat.size} bytes).` };
+      }
 
-      ctx.emitEvent?.("artifact_updated", { artifactId: artifactRow.id, conversationId: convId, filename, title: artifactRow.title, language: artifactRow.language });
-
-      return { content: `Artifact '${filename}' updated successfully via search & replace.` };
+      if (resolved.attachmentRow) {
+        db.prepare("UPDATE attachments SET size_bytes = ? WHERE id = ?").run(stat.size, resolved.attachmentRow.id);
+      }
+      return { content: `File '${filename}' updated successfully (${stat.size} bytes).` };
     } catch (err) {
       return { content: `Failed to edit file: ${err instanceof Error ? err.message : String(err)}`, isError: true };
     }

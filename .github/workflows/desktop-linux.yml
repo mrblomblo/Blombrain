@@ -65,5 +65,5 @@ jobs:
         run: |
           DEB=$(find src-tauri/target/release/bundle/deb -name '*.deb' | head -n1)
           test -n "$DEB"
-          sudo apt-get install -y "$DEB" xvfb
+          sudo apt-get install -y "$(realpath "$DEB")" xvfb
           echo "Installed $DEB cleanly."

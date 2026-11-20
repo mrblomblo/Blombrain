@@ -8,18 +8,29 @@
     Settings,
     X,
     ChevronUp,
+    ChevronDown,
+    ChevronRight,
+    Plus,
     MoreHorizontal,
     Pencil,
     Search,
     Pin,
     Archive,
     Download,
+    Folder,
+    CheckSquare,
+    Check,
   } from "@lucide/svelte";
   import {
     fetchBackends,
     fetchConversations,
+    fetchFolders,
+    createFolder,
+    updateFolder,
+    deleteFolder,
     deleteConversation,
     updateConversation,
+    batchUpdateConversations,
     searchConversations,
     exportConversationUrl,
     triggerDownload,
@@ -27,9 +38,11 @@
   import { chatStore } from "../stores/chat.svelte";
   import { confirmStore } from "../stores/confirmStore.svelte";
   import { desktopWindow } from "../stores/window.svelte";
-  import type { ConversationSummary } from "../types";
+  import type { ConversationSummary, FolderInfo } from "../types";
   import Dropdown from "./ui/Dropdown.svelte";
   import TextInputModal from "./ui/TextInputModal.svelte";
+  import FolderModal from "./FolderModal.svelte";
+  import MoveToFolderModal from "./MoveToFolderModal.svelte";
   import Logo from "./Logo.svelte";
   import { slide } from "svelte/transition";
 
@@ -60,13 +73,32 @@
     refetchInterval: 30_000,
   }));
 
+  const foldersQuery = createQuery(() => ({
+    queryKey: ["folders"],
+    queryFn: fetchFolders,
+    refetchInterval: 30_000,
+  }));
+
   let deletingId = $state<string | null>(null);
   let showBackends = $state(false);
+  let foldersSectionOpen = $state(true);
+  let chatsSectionOpen = $state(true);
   let renameConv = $state<ConversationSummary | null>(null);
   let renameInputValue = $state("");
   let openDropdownId = $state<string | null>(null);
   let searchQuery = $state("");
   let showArchived = $state(false);
+  let selectionMode = $state(false);
+  let selectedIds = $state<Record<string, boolean>>({});
+  let moveTargetIds = $state<string[] | null>(null);
+  let moveCurrentFolderId = $state<string | null>(null);
+  let folderModalMode = $state<"create" | "edit" | null>(null);
+  let editingFolder = $state<FolderInfo | null>(null);
+  let folderFormName = $state("");
+  let folderFormDesc = $state("");
+  let isSavingFolder = $state(false);
+  let dragOverTarget = $state<string | null>(null);
+  let isBatchWorking = $state(false);
   let visibleLimit = $state(40);
   let sidebarError = $state<string | null>(null);
 
@@ -91,7 +123,9 @@
     (convsQuery.data ?? []).filter((c) => c.isArchived).length,
   );
 
-  let filteredConversations = $derived.by(() => {
+  let folders = $derived(foldersQuery.data ?? []);
+
+  let filteredAllConversations = $derived.by(() => {
     const list = (convsQuery.data ?? []).filter((c) =>
       showArchived ? Boolean(c.isArchived) : !c.isArchived,
     );
@@ -105,9 +139,291 @@
     );
   });
 
-  let visibleConversations = $derived(
-    filteredConversations.slice(0, visibleLimit),
+  let folderConversationsMap = $derived.by(() => {
+    const map = new Map<string, ConversationSummary[]>();
+    for (const c of filteredAllConversations) {
+      if (!showArchived && c.folderId) {
+        const arr = map.get(c.folderId);
+        if (arr) arr.push(c);
+        else map.set(c.folderId, [c]);
+      }
+    }
+    return map;
+  });
+
+  let rootConversations = $derived.by(() => {
+    if (showArchived) return filteredAllConversations;
+    return filteredAllConversations.filter((c) => !c.folderId);
+  });
+
+  let visibleRootConversations = $derived(
+    rootConversations.slice(0, visibleLimit),
   );
+
+  let selectedIdList = $derived(
+    Object.keys(selectedIds).filter((id) => selectedIds[id]),
+  );
+
+  let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  let longPressOrigin: { x: number; y: number } | null = null;
+  let suppressNextClickId = $state<string | null>(null);
+
+  function clearLongPress() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+    longPressOrigin = null;
+  }
+
+  function handleConvPointerDown(
+    e: PointerEvent,
+    conv: ConversationSummary,
+    isDisabled: boolean,
+  ) {
+    if (isDisabled || selectionMode || e.button !== 0) return;
+    if ((e.target as HTMLElement | null)?.closest("button, a, input, [role='menu']")) {
+      return;
+    }
+    clearLongPress();
+    longPressOrigin = { x: e.clientX, y: e.clientY };
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null;
+      longPressOrigin = null;
+      suppressNextClickId = conv.id;
+      selectionMode = true;
+      selectedIds = { [conv.id]: true };
+    }, 480);
+  }
+
+  function handleConvPointerMove(e: PointerEvent) {
+    if (!longPressOrigin) return;
+    if (Math.hypot(e.clientX - longPressOrigin.x, e.clientY - longPressOrigin.y) > 8) {
+      clearLongPress();
+    }
+  }
+
+  function toggleSelectConv(id: string) {
+    const next = {
+      ...selectedIds,
+      [id]: !selectedIds[id],
+    };
+    selectedIds = next;
+    if (selectionMode && !Object.values(next).some(Boolean)) {
+      selectionMode = false;
+    }
+  }
+
+  function selectAllFiltered() {
+    const next: Record<string, boolean> = {};
+    for (const c of filteredAllConversations) {
+      next[c.id] = true;
+    }
+    selectedIds = next;
+  }
+
+  function openCreateFolderModal() {
+    if (chatStore.isStreaming) return;
+    editingFolder = null;
+    folderFormName = "";
+    folderFormDesc = "";
+    folderModalMode = "create";
+  }
+
+  function openEditFolderModal(folder: FolderInfo) {
+    if (chatStore.isStreaming) return;
+    editingFolder = folder;
+    folderFormName = folder.name;
+    folderFormDesc = folder.description || "";
+    folderModalMode = "edit";
+  }
+
+  async function submitFolderModal(name: string, description: string) {
+    isSavingFolder = true;
+    try {
+      sidebarError = null;
+      if (folderModalMode === "create") {
+        const created = await createFolder({ name, description });
+        foldersSectionOpen = true;
+        await queryClient.invalidateQueries({ queryKey: ["folders"] });
+        chatStore.openFolder(created.id);
+        onCloseMobile?.();
+      } else if (folderModalMode === "edit" && editingFolder) {
+        await updateFolder(editingFolder.id, { name, description });
+        await queryClient.invalidateQueries({ queryKey: ["folders"] });
+        await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      }
+      folderModalMode = null;
+      editingFolder = null;
+    } catch (err) {
+      sidebarError = `Failed to save folder: ${(err as Error).message || "Unknown error"}`;
+    } finally {
+      isSavingFolder = false;
+    }
+  }
+
+  async function handleToggleFolderExpand(folder: FolderInfo) {
+    try {
+      await updateFolder(folder.id, { isExpanded: !folder.isExpanded });
+      await queryClient.invalidateQueries({ queryKey: ["folders"] });
+    } catch (err) {
+      sidebarError = `Failed to toggle folder: ${(err as Error).message || "Unknown error"}`;
+    }
+  }
+
+  async function handleDeleteFolder(folder: FolderInfo) {
+    if (chatStore.isStreaming) return;
+    const confirmed = await confirmStore.confirm({
+      title: "Delete Folder",
+      message: `Delete folder "${folder.name}"? Conversations inside will be kept in Chats.`,
+      confirmText: "Delete",
+      confirmStyle: "danger",
+      cancelText: "Cancel",
+      cancelStyle: "ghost",
+      cancelOutline: true,
+    });
+    if (!confirmed) return;
+    try {
+      sidebarError = null;
+      await deleteFolder(folder.id);
+      if (chatStore.activeFolderId === folder.id) {
+        chatStore.newConversation();
+      }
+      await queryClient.invalidateQueries({ queryKey: ["folders"] });
+      await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    } catch (err) {
+      sidebarError = `Failed to delete folder: ${(err as Error).message || "Unknown error"}`;
+    }
+  }
+
+  function openMoveModal(ids: string[], currentFolderId: string | null = null) {
+    if (chatStore.isStreaming || ids.length === 0) return;
+    moveTargetIds = ids;
+    moveCurrentFolderId = currentFolderId;
+  }
+
+  async function moveConversationsToFolder(ids: string[], folderId: string | null) {
+    try {
+      sidebarError = null;
+      if (ids.length === 1) {
+        await updateConversation(ids[0], { folderId });
+      } else {
+        await batchUpdateConversations(ids, "set_folder", folderId);
+      }
+      if (folderId) {
+        const target = folders.find((f) => f.id === folderId);
+        if (target && !target.isExpanded) {
+          await updateFolder(folderId, { isExpanded: true });
+          await queryClient.invalidateQueries({ queryKey: ["folders"] });
+        }
+      }
+      await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    } catch (err) {
+      sidebarError = `Failed to move conversation: ${(err as Error).message || "Unknown error"}`;
+    }
+  }
+
+  async function submitMoveModal(folderId: string | null) {
+    const ids = moveTargetIds;
+    moveTargetIds = null;
+    if (!ids || ids.length === 0) return;
+    await moveConversationsToFolder(ids, folderId);
+    if (selectionMode) {
+      selectedIds = {};
+      selectionMode = false;
+    }
+  }
+
+  async function handleQuickCreateFolderFromMove(name: string): Promise<FolderInfo | null> {
+    try {
+      const created = await createFolder({ name, description: "" });
+      foldersSectionOpen = true;
+      await queryClient.invalidateQueries({ queryKey: ["folders"] });
+      return created;
+    } catch (err) {
+      sidebarError = `Failed to create folder: ${(err as Error).message || "Unknown error"}`;
+      return null;
+    }
+  }
+
+  function handleConvDragStart(e: DragEvent, conv: ConversationSummary) {
+    if (chatStore.isStreaming || !e.dataTransfer) return;
+    const idsToDrag =
+      selectionMode && selectedIds[conv.id] && selectedIdList.length > 0
+        ? selectedIdList
+        : [conv.id];
+    e.dataTransfer.setData("application/x-blombrain-conv", JSON.stringify(idsToDrag));
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleFolderDragOver(e: DragEvent, targetKey: string) {
+    if (!e.dataTransfer?.types?.includes("application/x-blombrain-conv")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    dragOverTarget = targetKey;
+  }
+
+  function handleFolderDragLeave(targetKey: string) {
+    if (dragOverTarget === targetKey) {
+      dragOverTarget = null;
+    }
+  }
+
+  async function handleFolderDrop(e: DragEvent, folderId: string | null) {
+    dragOverTarget = null;
+    const raw = e.dataTransfer?.getData("application/x-blombrain-conv");
+    if (!raw) return;
+    e.preventDefault();
+    try {
+      const ids = JSON.parse(raw);
+      if (Array.isArray(ids) && ids.length > 0) {
+        await moveConversationsToFolder(ids, folderId);
+        if (selectionMode) {
+          selectedIds = {};
+          selectionMode = false;
+        }
+      }
+    } catch { }
+  }
+
+  async function handleBatchAction(action: "archive" | "unarchive" | "delete") {
+    const ids = selectedIdList;
+    if (ids.length === 0 || isBatchWorking || chatStore.isStreaming) return;
+    if (action === "delete") {
+      const confirmed = await confirmStore.confirm({
+        title: `Delete ${ids.length} Conversation${ids.length === 1 ? "" : "s"}`,
+        message: `Are you sure you want to permanently delete ${ids.length} selected conversation${ids.length === 1 ? "" : "s"}?`,
+        confirmText: "Delete",
+        confirmStyle: "danger",
+        cancelText: "Cancel",
+        cancelStyle: "ghost",
+        cancelOutline: true,
+      });
+      if (!confirmed) return;
+    }
+
+    isBatchWorking = true;
+    try {
+      sidebarError = null;
+      await batchUpdateConversations(ids, action);
+      if (action === "delete") {
+        for (const id of ids) {
+          chatStore.clearDraft(id);
+          chatStore.clearQueuedMessages(id);
+        }
+        if (chatStore.activeConversationId && ids.includes(chatStore.activeConversationId)) {
+          chatStore.newConversation();
+        }
+      }
+      selectedIds = {};
+      selectionMode = false;
+      await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    } catch (err) {
+      sidebarError = `Batch action failed: ${(err as Error).message || "Unknown error"}`;
+    } finally {
+      isBatchWorking = false;
+    }
+  }
 
   async function handleTogglePin(conv: ConversationSummary) {
     try {
@@ -196,6 +512,7 @@
     deletingId = conv.id;
     try {
       await deleteConversation(conv.id);
+      chatStore.clearDraft(conv.id);
       if (chatStore.activeConversationId === conv.id) {
         chatStore.newConversation();
       }
@@ -325,21 +642,8 @@
       ? 'opacity-0 pointer-events-none'
       : 'opacity-100 pointer-events-auto'}"
   >
-    <!-- Conversations -->
+    <!-- Conversations & Folders -->
     <div class="flex-1 overflow-y-auto overscroll-contain px-2 py-1 w-64">
-      <div class="mb-1.5 flex items-center justify-between gap-2 px-2">
-        <p
-          class="text-[11px] font-semibold tracking-wider text-fg-subtle uppercase truncate"
-        >
-          {showArchived ? "Archived Chats" : "Conversations"}
-        </p>
-        {#if filteredConversations.length > 0}
-          <span class="text-[10px] font-mono tabular-nums text-fg-subtle shrink-0">
-            {filteredConversations.length.toLocaleString()}
-          </span>
-        {/if}
-      </div>
-
       {#if sidebarError}
         <div
           role="alert"
@@ -357,8 +661,8 @@
         </div>
       {/if}
 
-      {#if archivedCount > 0 || showArchived || (convsQuery.data ?? []).length > 4 || searchQuery.trim() !== ""}
-        <div class="mx-1 mb-2 flex items-center gap-1.5">
+      {#if archivedCount > 0 || showArchived || (convsQuery.data ?? []).length > 0 || searchQuery.trim() !== ""}
+        <div class="mx-1 mb-2.5 flex items-center gap-1.5">
           {#if archivedCount > 0 || showArchived}
             <button
               type="button"
@@ -373,7 +677,7 @@
               <Archive size={13} />
             </button>
           {/if}
-          {#if (convsQuery.data ?? []).length > 4 || searchQuery.trim() !== ""}
+          {#if (convsQuery.data ?? []).length > 0 || searchQuery.trim() !== ""}
             <div class="flex flex-1 min-w-0 items-center gap-1.5 rounded-lg border border-line bg-bg px-2.5 py-1 h-7">
               <Search size={12} class="text-fg-subtle shrink-0" />
               <input
@@ -394,161 +698,470 @@
                 </button>
               {/if}
             </div>
+          {:else}
+            <div class="flex-1"></div>
           {/if}
         </div>
       {/if}
 
-      {#if convsQuery.isLoading}
-        <p class="px-2 text-xs text-fg-muted">Loading…</p>
-      {:else if convsQuery.isError}
-        <p class="px-2 text-xs text-danger">Couldn't load conversations.</p>
-      {:else if (convsQuery.data ?? []).length === 0}
-        <p
-          class="rounded-lg border border-dashed border-line px-3 py-3 text-xs text-fg-muted mx-1"
+      {#if selectionMode}
+        <div
+          class="mx-1 mb-2 flex items-center justify-between gap-1 rounded-lg border border-accent/35 bg-accent/10 px-2 py-1.5 text-[11px]"
         >
-          No conversations yet. Send a message to start one.
-        </p>
-      {:else if filteredConversations.length === 0}
-        <p class="px-2 py-2 text-xs text-fg-subtle">
-          No conversations match "{searchQuery}".
-        </p>
-      {:else}
-        <ul class="flex flex-col gap-0.5">
-          {#each visibleConversations as conv (conv.id)}
-            {@const isActive = chatStore.activeConversationId === conv.id}
-            {@const isMenuOpen = openDropdownId === conv.id}
-            {@const isDisabled = chatStore.isStreaming && !isActive}
-            <li class="list-none">
-              <div
-                class="group relative flex items-center rounded-lg px-2.5 py-2 text-xs transition-all duration-200"
-                class:cursor-pointer={!isDisabled}
-                class:cursor-not-allowed={isDisabled}
-                class:opacity-40={isDisabled}
-                class:pointer-events-none={isDisabled}
-                class:bg-bg-elevated={isActive || isMenuOpen}
-                class:text-fg={isActive || isMenuOpen}
-                class:font-medium={isActive}
-                class:text-fg-muted={!isActive && !isDisabled}
-                class:bg-bg={!isActive && !isDisabled}
-                class:hover:bg-bg-elevated={!isActive && !isDisabled}
-                onclick={() => !isDisabled && handleSelectConv(conv)}
-                tabindex={isDisabled ? -1 : 0}
-                role="button"
-                onkeydown={(e) =>
-                  !isDisabled && e.key === "Enter" && handleSelectConv(conv)}
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="font-semibold text-fg tabular-nums">
+              {selectedIdList.length} selected
+            </span>
+            <button
+              type="button"
+              onclick={selectAllFiltered}
+              class="text-[10px] text-accent hover:underline cursor-pointer"
+            >
+              All
+            </button>
+            {#if selectedIdList.length > 0}
+              <button
+                type="button"
+                onclick={() => {
+                  selectedIds = {};
+                  selectionMode = false;
+                }}
+                class="text-[10px] text-fg-muted hover:underline cursor-pointer"
               >
-                <div class="flex flex-col min-w-0 w-full">
-                  <div class="flex items-center gap-1.5 min-w-0">
-                    {#if conv.isPinned}
-                      <Pin size={11} class="shrink-0 text-accent" />
-                    {/if}
-                    <span class="w-full truncate">{conv.title}</span>
-                  </div>
-                  {#if searchQuery.trim().length >= 2 && snippetByConvId.has(conv.id)}
-                    <span class="truncate text-[10px] text-fg-subtle mt-0.5">
-                      {snippetByConvId.get(conv.id)}
-                    </span>
-                  {/if}
-                </div>
-                <div
-                  class="absolute right-0 top-0 bottom-0 flex items-center gap-1.5 pl-1.5 pr-2.5 rounded-r-lg transition-all duration-200 {isActive ||
-                  isMenuOpen
-                    ? 'bg-bg-elevated'
-                    : 'bg-bg group-hover:bg-bg-elevated'} {isMenuOpen ||
-                  onCloseMobile
-                    ? 'opacity-100 pointer-events-auto'
-                    : 'opacity-0 pointer-events-none [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(pointer:coarse)]:opacity-100 [@media(pointer:coarse)]:pointer-events-auto group-hover:opacity-100 group-hover:pointer-events-auto'}"
-                  onclick={(e) => e.stopPropagation()}
-                  onkeydown={(e) => e.stopPropagation()}
-                  role="presentation"
-                >
-                  <!-- Gradient for bg-bg (idle unselected) -->
-                  <div
-                    class="absolute -left-4 top-0 bottom-0 w-4 bg-gradient-to-r from-transparent to-bg pointer-events-none transition-opacity duration-200 {isActive ||
-                    isMenuOpen
-                      ? 'opacity-0'
-                      : 'opacity-100 group-hover:opacity-0'}"
-                  ></div>
-                  <!-- Gradient for bg-bg-elevated (hovered / active) -->
-                  <div
-                    class="absolute -left-4 top-0 bottom-0 w-4 bg-gradient-to-r from-transparent to-bg-elevated pointer-events-none transition-opacity duration-200 {isActive ||
-                    isMenuOpen
-                      ? 'opacity-100'
-                      : 'opacity-0 group-hover:opacity-100'}"
-                  ></div>
-                  <span class="shrink-0 text-[10px] font-mono text-fg-subtle">
-                    {formatAge(conv.updatedAt)}
-                  </span>
-                  <Dropdown
-                    onopenchange={(open) => {
-                      if (open) openDropdownId = conv.id;
-                      else if (openDropdownId === conv.id)
-                        openDropdownId = null;
-                    }}
-                    options={[
-                      {
-                        label: conv.isPinned ? "Unpin" : "Pin to Top",
-                        value: "pin",
-                        icon: Pin,
-                      },
-                      { label: "Rename", value: "rename", icon: Pencil },
-                      {
-                        label: conv.isArchived ? "Unarchive" : "Archive",
-                        value: "archive",
-                        icon: Archive,
-                      },
-                      {
-                        label: "Export Markdown",
-                        value: "export_md",
-                        icon: Download,
-                      },
-                      {
-                        label: "Export JSON",
-                        value: "export_json",
-                        icon: Download,
-                      },
-                      {
-                        label: "Delete",
-                        value: "delete",
-                        icon: Trash2,
-                        iconClass: "text-danger",
-                      },
-                    ]}
-                    onchange={(val) => {
-                      if (val === "pin") handleTogglePin(conv);
-                      else if (val === "rename") openRenameModal(conv);
-                      else if (val === "archive") handleToggleArchive(conv);
-                      else if (val === "export_md") handleExportConversation(conv, "md");
-                      else if (val === "export_json") handleExportConversation(conv, "json");
-                      else if (val === "delete") handleDelete(conv);
-                    }}
-                    align="right"
-                    resetOnSelect={true}
-                    showCheckmark={false}
-                    unstyledTrigger={true}
-                    ariaLabel="Actions for {conv.title}"
-                    buttonClass="rounded p-0.5 text-fg-subtle transition-all cursor-pointer hover:text-fg disabled:pointer-events-none disabled:opacity-50"
-                    disabled={deletingId === conv.id || chatStore.isStreaming}
-                  >
-                    {#snippet trigger()}
-                      <MoreHorizontal size={14} />
-                    {/snippet}
-                  </Dropdown>
-                </div>
+                Clear
+              </button>
+            {/if}
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onclick={() => openMoveModal(selectedIdList)}
+              disabled={selectedIdList.length === 0 || isBatchWorking}
+              aria-label="Move selected to folder"
+              title="Move selected to folder"
+              class="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg disabled:opacity-35 disabled:pointer-events-none cursor-pointer"
+            >
+              <Folder size={12} />
+            </button>
+            <button
+              type="button"
+              onclick={() => handleBatchAction(showArchived ? "unarchive" : "archive")}
+              disabled={selectedIdList.length === 0 || isBatchWorking}
+              aria-label={showArchived ? "Unarchive selected" : "Archive selected"}
+              title={showArchived ? "Unarchive selected" : "Archive selected"}
+              class="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg disabled:opacity-35 disabled:pointer-events-none cursor-pointer"
+            >
+              <Archive size={12} />
+            </button>
+            <button
+              type="button"
+              onclick={() => handleBatchAction("delete")}
+              disabled={selectedIdList.length === 0 || isBatchWorking}
+              aria-label="Delete selected"
+              title="Delete selected"
+              class="rounded p-1 text-fg-muted hover:bg-danger/15 hover:text-danger disabled:opacity-35 disabled:pointer-events-none cursor-pointer"
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+        </div>
+      {/if}
+
+      {#snippet conversationRow(conv: ConversationSummary)}
+        {@const isActive = chatStore.activeConversationId === conv.id}
+        {@const isMenuOpen = openDropdownId === conv.id}
+        {@const isDisabled = chatStore.isStreaming && !isActive}
+        {@const isChecked = Boolean(selectedIds[conv.id])}
+        <li class="list-none">
+          <div
+            draggable={!chatStore.isStreaming}
+            ondragstart={(e) => {
+              clearLongPress();
+              handleConvDragStart(e, conv);
+            }}
+            onpointerdown={(e) => handleConvPointerDown(e, conv, isDisabled)}
+            onpointermove={handleConvPointerMove}
+            onpointerup={clearLongPress}
+            onpointercancel={clearLongPress}
+            class="group relative flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition-all duration-200"
+            class:cursor-pointer={!isDisabled}
+            class:cursor-not-allowed={isDisabled}
+            class:opacity-40={isDisabled}
+            class:pointer-events-none={isDisabled}
+            class:bg-bg-elevated={(isActive && !selectionMode) || isMenuOpen || (selectionMode && isChecked)}
+            class:text-fg={isActive || isMenuOpen || (selectionMode && isChecked)}
+            class:font-medium={isActive}
+            class:text-fg-muted={!isActive && !isDisabled && !(selectionMode && isChecked)}
+            class:bg-bg={!isActive && !isDisabled && !(selectionMode && isChecked)}
+            class:hover:bg-bg-elevated={!isActive && !isDisabled}
+            onclick={() => {
+              if (suppressNextClickId === conv.id) {
+                suppressNextClickId = null;
+                return;
+              }
+              if (isDisabled) return;
+              if (selectionMode) toggleSelectConv(conv.id);
+              else handleSelectConv(conv);
+            }}
+            tabindex={isDisabled ? -1 : 0}
+            role="button"
+            onkeydown={(e) => {
+              if (isDisabled || e.key !== "Enter") return;
+              if (selectionMode) toggleSelectConv(conv.id);
+              else handleSelectConv(conv);
+            }}
+          >
+            {#if selectionMode}
+              <span
+                class="flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors {isChecked
+                  ? 'border-accent bg-accent text-accent-fg'
+                  : 'border-line bg-bg-inset text-transparent'}"
+              >
+                <Check size={11} />
+              </span>
+            {/if}
+            <div class="flex flex-col min-w-0 w-full">
+              <div class="flex items-center gap-1.5 min-w-0">
+                {#if conv.isPinned}
+                  <Pin size={11} class="shrink-0 text-accent" />
+                {/if}
+                <span class="w-full truncate">{conv.title}</span>
               </div>
-            </li>
-          {/each}
-        </ul>
-        {#if filteredConversations.length > visibleLimit}
+              {#if searchQuery.trim().length >= 2 && snippetByConvId.has(conv.id)}
+                <span class="truncate text-[10px] text-fg-subtle mt-0.5">
+                  {snippetByConvId.get(conv.id)}
+                </span>
+              {/if}
+            </div>
+            {#if !selectionMode}
+              <div
+                class="absolute right-0 top-0 bottom-0 flex items-center gap-1.5 pl-1.5 pr-2.5 rounded-r-lg transition-all duration-200 {isActive ||
+                isMenuOpen
+                  ? 'bg-bg-elevated'
+                  : 'bg-bg group-hover:bg-bg-elevated'} {isMenuOpen ||
+                onCloseMobile
+                  ? 'opacity-100 pointer-events-auto'
+                  : 'opacity-0 pointer-events-none [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(pointer:coarse)]:opacity-100 [@media(pointer:coarse)]:pointer-events-auto group-hover:opacity-100 group-hover:pointer-events-auto'}"
+                onclick={(e) => e.stopPropagation()}
+                onkeydown={(e) => e.stopPropagation()}
+                role="presentation"
+              >
+                <!-- Gradient for bg-bg (idle unselected) -->
+                <div
+                  class="absolute -left-4 top-0 bottom-0 w-4 bg-gradient-to-r from-transparent to-bg pointer-events-none transition-opacity duration-200 {isActive ||
+                  isMenuOpen
+                    ? 'opacity-0'
+                    : 'opacity-100 group-hover:opacity-0'}"
+                ></div>
+                <!-- Gradient for bg-bg-elevated (hovered / active) -->
+                <div
+                  class="absolute -left-4 top-0 bottom-0 w-4 bg-gradient-to-r from-transparent to-bg-elevated pointer-events-none transition-opacity duration-200 {isActive ||
+                  isMenuOpen
+                    ? 'opacity-100'
+                    : 'opacity-0 group-hover:opacity-100'}"
+                ></div>
+                <span class="shrink-0 text-[10px] font-mono text-fg-subtle">
+                  {formatAge(conv.updatedAt)}
+                </span>
+                <Dropdown
+                  onopenchange={(open) => {
+                    if (open) openDropdownId = conv.id;
+                    else if (openDropdownId === conv.id)
+                      openDropdownId = null;
+                  }}
+                  options={[
+                    {
+                      label: "Select",
+                      value: "select",
+                      icon: CheckSquare,
+                    },
+                    {
+                      label: conv.isPinned ? "Unpin" : "Pin to Top",
+                      value: "pin",
+                      icon: Pin,
+                    },
+                    { label: "Rename", value: "rename", icon: Pencil },
+                    {
+                      label: "Move to Folder…",
+                      value: "folder",
+                      icon: Folder,
+                    },
+                    {
+                      label: conv.isArchived ? "Unarchive" : "Archive",
+                      value: "archive",
+                      icon: Archive,
+                    },
+                    {
+                      label: "Export Markdown",
+                      value: "export_md",
+                      icon: Download,
+                    },
+                    {
+                      label: "Export JSON",
+                      value: "export_json",
+                      icon: Download,
+                    },
+                    {
+                      label: "Delete",
+                      value: "delete",
+                      icon: Trash2,
+                      iconClass: "text-danger",
+                    },
+                  ]}
+                  onchange={(val) => {
+                    if (val === "select") {
+                      selectionMode = true;
+                      selectedIds = { [conv.id]: true };
+                    } else if (val === "pin") handleTogglePin(conv);
+                    else if (val === "rename") openRenameModal(conv);
+                    else if (val === "folder") openMoveModal([conv.id], conv.folderId ?? null);
+                    else if (val === "archive") handleToggleArchive(conv);
+                    else if (val === "export_md") handleExportConversation(conv, "md");
+                    else if (val === "export_json") handleExportConversation(conv, "json");
+                    else if (val === "delete") handleDelete(conv);
+                  }}
+                  align="right"
+                  resetOnSelect={true}
+                  showCheckmark={false}
+                  unstyledTrigger={true}
+                  ariaLabel="Actions for {conv.title}"
+                  buttonClass="rounded p-0.5 text-fg-subtle transition-all cursor-pointer hover:text-fg disabled:pointer-events-none disabled:opacity-50"
+                  disabled={deletingId === conv.id || chatStore.isStreaming}
+                >
+                  {#snippet trigger()}
+                    <MoreHorizontal size={14} />
+                  {/snippet}
+                </Dropdown>
+              </div>
+            {/if}
+          </div>
+        </li>
+      {/snippet}
+
+      <!-- Collapsible Folders Section -->
+      {#if !showArchived}
+        <div class="mb-2.5">
+          <div class="mb-1 flex items-center justify-between gap-1 px-2">
+            <button
+              type="button"
+              onclick={() => (foldersSectionOpen = !foldersSectionOpen)}
+              class="flex items-center gap-1 text-[11px] font-semibold tracking-wider text-fg-subtle uppercase hover:text-fg transition-colors cursor-pointer"
+            >
+              {#if foldersSectionOpen}
+                <ChevronDown size={11} />
+              {:else}
+                <ChevronRight size={11} />
+              {/if}
+              <span>Folders</span>
+              {#if folders.length > 0}
+                <span class="ml-0.5 font-mono text-[10px] font-normal">
+                  {folders.length}
+                </span>
+              {/if}
+            </button>
+            <button
+              type="button"
+              onclick={openCreateFolderModal}
+              disabled={chatStore.isStreaming}
+              aria-label="Create folder"
+              title="Create Folder"
+              class="flex h-5 w-5 items-center justify-center rounded text-fg-subtle hover:bg-bg-elevated hover:text-fg disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+            >
+              <Plus size={13} />
+            </button>
+          </div>
+
+          {#if foldersSectionOpen && folders.length > 0}
+            <ul class="flex flex-col gap-0.5">
+              {#each folders as folder (folder.id)}
+                {@const folderConvs = folderConversationsMap.get(folder.id) ?? []}
+                {@const isFolderViewActive =
+                  chatStore.activeConversationId === null &&
+                  chatStore.activeFolderId === folder.id}
+                {@const isDropHover = dragOverTarget === folder.id}
+                <li
+                  class="list-none"
+                  ondragover={(e) => handleFolderDragOver(e, folder.id)}
+                  ondragleave={() => handleFolderDragLeave(folder.id)}
+                  ondrop={(e) => handleFolderDrop(e, folder.id)}
+                >
+                  <div
+                    class="group relative flex items-center gap-1 rounded-lg px-1.5 py-1.5 text-xs transition-all border {isDropHover
+                      ? 'border-accent bg-accent/15 text-fg'
+                      : isFolderViewActive
+                        ? 'border-transparent bg-bg-elevated text-fg font-medium'
+                        : 'border-transparent bg-bg text-fg-muted hover:bg-bg-elevated hover:text-fg'}"
+                  >
+                    <button
+                      type="button"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        handleToggleFolderExpand(folder);
+                      }}
+                      aria-label={folder.isExpanded ? `Collapse ${folder.name}` : `Expand ${folder.name}`}
+                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-fg-subtle hover:text-fg cursor-pointer"
+                    >
+                      {#if folder.isExpanded}
+                        <ChevronDown size={12} />
+                      {:else}
+                        <ChevronRight size={12} />
+                      {/if}
+                    </button>
+                    <button
+                      type="button"
+                      onclick={() => {
+                        if (chatStore.isStreaming) return;
+                        chatStore.openFolder(folder.id);
+                        onCloseMobile?.();
+                      }}
+                      disabled={chatStore.isStreaming}
+                      class="flex min-w-0 flex-1 items-center gap-1.5 text-left cursor-pointer disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      <Folder size={13} class="shrink-0 text-accent/85" />
+                      <span class="truncate">{folder.name}</span>
+                    </button>
+                    <div
+                      class="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity"
+                      onclick={(e) => e.stopPropagation()}
+                      onkeydown={(e) => e.stopPropagation()}
+                      role="presentation"
+                    >
+                      <Dropdown
+                        options={[
+                          {
+                            label: "New Chat in Folder",
+                            value: "new_chat",
+                            icon: SquarePen,
+                          },
+                          {
+                            label: "Edit Folder",
+                            value: "edit",
+                            icon: Pencil,
+                          },
+                          {
+                            label: "Delete Folder",
+                            value: "delete",
+                            icon: Trash2,
+                            iconClass: "text-danger",
+                          },
+                        ]}
+                        onchange={(val) => {
+                          if (val === "new_chat") {
+                            chatStore.openFolder(folder.id);
+                            onCloseMobile?.();
+                          } else if (val === "edit") {
+                            openEditFolderModal(folder);
+                          } else if (val === "delete") {
+                            handleDeleteFolder(folder);
+                          }
+                        }}
+                        align="right"
+                        resetOnSelect={true}
+                        showCheckmark={false}
+                        unstyledTrigger={true}
+                        ariaLabel="Actions for folder {folder.name}"
+                        buttonClass="rounded p-0.5 text-fg-subtle hover:text-fg cursor-pointer"
+                        disabled={chatStore.isStreaming}
+                      >
+                        {#snippet trigger()}
+                          <MoreHorizontal size={14} />
+                        {/snippet}
+                      </Dropdown>
+                    </div>
+                  </div>
+
+                  {#if folder.isExpanded || searchQuery.trim().length > 0}
+                    <div class="ml-3.5 mt-0.5 border-l border-line/50 pl-1.5">
+                      {#if folderConvs.length === 0}
+                        <p class="px-2 py-1 text-[11px] text-fg-subtle/75 select-none">
+                          {searchQuery.trim() ? "No matching chats" : "No chats"}
+                        </p>
+                      {:else}
+                        <ul class="flex flex-col gap-0.5">
+                          {#each folderConvs as conv (conv.id)}
+                            {@render conversationRow(conv)}
+                          {/each}
+                        </ul>
+                      {/if}
+                    </div>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+      {/if}
+
+      <!-- Collapsible Chats Section -->
+      <div
+        ondragover={(e) => !showArchived && handleFolderDragOver(e, "__unfiled__")}
+        ondragleave={() => handleFolderDragLeave("__unfiled__")}
+        ondrop={(e) => !showArchived && handleFolderDrop(e, null)}
+        role="region"
+        aria-label={showArchived ? "Archived Chats" : "Chats"}
+        class="rounded-lg transition-colors {dragOverTarget === '__unfiled__'
+          ? 'ring-1 ring-accent bg-accent/10'
+          : ''}"
+      >
+        <div class="mb-1 flex items-center justify-between gap-2 px-2">
           <button
             type="button"
-            onclick={() => (visibleLimit += 40)}
-            class="mt-1.5 w-full rounded-lg border border-line bg-bg py-1.5 text-center text-[11px] font-medium text-fg-muted hover:bg-bg-elevated hover:text-fg transition-colors cursor-pointer"
+            onclick={() => (chatsSectionOpen = !chatsSectionOpen)}
+            class="flex items-center gap-1 text-[11px] font-semibold tracking-wider text-fg-subtle uppercase hover:text-fg transition-colors cursor-pointer truncate"
           >
-            Show more ({filteredConversations.length - visibleLimit} remaining)
+            {#if chatsSectionOpen}
+              <ChevronDown size={11} />
+            {:else}
+              <ChevronRight size={11} />
+            {/if}
+            <span class="truncate">
+              {showArchived ? "Archived Chats" : "Chats"}
+            </span>
           </button>
+          {#if rootConversations.length > 0}
+            <span class="text-[10px] font-mono tabular-nums text-fg-subtle shrink-0">
+              {rootConversations.length.toLocaleString()}
+            </span>
+          {/if}
+        </div>
+
+        {#if chatsSectionOpen}
+          {#if convsQuery.isLoading}
+            <p class="px-2 text-xs text-fg-muted">Loading…</p>
+          {:else if convsQuery.isError}
+            <p class="px-2 text-xs text-danger">Couldn't load conversations.</p>
+          {:else if (convsQuery.data ?? []).length === 0}
+            <p
+              class="rounded-lg border border-dashed border-line px-3 py-3 text-xs text-fg-muted mx-1"
+            >
+              No conversations yet. Send a message to start one.
+            </p>
+          {:else if rootConversations.length === 0}
+            <p class="px-2 py-2 text-xs text-fg-subtle">
+              {searchQuery.trim()
+                ? `No matching chats for "${searchQuery}".`
+                : showArchived
+                  ? "No archived chats."
+                  : "All chats are filed in folders."}
+            </p>
+          {:else}
+            <ul class="flex flex-col gap-0.5">
+              {#each visibleRootConversations as conv (conv.id)}
+                {@render conversationRow(conv)}
+              {/each}
+            </ul>
+            {#if rootConversations.length > visibleLimit}
+              <button
+                type="button"
+                onclick={() => (visibleLimit += 40)}
+                class="mt-1.5 w-full rounded-lg border border-line bg-bg py-1.5 text-center text-[11px] font-medium text-fg-muted hover:bg-bg-elevated hover:text-fg transition-colors cursor-pointer"
+              >
+                Show more ({rootConversations.length - visibleLimit} remaining)
+              </button>
+            {/if}
+          {/if}
         {/if}
-      {/if}
+      </div>
     </div>
 
     <!-- Collapsible Backends section -->
@@ -637,4 +1250,27 @@
   bind:value={renameInputValue}
   onsubmit={submitRename}
   onclose={() => (renameConv = null)}
+/>
+
+<FolderModal
+  isOpen={folderModalMode !== null}
+  mode={folderModalMode ?? "create"}
+  bind:name={folderFormName}
+  bind:description={folderFormDesc}
+  isSaving={isSavingFolder}
+  onsubmit={submitFolderModal}
+  onclose={() => {
+    folderModalMode = null;
+    editingFolder = null;
+  }}
+/>
+
+<MoveToFolderModal
+  isOpen={moveTargetIds !== null}
+  {folders}
+  currentFolderId={moveCurrentFolderId}
+  targetCount={moveTargetIds?.length ?? 0}
+  onselect={submitMoveModal}
+  oncreatefolder={handleQuickCreateFolderFromMove}
+  onclose={() => (moveTargetIds = null)}
 />

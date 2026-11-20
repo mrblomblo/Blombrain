@@ -249,6 +249,15 @@ export interface ArtifactInfo {
 export type SpeechProviderType = "browser" | "openai_compatible" | "local_cli";
 export type SpeechDeviceType = "cpu" | "gpu";
 
+export interface FolderInfo {
+  id: string;
+  name: string;
+  description: string;
+  isExpanded: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /** A conversation list item (no messages). */
 export interface ConversationSummary {
   id: string;
@@ -259,6 +268,8 @@ export interface ConversationSummary {
   toolsEnabled?: boolean;
   isPinned?: boolean;
   isArchived?: boolean;
+  folder?: string | null;
+  folderId?: string | null;
   memoryEnabled?: boolean | null;
   systemPromptOverride?: string | null;
   samplingOverrides?: ConversationSamplingOverrides | null;

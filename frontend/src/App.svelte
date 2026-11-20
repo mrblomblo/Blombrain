@@ -104,6 +104,11 @@
           first.language,
         );
       }
+    } else if (key === "f") {
+      if (desktopWindow.activeModalCount === 0 && chatStore.activePath.length > 0) {
+        e.preventDefault();
+        chatStore.openInChatSearch();
+      }
     } else if (e.shiftKey && key === "o") {
       e.preventDefault();
       if (!chatStore.isStreaming) {
@@ -141,11 +146,13 @@
   );
 
   let isNewChat = $derived(chatStore.activePath.length === 0);
-  let frameClass = $derived(
-    desktopWindow.isTauri && !desktopWindow.isMaximized
-      ? "rounded-xl border border-line"
-      : "",
-  );
+  let isFramedTauri = $derived(desktopWindow.isTauri && !desktopWindow.isMaximized);
+
+  $effect(() => {
+    if (mobileSidebarOpen) {
+      return desktopWindow.registerActiveModal();
+    }
+  });
 
   let hasInitialized = $state(false);
 
@@ -207,36 +214,46 @@
 
 <svelte:window onkeydown={handleGlobalKeydown} />
 
-{#if !authStore.initialized}
+<div
+  class="relative h-dvh w-screen overflow-hidden {isFramedTauri
+    ? 'rounded-xl p-[1px] bg-line tauri-window-frame'
+    : ''}"
+>
   <div
-    data-tauri-drag-region={desktopWindow.isTauri ? "deep" : undefined}
-    class="relative flex items-center justify-center h-dvh w-screen bg-bg text-fg font-medium overflow-hidden {frameClass}"
+    class="relative flex h-full w-full overflow-hidden bg-bg text-fg {isFramedTauri
+      ? 'rounded-[11px] tauri-window-inner'
+      : ''}"
   >
-    {#if desktopWindow.isTauri}
+    {#if !authStore.initialized}
       <div
-        data-tauri-drag-region="deep"
-        class="fixed top-0 left-0 right-0 flex h-11 items-center justify-end px-2.5 z-50"
+        data-tauri-drag-region={desktopWindow.isTauri ? "deep" : undefined}
+        class="relative flex h-full w-full items-center justify-center bg-bg text-fg font-medium overflow-hidden"
       >
-        <WindowControls />
+        {#if desktopWindow.isTauri}
+          <div
+            data-tauri-drag-region="deep"
+            class="fixed top-0 left-0 right-0 flex h-14 items-center justify-end px-2.5 z-50"
+          >
+            <WindowControls standalone />
+          </div>
+        {/if}
+        Loading...
       </div>
-    {/if}
-    Loading...
-  </div>
-{:else if authStore.authEnabled && !authStore.authenticated}
-  <div class="relative h-dvh w-screen bg-bg overflow-hidden {frameClass}">
-    {#if desktopWindow.isTauri}
-      <div
-        data-tauri-drag-region="deep"
-        class="fixed top-0 left-0 right-0 flex h-11 items-center justify-end px-2.5 z-50"
-      >
-        <WindowControls />
+    {:else if authStore.authEnabled && !authStore.authenticated}
+      <div class="relative h-full w-full bg-bg overflow-hidden">
+        {#if desktopWindow.isTauri}
+          <div
+            data-tauri-drag-region="deep"
+            class="fixed top-0 left-0 right-0 flex h-14 items-center justify-end px-2.5 z-50"
+          >
+            <WindowControls standalone />
+          </div>
+        {/if}
+        <LoginScreen />
       </div>
-    {/if}
-    <LoginScreen />
-  </div>
-{:else}
-  <QueryClientProvider client={queryClient}>
-    <div class="relative flex h-dvh w-screen bg-bg text-fg overflow-hidden {frameClass}">
+    {:else}
+      <QueryClientProvider client={queryClient}>
+        <div class="relative flex h-full w-full bg-bg text-fg overflow-hidden">
       <!-- Desktop Sidebar -->
       <div class="hidden md:flex h-full">
         <Sidebar
@@ -613,20 +630,31 @@
       </div>
     </div>
 
-    {#if SettingsModalComponent}
-      <SettingsModalComponent
-        open={settingsOpen}
-        onClose={() => (settingsOpen = false)}
-      />
+        {#if SettingsModalComponent}
+          <SettingsModalComponent
+            open={settingsOpen}
+            onClose={() => (settingsOpen = false)}
+          />
+        {/if}
+        <CommandPaletteModal
+          open={commandPaletteOpen}
+          initialView={commandPaletteView}
+          onClose={() => (commandPaletteOpen = false)}
+          onOpenSettings={() => (settingsOpen = true)}
+          onToggleSidebar={() => (desktopSidebarOpen = !desktopSidebarOpen)}
+        />
+        <AttachmentModal />
+        <ConfirmModal />
+
+        {#if desktopWindow.isTauri && desktopWindow.activeModalCount > 0}
+          <div
+            data-tauri-drag-region="deep"
+            class="fixed top-0 left-0 right-0 z-[100] flex h-14 items-center justify-end px-2.5"
+          >
+            <WindowControls standalone />
+          </div>
+        {/if}
+      </QueryClientProvider>
     {/if}
-    <CommandPaletteModal
-      open={commandPaletteOpen}
-      initialView={commandPaletteView}
-      onClose={() => (commandPaletteOpen = false)}
-      onOpenSettings={() => (settingsOpen = true)}
-      onToggleSidebar={() => (desktopSidebarOpen = !desktopSidebarOpen)}
-    />
-    <AttachmentModal />
-    <ConfirmModal />
-  </QueryClientProvider>
-{/if}
+  </div>
+</div>

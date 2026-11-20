@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
@@ -22,6 +22,245 @@ const MAX_RECENT_LOGS: usize = 80;
 struct SidecarState {
     child: Mutex<Option<CommandChild>>,
     shutting_down: AtomicBool,
+}
+
+struct DroppedFilesState {
+    allowed: Mutex<HashSet<PathBuf>>,
+}
+
+struct ActiveAudioRecording {
+    child: std::process::Child,
+    path: PathBuf,
+}
+
+struct AudioRecorderState {
+    active: Mutex<Option<ActiveAudioRecording>>,
+}
+
+fn stop_active_recording_process(rec: &mut ActiveAudioRecording) {
+    let pid = rec.child.id();
+    let _ = Command::new("kill")
+        .args(["-INT", &pid.to_string()])
+        .status();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        if let Ok(Some(_)) = rec.child.try_wait() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    let _ = rec.child.kill();
+    let _ = rec.child.wait();
+}
+
+#[tauri::command]
+async fn start_audio_recording(
+    state: tauri::State<'_, AudioRecorderState>,
+) -> Result<(), String> {
+    if let Ok(mut guard) = state.active.lock() {
+        if let Some(mut prev) = guard.take() {
+            stop_active_recording_process(&mut prev);
+            let _ = fs::remove_file(&prev.path);
+        }
+    }
+
+    let tmp_name = format!("blombrain-rec-{}.wav", &generate_launch_secret()[..16]);
+    let wav_path = std::env::temp_dir().join(tmp_name);
+    let path_str = wav_path.to_string_lossy().into_owned();
+
+    let spawn_res = Command::new("pw-record")
+        .args(["--format=s16", "--rate=16000", "--channels=1", &path_str])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .or_else(|_| {
+            Command::new("arecord")
+                .args(["-q", "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "wav", &path_str])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+        });
+
+    let child = spawn_res.map_err(|e| {
+        format!("Could not start native audio recorder (pw-record / arecord): {e}")
+    })?;
+
+    if let Ok(mut guard) = state.active.lock() {
+        *guard = Some(ActiveAudioRecording {
+            child,
+            path: wav_path,
+        });
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn stop_audio_recording(
+    state: tauri::State<'_, AudioRecorderState>,
+) -> Result<String, String> {
+    let active = state
+        .active
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.take());
+
+    let Some(mut rec) = active else {
+        return Err("No active audio recording".to_string());
+    };
+
+    tauri::async_runtime::spawn_blocking(move || {
+        stop_active_recording_process(&mut rec);
+        let bytes = fs::read(&rec.path)
+            .map_err(|e| format!("Failed to read recorded audio: {e}"))?;
+        let _ = fs::remove_file(&rec.path);
+        if bytes.len() <= 44 {
+            return Err("No audio was captured from the microphone.".to_string());
+        }
+        Ok(encode_base64(&bytes))
+    })
+    .await
+    .map_err(|e| format!("Recording task failed: {e}"))?
+}
+
+fn handle_drag_drop_event(app: &AppHandle, label: &str, drag_event: &tauri::DragDropEvent) {
+    let Some(webview) = app.get_webview_window(label) else {
+        return;
+    };
+    match drag_event {
+        tauri::DragDropEvent::Enter { .. } => {
+            let _ = webview.eval("window.__blombrainDragState && window.__blombrainDragState('enter');");
+        }
+        tauri::DragDropEvent::Leave => {
+            let _ = webview.eval("window.__blombrainDragState && window.__blombrainDragState('leave');");
+        }
+        tauri::DragDropEvent::Drop { paths, .. } => {
+            let path_strings: Vec<String> = paths
+                .iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect();
+            if let Some(state) = app.try_state::<DroppedFilesState>() {
+                if let Ok(mut guard) = state.allowed.lock() {
+                    for p in paths {
+                        guard.insert(p.clone());
+                    }
+                }
+            }
+            if let Ok(json) = serde_json::to_string(&path_strings) {
+                let script = format!(
+                    "window.__blombrainDragState && window.__blombrainDragState('leave'); window.__blombrainDragDrop && window.__blombrainDragDrop({json});"
+                );
+                let _ = webview.eval(&script);
+            }
+        }
+        _ => {}
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DroppedFileData {
+    name: String,
+    mime_type: String,
+    base64: String,
+}
+
+fn encode_base64(input: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as usize;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as usize;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as usize;
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push(TABLE[(triple >> 18) & 0x3f] as char);
+        out.push(TABLE[(triple >> 12) & 0x3f] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[(triple >> 6) & 0x3f] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[triple & 0x3f] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
+fn guess_mime_type(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("svg") => "image/svg+xml",
+        Some("pdf") => "application/pdf",
+        Some("txt") | Some("log") => "text/plain",
+        Some("md") | Some("markdown") => "text/markdown",
+        Some("json") => "application/json",
+        Some("csv") => "text/csv",
+        Some("html") | Some("htm") => "text/html",
+        Some("mp3") => "audio/mpeg",
+        Some("wav") => "audio/wav",
+        Some("ogg") => "audio/ogg",
+        Some("mp4") => "video/mp4",
+        Some("webm") => "video/webm",
+        Some("docx") => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        _ => "application/octet-stream",
+    }
+}
+
+#[tauri::command]
+async fn read_dropped_files(
+    state: tauri::State<'_, DroppedFilesState>,
+    paths: Vec<String>,
+) -> Result<Vec<DroppedFileData>, String> {
+    const MAX_DROP_BYTES: u64 = 100 * 1024 * 1024;
+    let mut verified: Vec<PathBuf> = Vec::new();
+    if let Ok(mut guard) = state.allowed.lock() {
+        for raw in paths {
+            let p = PathBuf::from(&raw);
+            if guard.remove(&p) {
+                verified.push(p);
+            }
+        }
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut results = Vec::with_capacity(verified.len());
+        for path in verified {
+            let Ok(meta) = fs::metadata(&path) else {
+                continue;
+            };
+            if !meta.is_file() || meta.len() > MAX_DROP_BYTES {
+                continue;
+            }
+            let Ok(bytes) = fs::read(&path) else {
+                continue;
+            };
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("file")
+                .to_string();
+            results.push(DroppedFileData {
+                name,
+                mime_type: guess_mime_type(&path).to_string(),
+                base64: encode_base64(&bytes),
+            });
+        }
+        results
+    })
+    .await
+    .map_err(|e| format!("Failed to read dropped files: {e}"))
 }
 
 fn generate_launch_secret() -> String {
@@ -235,6 +474,12 @@ fn is_allowed_app_origin(url: &tauri::Url, allowed_port: u16, is_dev: bool) -> b
     if scheme == "tauri" || (scheme == "http" && host == "tauri.localhost") {
         return true;
     }
+    if url.as_str() == "about:srcdoc" || url.as_str() == "about:blank" {
+        return true;
+    }
+    if scheme == "blob" || scheme == "data" {
+        return true;
+    }
     if scheme == "http" && (host == "127.0.0.1" || host == "localhost") {
         if port == Some(allowed_port) {
             return true;
@@ -336,6 +581,13 @@ async fn save_download_bytes(app: AppHandle, request: tauri::ipc::Request<'_>) -
     Ok(true)
 }
 
+#[tauri::command]
+async fn open_external_url(app: AppHandle, url: String) -> Result<(), String> {
+    app.opener()
+        .open_url(&url, None::<&str>)
+        .map_err(|e| format!("Failed to open external URL {url}: {e}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -349,7 +601,29 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .invoke_handler(tauri::generate_handler![save_download_bytes]);
+        .manage(DroppedFilesState {
+            allowed: Mutex::new(HashSet::new()),
+        })
+        .manage(AudioRecorderState {
+            active: Mutex::new(None),
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::DragDrop(drag_event) = event {
+                handle_drag_drop_event(window.app_handle(), window.label(), drag_event);
+            }
+        })
+        .on_webview_event(|webview, event| {
+            if let tauri::WebviewEvent::DragDrop(drag_event) = event {
+                handle_drag_drop_event(webview.app_handle(), webview.label(), drag_event);
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            save_download_bytes,
+            read_dropped_files,
+            start_audio_recording,
+            stop_audio_recording,
+            open_external_url
+        ]);
 
     let app = builder
         .setup(|app| {
@@ -378,7 +652,6 @@ pub fn run() {
                 .resizable(true)
                 .decorations(false)
                 .transparent(true)
-                .disable_drag_drop_handler()
                 .on_permission_request(|_webview, kind| match kind {
                     tauri::webview::PermissionKind::Microphone => {
                         tauri::webview::PermissionResponse::Allow
@@ -418,7 +691,10 @@ pub fn run() {
                     use webkit2gtk::{SettingsExt, WebViewExt};
                     let webview = platform_webview.inner();
                     if let Some(settings) = WebViewExt::settings(&webview) {
+                        settings.set_enable_media(true);
                         settings.set_enable_media_stream(true);
+                        settings.set_enable_webrtc(true);
+                        settings.set_media_playback_requires_user_gesture(false);
                     }
                 });
             }
@@ -594,6 +870,14 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
+            if let Some(rec_state) = app_handle.try_state::<AudioRecorderState>() {
+                if let Ok(mut guard) = rec_state.active.lock() {
+                    if let Some(mut rec) = guard.take() {
+                        stop_active_recording_process(&mut rec);
+                        let _ = fs::remove_file(&rec.path);
+                    }
+                }
+            }
             shutdown_sidecar(app_handle);
         }
     });

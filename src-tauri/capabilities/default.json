@@ -19,6 +19,10 @@
     "core:window:allow-internal-toggle-maximize",
     "opener:default",
     "dialog:default",
-    "allow-save-download-bytes"
+    "allow-save-download-bytes",
+    "allow-read-dropped-files",
+    "allow-start-audio-recording",
+    "allow-stop-audio-recording",
+    "allow-open-external-url"
   ]
 }

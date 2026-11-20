@@ -148,7 +148,7 @@
           );
         }
 
-        // Preserve dynamically toggled classes on copy buttons
+        // Preserve dynamically toggled classes on copy/wrap/collapse buttons and bodies
         if (fromEl.classList.contains("copy-code-btn")) {
           toEl.classList.toggle(
             "text-success",
@@ -160,9 +160,36 @@
           );
         }
 
+        if (fromEl.classList.contains("code-block-wrapper")) {
+          const isUnwrapped = fromEl.dataset.wrapped === "false";
+          const isCollapsed = fromEl.dataset.collapsed === "true";
+          if (isUnwrapped) toEl.dataset.wrapped = "false";
+          if (isCollapsed) toEl.dataset.collapsed = "true";
+        }
+
+        if (fromEl.classList.contains("code-line-text")) {
+          const isUnwrapped = fromEl.classList.contains("whitespace-pre");
+          toEl.classList.toggle("whitespace-pre", isUnwrapped);
+          toEl.classList.toggle("whitespace-pre-wrap", !isUnwrapped);
+          toEl.classList.toggle("wrap-anywhere", !isUnwrapped);
+        }
+
+        if (
+          fromEl.classList.contains("code-block-body") ||
+          fromEl.classList.contains("code-collapsed-banner")
+        ) {
+          toEl.classList.toggle("hidden", fromEl.classList.contains("hidden"));
+        }
+
+        if (fromEl.classList.contains("code-header-overlay")) {
+          toEl.style.inset = fromEl.style.inset;
+        }
+
         // Preserve dynamically set text content on buttons/labels
         if (
           fromEl.classList.contains("btn-text") ||
+          fromEl.classList.contains("wrap-btn-text") ||
+          fromEl.classList.contains("collapse-btn-text") ||
           fromEl.classList.contains("artifact-click-label") ||
           fromEl.classList.contains("artifact-mobile-click-label")
         ) {
@@ -362,6 +389,44 @@
         );
         artifactStore.refreshArtifactContent(id);
       }
+      return;
+    }
+
+    // Handle Code Block Wrap Toggle Button
+    const wrapBtn = target.closest<HTMLButtonElement>(".toggle-wrap-code-btn");
+    if (wrapBtn) {
+      e.preventDefault();
+      const wrapper = wrapBtn.closest<HTMLElement>(".code-block-wrapper");
+      if (!wrapper) return;
+      const currentlyWrapped = wrapper.dataset.wrapped !== "false";
+      const nextWrapped = !currentlyWrapped;
+      wrapper.dataset.wrapped = nextWrapped ? "true" : "false";
+      wrapper.querySelectorAll<HTMLElement>(".code-line-text").forEach((span) => {
+        span.classList.toggle("whitespace-pre-wrap", nextWrapped);
+        span.classList.toggle("wrap-anywhere", nextWrapped);
+        span.classList.toggle("whitespace-pre", !nextWrapped);
+      });
+      const label = wrapBtn.querySelector(".wrap-btn-text");
+      if (label) label.textContent = nextWrapped ? "Scroll" : "Wrap";
+      return;
+    }
+
+    // Handle Code Block Collapse Toggle Button
+    const collapseBtn = target.closest<HTMLButtonElement>(".toggle-collapse-code-btn");
+    if (collapseBtn) {
+      e.preventDefault();
+      const wrapper = collapseBtn.closest<HTMLElement>(".code-block-wrapper");
+      if (!wrapper) return;
+      const nextCollapsed = wrapper.dataset.collapsed !== "true";
+      wrapper.dataset.collapsed = nextCollapsed ? "true" : "false";
+      wrapper.querySelector(".code-block-body")?.classList.toggle("hidden", nextCollapsed);
+      wrapper.querySelector(".code-collapsed-banner")?.classList.toggle("hidden", !nextCollapsed);
+      const overlay = wrapper.querySelector<HTMLElement>(".code-header-overlay");
+      if (overlay) {
+        overlay.style.inset = nextCollapsed ? "0 0 0 0" : "0 0 4.5rem 0";
+      }
+      const label = collapseBtn.querySelector(".collapse-btn-text");
+      if (label) label.textContent = nextCollapsed ? "Expand" : "Collapse";
       return;
     }
 

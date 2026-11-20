@@ -15,6 +15,7 @@
   import type { ModelInfo } from "../../types";
   import { useQueryClient } from "@tanstack/svelte-query";
   import Button from "../ui/Button.svelte";
+  import { desktopWindow } from "../../stores/window.svelte";
 
   interface Props {
     open: boolean;
@@ -127,12 +128,14 @@
 
   $effect(() => {
     if (open) {
+      const unregisterModal = desktopWindow.registerActiveModal();
       const prevActive = document.activeElement as HTMLElement | null;
       setTimeout(() => {
         modalEl?.focus();
       }, 0);
 
       return () => {
+        unregisterModal();
         prevActive?.focus();
       };
     }
@@ -156,14 +159,16 @@
     aria-label="Reorder Models"
     tabindex="-1"
     transition:fade={{ duration: 150 }}
-    class="fixed inset-0 z-60 flex items-center justify-center bg-overlay backdrop-blur-xs focus:outline-hidden"
+    class="fixed inset-0 z-60 flex items-center justify-center bg-overlay backdrop-blur-xs focus:outline-hidden {desktopWindow.isTauri
+      ? 'pt-14 pb-4 px-4'
+      : 'p-4'}"
     onkeydown={handleKeydown}
   >
     <div
       role="presentation"
       transition:fly={{ y: 15, duration: 200 }}
-      class="relative flex w-full max-w-lg flex-col rounded-xl border border-line bg-bg shadow-2xl overflow-hidden"
-      style="max-height: min(85vh, 600px); height: min(85vh, 600px);"
+      class="relative flex w-full max-w-lg max-h-full flex-col rounded-xl border border-line bg-bg shadow-2xl overflow-hidden"
+      style="max-height: min(85vh, 100%); height: min(85vh, 600px);"
       onclick={(e) => e.stopPropagation()}
     >
       <!-- Header -->

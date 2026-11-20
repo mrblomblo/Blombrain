@@ -22,6 +22,7 @@
   import SpeechTab from "./settings/SpeechTab.svelte";
   import UserTab from "./settings/UserTab.svelte";
   import Button from "./ui/Button.svelte";
+  import { desktopWindow } from "../stores/window.svelte";
 
   type Tab =
     | "general"
@@ -93,6 +94,7 @@
 
   $effect(() => {
     if (open) {
+      const unregisterModal = desktopWindow.registerActiveModal();
       const prevActive = document.activeElement as HTMLElement | null;
       setTimeout(() => {
         modalEl?.focus();
@@ -102,6 +104,7 @@
       window.addEventListener("resize", checkScroll);
 
       return () => {
+        unregisterModal();
         prevActive?.focus();
         window.removeEventListener("resize", checkScroll);
       };
@@ -131,12 +134,16 @@
     aria-label="Settings"
     tabindex="-1"
     transition:fade={{ duration: 150 }}
-    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm focus:outline-hidden"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm focus:outline-hidden {desktopWindow.isTauri
+      ? 'pt-14 sm:p-4 sm:pt-14'
+      : 'sm:p-4'}"
     onkeydown={handleKeydown}
   >
     <div
       transition:fly={{ y: 15, duration: 200 }}
-      class="relative flex h-full w-full sm:h-[min(92vh,760px)] max-w-3xl flex-col sm:rounded-xl border-0 sm:border border-line bg-bg shadow-2xl overflow-hidden"
+      class="relative flex h-full w-full sm:h-[min(88vh,740px)] sm:max-h-full max-w-3xl flex-col sm:rounded-xl {desktopWindow.isTauri
+        ? 'border-t sm:border'
+        : 'border-0 sm:border'} border-line bg-bg shadow-2xl overflow-hidden"
     >
       <!-- Integrated Header & Navigation Tabs -->
       <div

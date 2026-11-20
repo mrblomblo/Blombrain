@@ -134,6 +134,18 @@ document.addEventListener('submit', function(e) {
     return `<!DOCTYPE html>\n<html>\n<head>\n${HEAD_INJECTIONS}\n</head>\n<body>\n${code}\n</body>\n</html>`;
   });
 
+  let previewBlobUrl = $state<string | null>(null);
+
+  $effect(() => {
+    const html = srcDoc;
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    previewBlobUrl = url;
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  });
+
   let highlightedCode = $derived.by(() => {
     const lang = artifactStore.language || "text";
     const validLang = hljs.getLanguage(lang) ? lang : "";
@@ -516,7 +528,7 @@ document.addEventListener('submit', function(e) {
   {/if}
 
   <!-- Content Pane -->
-  <div class="relative flex-1 w-full h-full overflow-hidden bg-bg">
+  <div class="relative min-h-0 flex-1 w-full overflow-hidden bg-bg">
     {#if viewMode === "preview"}
       {#if artifactStore.language === "markdown" || artifactStore.language === "md"}
         <div class="h-full w-full overflow-auto bg-bg text-fg">
@@ -524,12 +536,12 @@ document.addEventListener('submit', function(e) {
             <Markdown content={debouncedCode} isArtifactPreview={true} />
           </div>
         </div>
-      {:else}
+      {:else if previewBlobUrl}
         <iframe
           title={artifactStore.title}
-          srcdoc={srcDoc}
+          src={previewBlobUrl}
           sandbox="allow-scripts allow-forms"
-          class="h-full w-full border-0 bg-bg"
+          class="absolute inset-0 h-full w-full border-0 {artifactStore.language === 'svg' ? 'bg-bg' : 'bg-white'}"
         ></iframe>
       {/if}
     {:else}

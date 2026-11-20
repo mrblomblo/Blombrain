@@ -30,6 +30,37 @@ import { registerArtifact, clearArtifactRegistry } from "../markdown";
 const OPEN_TAGS = THINK_TAG_NAMES.map((t) => `<${t}>`);
 const CLOSE_TAGS = THINK_TAG_NAMES.map((t) => `</${t}>`);
 
+export interface ChatDraft {
+  text: string;
+  attachments: AttachmentOut[];
+  slashTools: SlashToolSelection[];
+}
+
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  attachments: AttachmentOut[];
+  injectedTools?: SlashToolSelection[];
+  createdAt: number;
+  isEditing?: boolean;
+}
+
+const NEW_DRAFT_KEY = "__new__";
+const DRAFT_STORAGE_PREFIX = "blombrain_draft_";
+const MAX_CACHED_ATTACHMENT_AGE_MS = 23 * 60 * 60 * 1000;
+const EMPTY_ATTACHMENTS: AttachmentOut[] = [];
+const EMPTY_SLASH_TOOLS: SlashToolSelection[] = [];
+const EMPTY_QUEUED: QueuedMessage[] = [];
+
+function isDraftEmpty(draft: ChatDraft | undefined): boolean {
+  if (!draft) return true;
+  return (
+    draft.text.length === 0 &&
+    draft.attachments.length === 0 &&
+    draft.slashTools.length === 0
+  );
+}
+
 function makeId(): string {
   return getRandomUUID();
 }
@@ -139,11 +170,380 @@ class ChatStore {
 
   /** The conversation currently shown in the main pane. null = new, unsaved chat. */
   activeConversationId = $state<string | null>(null);
+  /** Folder currently opened in the main pane (when activeConversationId is null). */
+  activeFolderId = $state<string | null>(null);
   /** Title of the active conversation (kept in sync after each save). */
   activeConversationTitle = $state<string>("New conversation");
 
-  pendingAttachments = $state<AttachmentOut[]>([]);
+  private drafts = $state<Record<string, ChatDraft>>({});
+  private queuedByChat = $state<Record<string, QueuedMessage[]>>({});
+  editingQueuedSlot = $state<{
+    convKey: string;
+    id: string;
+    index: number;
+    previousDraft?: ChatDraft;
+  } | null>(null);
+  private uploadingCounts = $state<Record<string, number>>({});
   selectedAttachment = $state<AttachmentOut | null>(null);
+  inChatSearchOpen = $state(false);
+  inChatSearchFocusNonce = $state(0);
+  private wasAborted = false;
+
+  openInChatSearch() {
+    this.inChatSearchOpen = true;
+    this.inChatSearchFocusNonce += 1;
+  }
+
+  closeInChatSearch() {
+    this.inChatSearchOpen = false;
+  }
+
+  constructor() {
+    this.loadDraftsFromStorage();
+  }
+
+  private loadDraftsFromStorage() {
+    if (typeof localStorage === "undefined") return;
+    try {
+      const now = Date.now();
+      const loaded: Record<string, ChatDraft> = {};
+      const keysToRemove: string[] = [];
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const storageKey = localStorage.key(i);
+        if (!storageKey || !storageKey.startsWith(DRAFT_STORAGE_PREFIX)) continue;
+        const draftKey = storageKey.slice(DRAFT_STORAGE_PREFIX.length);
+        if (!draftKey) continue;
+
+        try {
+          const raw = localStorage.getItem(storageKey);
+          if (!raw) {
+            keysToRemove.push(storageKey);
+            continue;
+          }
+          const parsed = JSON.parse(raw) as Partial<ChatDraft>;
+          const text = typeof parsed.text === "string" ? parsed.text : "";
+          const attachments = Array.isArray(parsed.attachments)
+            ? parsed.attachments.filter(
+                (att): att is AttachmentOut =>
+                  Boolean(att && typeof att.id === "string" && typeof att.createdAt === "number") &&
+                  now - att.createdAt < MAX_CACHED_ATTACHMENT_AGE_MS,
+              )
+            : [];
+          const slashTools = Array.isArray(parsed.slashTools)
+            ? parsed.slashTools.filter(
+                (t): t is SlashToolSelection =>
+                  Boolean(t && typeof t.id === "string" && typeof t.name === "string" && typeof t.kind === "string"),
+              )
+            : [];
+
+          const draft: ChatDraft = { text, attachments, slashTools };
+          if (isDraftEmpty(draft)) {
+            keysToRemove.push(storageKey);
+          } else {
+            loaded[draftKey] = draft;
+          }
+        } catch {
+          keysToRemove.push(storageKey);
+        }
+      }
+
+      for (const k of keysToRemove) {
+        try {
+          localStorage.removeItem(k);
+        } catch { }
+      }
+
+      this.drafts = loaded;
+    } catch { }
+  }
+
+  private saveDraftToStorage(key: string, draft: ChatDraft) {
+    if (typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem(`${DRAFT_STORAGE_PREFIX}${key}`, JSON.stringify(draft));
+    } catch { }
+  }
+
+  private removeDraftFromStorage(key: string) {
+    if (typeof localStorage === "undefined") return;
+    try {
+      localStorage.removeItem(`${DRAFT_STORAGE_PREFIX}${key}`);
+    } catch { }
+  }
+
+  private updateDraft(key: string, next: ChatDraft) {
+    if (isDraftEmpty(next)) {
+      if (this.drafts[key] !== undefined) {
+        const copy = { ...this.drafts };
+        delete copy[key];
+        this.drafts = copy;
+      }
+      this.removeDraftFromStorage(key);
+    } else {
+      this.drafts = {
+        ...this.drafts,
+        [key]: next,
+      };
+      this.saveDraftToStorage(key, next);
+    }
+  }
+
+  get currentDraftKey(): string {
+    return this.activeConversationId ?? NEW_DRAFT_KEY;
+  }
+
+  get draftText(): string {
+    return this.drafts[this.currentDraftKey]?.text ?? "";
+  }
+
+  set draftText(value: string) {
+    const key = this.currentDraftKey;
+    const existing = this.drafts[key];
+    if ((existing?.text ?? "") === value) return;
+    this.updateDraft(key, {
+      text: value,
+      attachments: existing?.attachments ?? [],
+      slashTools: existing?.slashTools ?? [],
+    });
+  }
+
+  get pendingAttachments(): AttachmentOut[] {
+    return this.drafts[this.currentDraftKey]?.attachments ?? EMPTY_ATTACHMENTS;
+  }
+
+  get draftSlashTools(): SlashToolSelection[] {
+    return this.drafts[this.currentDraftKey]?.slashTools ?? EMPTY_SLASH_TOOLS;
+  }
+
+  set draftSlashTools(value: SlashToolSelection[]) {
+    const key = this.currentDraftKey;
+    const existing = this.drafts[key];
+    this.updateDraft(key, {
+      text: existing?.text ?? "",
+      attachments: existing?.attachments ?? [],
+      slashTools: value,
+    });
+  }
+
+  get isUploadingDraft(): boolean {
+    return (this.uploadingCounts[this.currentDraftKey] ?? 0) > 0;
+  }
+
+  appendDraftText(targetKey: string, textToAppend: string) {
+    const trimmed = textToAppend.trim();
+    if (!trimmed) return;
+    const existing = this.drafts[targetKey];
+    const current = existing?.text ?? "";
+    const nextText = (current ? current.trimEnd() + " " : "") + trimmed;
+    this.updateDraft(targetKey, {
+      text: nextText,
+      attachments: existing?.attachments ?? [],
+      slashTools: existing?.slashTools ?? [],
+    });
+  }
+
+  clearDraft(convId?: string | null) {
+    const key = convId === undefined ? this.currentDraftKey : (convId ?? NEW_DRAFT_KEY);
+    if (this.drafts[key] !== undefined) {
+      const copy = { ...this.drafts };
+      delete copy[key];
+      this.drafts = copy;
+    }
+    this.removeDraftFromStorage(key);
+  }
+
+  get queuedMessages(): QueuedMessage[] {
+    return this.queuedByChat[this.currentDraftKey] ?? EMPTY_QUEUED;
+  }
+
+  get activeEditingQueuedItem(): { id: string; index: number } | null {
+    const slot = this.editingQueuedSlot;
+    if (!slot || slot.convKey !== this.currentDraftKey) return null;
+    const list = this.queuedByChat[slot.convKey] ?? [];
+    const currentIdx = list.findIndex((m) => m.id === slot.id);
+    if (currentIdx === -1) return null;
+    return { id: slot.id, index: currentIdx };
+  }
+
+  enqueueMessage(content: string, injectedTools?: SlashToolSelection[]) {
+    const trimmed = content.trim();
+    const key = this.currentDraftKey;
+    const currentAttachments = this.pendingAttachments;
+    if (!trimmed && currentAttachments.length === 0) return;
+
+    const editingSlot =
+      this.editingQueuedSlot?.convKey === key ? this.editingQueuedSlot : null;
+
+    if (editingSlot) {
+      const list = this.queuedByChat[key] ?? [];
+      const idx = list.findIndex((m) => m.id === editingSlot.id);
+      if (idx !== -1) {
+        const updatedList = [...list];
+        updatedList[idx] = {
+          ...updatedList[idx],
+          text: trimmed,
+          attachments: [...currentAttachments],
+          injectedTools:
+            injectedTools && injectedTools.length > 0
+              ? [...injectedTools]
+              : undefined,
+          isEditing: false,
+        };
+        this.queuedByChat = {
+          ...this.queuedByChat,
+          [key]: updatedList,
+        };
+        this.editingQueuedSlot = null;
+        if (editingSlot.previousDraft) {
+          this.updateDraft(key, editingSlot.previousDraft);
+        } else {
+          this.clearDraft(key);
+        }
+        if (!this.isStreaming && idx === 0 && !this.wasAborted) {
+          this.flushNextQueued(key);
+        }
+        return;
+      }
+      this.editingQueuedSlot = null;
+    }
+
+    const item: QueuedMessage = {
+      id: makeId(),
+      text: trimmed,
+      attachments: [...currentAttachments],
+      injectedTools: injectedTools && injectedTools.length > 0 ? [...injectedTools] : undefined,
+      createdAt: Date.now(),
+    };
+    this.clearDraft(key);
+    this.queuedByChat = {
+      ...this.queuedByChat,
+      [key]: [...(this.queuedByChat[key] ?? []), item],
+    };
+  }
+
+  async removeQueuedMessage(id: string) {
+    const key = this.currentDraftKey;
+    const existing = this.queuedByChat[key] ?? [];
+    const target = existing.find((m) => m.id === id);
+    const next = existing.filter((m) => m.id !== id);
+    const copy = { ...this.queuedByChat };
+    if (next.length === 0) delete copy[key];
+    else copy[key] = next;
+    this.queuedByChat = copy;
+
+    if (this.editingQueuedSlot?.convKey === key && this.editingQueuedSlot.id === id) {
+      const prevDraft = this.editingQueuedSlot.previousDraft;
+      this.editingQueuedSlot = null;
+      if (prevDraft) {
+        this.updateDraft(key, prevDraft);
+      } else {
+        this.clearDraft(key);
+      }
+    }
+
+    if (target?.attachments) {
+      for (const att of target.attachments) {
+        try {
+          await deleteUpload(att.id);
+        } catch { }
+      }
+    }
+  }
+
+  editQueuedMessage(id: string) {
+    const key = this.currentDraftKey;
+    const existing = this.queuedByChat[key] ?? [];
+    const targetIdx = existing.findIndex((m) => m.id === id);
+    if (targetIdx === -1) return;
+    const target = existing[targetIdx];
+
+    // If already editing another item in the same chat, revert its isEditing flag first
+    let previousDraft =
+      this.editingQueuedSlot?.convKey === key
+        ? this.editingQueuedSlot.previousDraft
+        : undefined;
+    if (!this.editingQueuedSlot || this.editingQueuedSlot.convKey !== key) {
+      const cur = this.drafts[key];
+      if (cur && !isDraftEmpty(cur)) {
+        previousDraft = {
+          text: cur.text,
+          attachments: [...cur.attachments],
+          slashTools: [...cur.slashTools],
+        };
+      }
+    }
+
+    const updatedList = existing.map((m) => ({
+      ...m,
+      isEditing: m.id === id,
+    }));
+    this.queuedByChat = {
+      ...this.queuedByChat,
+      [key]: updatedList,
+    };
+    this.editingQueuedSlot = {
+      convKey: key,
+      id,
+      index: targetIdx,
+      previousDraft,
+    };
+
+    this.updateDraft(key, {
+      text: target.text,
+      attachments: [...target.attachments],
+      slashTools: target.injectedTools ? [...target.injectedTools] : [],
+    });
+  }
+
+  cancelEditQueuedMessage() {
+    const slot = this.editingQueuedSlot;
+    if (!slot) return;
+    const key = slot.convKey;
+    const existing = this.queuedByChat[key];
+    if (existing) {
+      this.queuedByChat = {
+        ...this.queuedByChat,
+        [key]: existing.map((m) =>
+          m.id === slot.id ? { ...m, isEditing: false } : m,
+        ),
+      };
+    }
+    this.editingQueuedSlot = null;
+    if (slot.previousDraft) {
+      this.updateDraft(key, slot.previousDraft);
+    } else {
+      this.clearDraft(key);
+    }
+  }
+
+  clearQueuedMessages(convId?: string | null) {
+    const key = convId === undefined ? this.currentDraftKey : (convId ?? NEW_DRAFT_KEY);
+    if (this.queuedByChat[key] !== undefined) {
+      const copy = { ...this.queuedByChat };
+      delete copy[key];
+      this.queuedByChat = copy;
+    }
+    if (this.editingQueuedSlot?.convKey === key) {
+      this.editingQueuedSlot = null;
+    }
+  }
+
+  private flushNextQueued(convKey: string) {
+    if (this.isStreaming || this.wasAborted) return;
+    if (this.currentDraftKey !== convKey) return;
+    const list = this.queuedByChat[convKey];
+    if (!list || list.length === 0) return;
+    if (list[0].isEditing) return;
+
+    const [nextItem, ...rest] = list;
+    const copy = { ...this.queuedByChat };
+    if (rest.length === 0) delete copy[convKey];
+    else copy[convKey] = rest;
+    this.queuedByChat = copy;
+
+    void this.dispatchMessage(nextItem.text, nextItem.attachments, nextItem.injectedTools);
+  }
 
   /** MCP server IDs currently excluded for this conversation. */
   conversationExcludedMcps = $state<string[]>([]);
@@ -236,17 +636,48 @@ class ChatStore {
     this.selectedModel = modelId;
   }
 
-  async addAttachment(file: File) {
-    let fileToUpload = file;
-    if (file.type.startsWith("audio/")) {
-      fileToUpload = await encodeToWav(file);
+  async addAttachment(
+    file: File,
+    targetKey: string = this.currentDraftKey,
+    targetConvId: string | null = this.activeConversationId,
+  ) {
+    this.uploadingCounts = {
+      ...this.uploadingCounts,
+      [targetKey]: (this.uploadingCounts[targetKey] ?? 0) + 1,
+    };
+    try {
+      let fileToUpload = file;
+      if (file.type.startsWith("audio/")) {
+        fileToUpload = await encodeToWav(file);
+      }
+      const attachment = await uploadFile(fileToUpload, targetConvId);
+      const existing = this.drafts[targetKey];
+      this.updateDraft(targetKey, {
+        text: existing?.text ?? "",
+        attachments: [...(existing?.attachments ?? []), attachment],
+        slashTools: existing?.slashTools ?? [],
+      });
+    } finally {
+      const nextCount = Math.max(0, (this.uploadingCounts[targetKey] ?? 1) - 1);
+      const nextCounts = { ...this.uploadingCounts };
+      if (nextCount === 0) {
+        delete nextCounts[targetKey];
+      } else {
+        nextCounts[targetKey] = nextCount;
+      }
+      this.uploadingCounts = nextCounts;
     }
-    const attachment = await uploadFile(fileToUpload, this.activeConversationId);
-    this.pendingAttachments.push(attachment);
   }
 
-  async removeAttachment(id: string) {
-    this.pendingAttachments = this.pendingAttachments.filter((a) => a.id !== id);
+  async removeAttachment(id: string, targetKey: string = this.currentDraftKey) {
+    const existing = this.drafts[targetKey];
+    if (existing) {
+      this.updateDraft(targetKey, {
+        text: existing.text,
+        attachments: existing.attachments.filter((a) => a.id !== id),
+        slashTools: existing.slashTools,
+      });
+    }
     try {
       await deleteUpload(id);
     } catch (e) {
@@ -292,8 +723,10 @@ class ChatStore {
       });
 
       this.activeConversationId = detail.id;
+      this.activeFolderId = null;
       this.activeConversationTitle = detail.title;
-      this.pendingAttachments = [];
+      this.selectedAttachment = null;
+      this.inChatSearchOpen = false;
       this.conversationExcludedMcps = detail.excludedMcps ?? [];
       this.conversationExcludedSkills = detail.excludedSkills ?? [];
       this.conversationForcedTools = [];
@@ -321,13 +754,15 @@ class ChatStore {
     }
   }
 
-  /** Start a fresh, empty chat. */
-  newConversation() {
+  /** Start a fresh, empty chat (optionally scoped inside a folder). */
+  newConversation(folderId: string | null = null) {
     if (this.isStreaming) return;
     this.messages = [];
     this.activeConversationId = null;
+    this.activeFolderId = folderId;
     this.activeConversationTitle = "New conversation";
-    this.pendingAttachments = [];
+    this.selectedAttachment = null;
+    this.inChatSearchOpen = false;
     this.branchSelections = {};
     this.selectedModel = null;
     this.conversationExcludedMcps = [];
@@ -342,6 +777,10 @@ class ChatStore {
     this.streamingAssistantId = null;
     artifactStore.close();
     artifactStore.loadConversationArtifacts(null);
+  }
+
+  openFolder(folderId: string) {
+    this.newConversation(folderId);
   }
 
   async setConversationMemoryEnabled(enabled: boolean | null) {
@@ -562,6 +1001,8 @@ class ChatStore {
         } catch (e) {
           // Ignore if already deleted by backend
         }
+        this.clearDraft(convId);
+        this.clearQueuedMessages(convId);
         this.newConversation();
       }
 
@@ -631,7 +1072,9 @@ class ChatStore {
 
   async send(content: string, injectedTools?: SlashToolSelection[]) {
     const trimmed = content.trim();
-    if (!trimmed && this.pendingAttachments.length === 0) return;
+    const draftKey = this.currentDraftKey;
+    const currentAttachments = this.pendingAttachments;
+    if (!trimmed && currentAttachments.length === 0) return;
     if (this.isStreaming) return;
 
     if (!this.selectedModel) {
@@ -644,9 +1087,18 @@ class ChatStore {
       return;
     }
 
-    const attachmentIds = this.pendingAttachments.map((a) => a.id);
-    const userAttachments = [...this.pendingAttachments];
-    this.pendingAttachments = [];
+    const userAttachments = [...currentAttachments];
+    this.clearDraft(draftKey);
+    await this.dispatchMessage(trimmed, userAttachments, injectedTools);
+  }
+
+  private async dispatchMessage(
+    trimmed: string,
+    userAttachments: AttachmentOut[],
+    injectedTools?: SlashToolSelection[],
+  ) {
+    if (!this.selectedModel) return;
+    const attachmentIds = userAttachments.map((a) => a.id);
 
     // Find current active leaf to set as parentId for the new user message
     const currentActivePath = this.activePath;
@@ -677,12 +1129,15 @@ class ChatStore {
         let excerpt = words.slice(0, 8).join(" ");
         if (excerpt.length > 60) excerpt = excerpt.slice(0, 57) + "…";
         if (!excerpt) excerpt = "Attachment";
+        const targetFolderId = this.activeFolderId;
         const conv = await createConversation({
           title: excerpt,
           model: this.selectedModel ?? undefined,
           toolsEnabled: this.conversationToolsEnabled,
+          folderId: targetFolderId ?? undefined,
         });
         this.activeConversationId = conv.id;
+        this.activeFolderId = null;
         newConvId = conv.id;
         this.activeConversationTitle = conv.title;
         _invalidateConversations?.();
@@ -867,6 +1322,7 @@ class ChatStore {
       }));
 
     this.isStreaming = true;
+    this.wasAborted = false;
     this.streamingConvId = this.activeConversationId;
     this.streamingAssistantId = currentAsstId;
     artifactStore.resetUserClosed();
@@ -1004,9 +1460,12 @@ class ChatStore {
       onContextTrimmed: (evt) => {
         const msg = this.messages.find((m) => m.id === currentAsstId);
         if (!msg) return;
-        const note = `> [!NOTE]\n> Trimmed ${evt.droppedMessageCount} older message(s) (${evt.behavior}) to fit context window.\n\n`;
-        if (!rawBuffer.includes(note)) {
-          rawBuffer = note + rawBuffer;
+        const notice = `<context_notice>${JSON.stringify({
+          kind: "trimmed",
+          message: `Trimmed ${evt.droppedMessageCount} older message(s) (${evt.behavior}) to fit context window.`,
+        })}</context_notice>\n\n`;
+        if (!rawBuffer.includes(notice)) {
+          rawBuffer = notice + rawBuffer;
           msg.content = rawBuffer;
         }
       },
@@ -1019,9 +1478,12 @@ class ChatStore {
       onToolsPruned: (evt) => {
         const msg = this.messages.find((m) => m.id === currentAsstId);
         if (!msg) return;
-        const warning = `> [!WARNING]\n> Pruned ${evt.prunedCount} tool(s) to fit context window: ${evt.droppedToolNames.join(", ")}.\n\n`;
-        if (!rawBuffer.startsWith(warning)) {
-          rawBuffer = warning + rawBuffer;
+        const notice = `<context_notice>${JSON.stringify({
+          kind: "tools_pruned",
+          message: `Pruned ${evt.prunedCount} tool(s) to fit context window: ${evt.droppedToolNames.join(", ")}.`,
+        })}</context_notice>\n\n`;
+        if (!rawBuffer.includes(notice)) {
+          rawBuffer = notice + rawBuffer;
           msg.content = rawBuffer;
         }
       },
@@ -1108,10 +1570,12 @@ class ChatStore {
             msg.thinkingDone = true;
           }
         }
+        const finishedKey = this.streamingConvId ?? this.currentDraftKey;
         this.isStreaming = false;
         this.streamingConvId = null;
         this.streamingAssistantId = null;
         this.abortController = null;
+        this.flushNextQueued(finishedKey);
       },
       onError: (message) => {
         const msg = this.messages.find((m) => m.id === currentAsstId);
@@ -1131,6 +1595,7 @@ class ChatStore {
     if (!this.selectedModel || !this.activeConversationId) return;
 
     this.isStreaming = true;
+    this.wasAborted = false;
     asstMsg.streaming = true;
     this.streamingConvId = this.activeConversationId;
     this.streamingAssistantId = asstMsg.id;
@@ -1187,9 +1652,12 @@ class ChatStore {
       onContextTrimmed: (evt) => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);
         if (!msg) return;
-        const note = `> [!NOTE]\n> Trimmed ${evt.droppedMessageCount} older message(s) (${evt.behavior}) to fit context window.\n\n`;
-        if (!rawBuffer.includes(note)) {
-          rawBuffer = note + rawBuffer;
+        const notice = `<context_notice>${JSON.stringify({
+          kind: "trimmed",
+          message: `Trimmed ${evt.droppedMessageCount} older message(s) (${evt.behavior}) to fit context window.`,
+        })}</context_notice>\n\n`;
+        if (!rawBuffer.includes(notice)) {
+          rawBuffer = notice + rawBuffer;
           msg.content = rawBuffer;
         }
       },
@@ -1207,9 +1675,12 @@ class ChatStore {
       onToolsPruned: (evt) => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);
         if (!msg) return;
-        const warning = `> [!WARNING]\n> Pruned ${evt.prunedCount} tool(s) to fit context window: ${evt.droppedToolNames.join(", ")}.\n\n`;
-        if (!rawBuffer.startsWith(warning)) {
-          rawBuffer = warning + rawBuffer;
+        const notice = `<context_notice>${JSON.stringify({
+          kind: "tools_pruned",
+          message: `Pruned ${evt.prunedCount} tool(s) to fit context window: ${evt.droppedToolNames.join(", ")}.`,
+        })}</context_notice>\n\n`;
+        if (!rawBuffer.includes(notice)) {
+          rawBuffer = notice + rawBuffer;
           msg.content = rawBuffer;
         }
       },
@@ -1239,10 +1710,12 @@ class ChatStore {
       onDone: () => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);
         if (msg) msg.streaming = false;
+        const finishedKey = this.streamingConvId ?? this.currentDraftKey;
         this.isStreaming = false;
         this.streamingConvId = null;
         this.streamingAssistantId = null;
         this.abortController = null;
+        this.flushNextQueued(finishedKey);
       },
       onError: (message) => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);
@@ -1259,6 +1732,7 @@ class ChatStore {
   }
 
   stop() {
+    this.wasAborted = true;
     this.abortController?.abort();
     this.abortController = null;
 
@@ -1305,7 +1779,9 @@ class ChatStore {
     this.messages = [];
     this.activeConversationId = null;
     this.activeConversationTitle = "New conversation";
-    this.pendingAttachments = [];
+    this.clearDraft(NEW_DRAFT_KEY);
+    this.clearQueuedMessages(NEW_DRAFT_KEY);
+    this.selectedAttachment = null;
     this.branchSelections = {};
     this.conversationForcedTools = [];
     this.streamingConvId = null;

@@ -63,7 +63,9 @@ function reconstructToolCalls(messages: any[]): any[] {
   const reconstructed: any[] = [];
   for (const msg of messages) {
     if (msg.role === "assistant" && typeof msg.content === "string") {
-      let newContent = msg.content.replace(/<router_execution>([\s\S]*?)<\/router_execution>/g, "");
+      let newContent = msg.content
+        .replace(/<context_notice>[\s\S]*?<\/context_notice>/g, "")
+        .replace(/<router_execution>([\s\S]*?)<\/router_execution>/g, "");
       const toolExecRegex = /<tool_execution>([\s\S]*?)<\/tool_execution>/g;
       const toolExecs: any[] = [];
       newContent = newContent.replace(toolExecRegex, (match: string, jsonStr: string) => {
@@ -1031,10 +1033,37 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
+    function appendSystemBlock(block: string) {
+      if (!block.trim()) return;
+      if (outgoingMessages.length > 0 && outgoingMessages[0].role === "system") {
+        outgoingMessages[0] = {
+          ...outgoingMessages[0],
+          content: outgoingMessages[0].content + "\n\n" + block,
+        };
+      } else {
+        outgoingMessages.unshift({ role: "system", content: block });
+      }
+    }
+
+    if (toolsEnabled || slashInjections.hasInjections) {
+      appendSystemBlock(
+        `TOOL USE:\n` +
+        `- You have access to real tools via native function calling. Whenever a task benefits from exact computation (math, percentages, dates, timezones, unit conversions), file/workspace inspection, memory lookup, or live lookup, call the appropriate tool instead of guessing or doing mental arithmetic.\n` +
+        `- Always invoke tools using native tool calls with exact parameter names and types from each tool's schema. Never print pseudo-tool XML, JSON, or shell commands in place of calling a tool.\n` +
+        `- Never assume workspace filenames or file contents: inspect them first with \`list_files\` or \`read_file\`.\n` +
+        `- If a tool returns an error, read the error message, adjust your arguments or pick a better tool (for example \`write_file\` if \`edit_file\` fails), and retry.`
+      );
+    }
+
     // Inject conversation scratchpad and top relevant persistent user memories into the system prompt
     if (toolsEnabled || builtInTools.some((t) => t.category === "memory")) {
       const { getScratchpadEntries, searchMemories } = await import("../services/memory.js");
-      const memoryBlocks: string[] = [];
+      const memoryBlocks: string[] = [
+        `MEMORY & SCRATCHPAD:\n` +
+        `- Persistent memory (\`memory_set\`, \`memory_search\`, \`memory_update\`, \`memory_delete\`): proactively save durable user preferences, facts, or standing project context when the user shares or asks to remember them, and search memory when prior user context may apply.\n` +
+        `- Past conversations (\`chat_history_search\`): search earlier chats whenever the user refers to prior discussions or decisions.\n` +
+        `- Conversation scratchpad (\`scratchpad_set\`, \`scratchpad_get\`): use for multi-step plans, checklists, or temporary working notes in this chat.`
+      ];
 
       const scratchEntries = getScratchpadEntries(conversationId);
       if (scratchEntries.length > 0) {
@@ -1060,17 +1089,7 @@ export async function chatRoutes(app: FastifyInstance) {
         } catch { }
       }
 
-      if (memoryBlocks.length > 0) {
-        const memInjection = memoryBlocks.join("\n\n");
-        if (outgoingMessages.length > 0 && outgoingMessages[0].role === "system") {
-          outgoingMessages[0] = {
-            ...outgoingMessages[0],
-            content: outgoingMessages[0].content + "\n\n" + memInjection,
-          };
-        } else {
-          outgoingMessages.unshift({ role: "system", content: memInjection });
-        }
-      }
+      appendSystemBlock(memoryBlocks.join("\n\n"));
     }
 
     // Inject skill instructions into the context if any skills are active.
@@ -1114,15 +1133,7 @@ export async function chatRoutes(app: FastifyInstance) {
         scriptInstructions + `\n\n` +
         skillsBlock;
 
-      // Merge into the existing first system message, or prepend one if none exists.
-      if (outgoingMessages.length > 0 && outgoingMessages[0].role === "system") {
-        outgoingMessages[0] = {
-          ...outgoingMessages[0],
-          content: outgoingMessages[0].content + "\n\n" + skillContent,
-        };
-      } else {
-        outgoingMessages.unshift({ role: "system", content: skillContent });
-      }
+      appendSystemBlock(skillContent);
 
       // Anchor the model to the actual user request by inserting a reminder system message
       // immediately before the first user message. This prevents the model from treating
@@ -1144,22 +1155,13 @@ export async function chatRoutes(app: FastifyInstance) {
 
     if (toolsEnabled || builtInTools.some((t) => t.category === "artifact")) {
       const artifactGuidance =
-        `ARTIFACT TOOLS:\n` +
-        `When generating HTML web pages, SVG graphics, scripts, or markdown documents, call the \`create_artifact\` tool function. Only call \`create_artifact\` once per artifact.\n` +
-        `Do NOT print raw standalone HTML or SVG code inside standard markdown code blocks unless the user explicitly instructs you to do so.\n` +
-        `CRITICAL: In your visible text response, you MUST output the placeholder \`[artifact: filename]\` exactly where you want the artifact card to appear.\n` +
-        `Example: "Here is the interactive chart you requested:\\n[artifact: chart.svg]\\nYou can click it to view the full preview."\n` +
-        `To re-display an existing artifact, use the placeholder \`[present: filename]\` and call the \`present_artifact\` tool. Do not call the \`present_artifact\` tool if the \`create_artifact\` tool has already been used in the same turn.\n` +
-        `To edit artifacts, use \`edit_file\` or \`write_file\`. To inspect files, use \`list_files\`, \`read_file\`, or \`find_in_file\`.`;
+        `ARTIFACT & FILE TOOLS:\n` +
+        `- When generating HTML web pages, SVG graphics, scripts, or standalone markdown documents, call \`create_artifact\` (once per artifact) instead of printing raw standalone HTML or SVG inside markdown code blocks unless explicitly requested.\n` +
+        `- CRITICAL: In your visible text response, you MUST include \`[artifact: filename]\` where the newly created artifact card should appear (example: "Here is the chart:\\n[artifact: chart.svg]").\n` +
+        `- To re-display an existing artifact, call \`present_artifact\` and include \`[present: filename]\` in your reply (never call \`present_artifact\` if \`create_artifact\` was already called for it in the same turn).\n` +
+        `- To inspect workspace artifacts or user uploads, use \`list_files\`, \`read_file\`, and \`find_in_file\`. To update an existing artifact, use \`edit_file\` (matching raw content only; NEVER include \`N | \` line-number prefixes from \`read_file\`) or \`write_file\`.`;
 
-      if (outgoingMessages.length > 0 && outgoingMessages[0].role === "system") {
-        outgoingMessages[0] = {
-          ...outgoingMessages[0],
-          content: outgoingMessages[0].content + "\n\n" + artifactGuidance,
-        };
-      } else {
-        outgoingMessages.unshift({ role: "system", content: artifactGuidance });
-      }
+      appendSystemBlock(artifactGuidance);
     }
 
     const { model: _incomingModel, conversationId: _incomingConvId, userMessageId: _umId, userParentId: _upId, assistantMessageId: _amId, attachments: _attachments, messages: _msgs, ...rest } = body;
@@ -1514,6 +1516,14 @@ export async function chatRoutes(app: FastifyInstance) {
 
         if (trimResult.trimmed) {
           console.log(`[chat] Trimmed context (${effectiveOverflowBehavior}): dropped ${trimResult.droppedMessageCount} messages in ${trimResult.droppedGroupCount} groups.`);
+          const noticeTag = `<context_notice>${JSON.stringify({
+            kind: "trimmed",
+            message: `Trimmed ${trimResult.droppedMessageCount} older message(s) (${effectiveOverflowBehavior}) to fit context window.`,
+          })}</context_notice>\n\n`;
+          if (!assistantContent.includes(noticeTag)) {
+            assistantContent = noticeTag + assistantContent;
+            currentActiveStream.assistantContent = assistantContent;
+          }
           broadcastChunk(JSON.stringify({
             type: "context_trimmed",
             behavior: effectiveOverflowBehavior,
@@ -1532,6 +1542,14 @@ export async function chatRoutes(app: FastifyInstance) {
             .filter(Boolean);
           console.log(`[chat] Pruned ${trimResult.prunedToolCount} tool/skill schema(s) to fit prompt budget: ${droppedNames.join(", ")}`);
           toolDefinitions = trimResult.toolDefinitions;
+          const noticeTag = `<context_notice>${JSON.stringify({
+            kind: "tools_pruned",
+            message: `Pruned ${trimResult.prunedToolCount} tool(s) to fit context window: ${droppedNames.join(", ")}.`,
+          })}</context_notice>\n\n`;
+          if (!assistantContent.includes(noticeTag)) {
+            assistantContent = noticeTag + assistantContent;
+            currentActiveStream.assistantContent = assistantContent;
+          }
           broadcastChunk(JSON.stringify({
             type: "tools_pruned",
             prunedCount: trimResult.prunedToolCount,

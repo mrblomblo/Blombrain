@@ -52,6 +52,8 @@ function rowToSummary(row: ConversationRow): ConversationSummary {
         : true,
     isPinned: Boolean(row.is_pinned),
     isArchived: Boolean(row.is_archived),
+    folder: row.folder ?? null,
+    folderId: row.folder_id ?? null,
     memoryEnabled:
       row.memory_enabled !== undefined && row.memory_enabled !== null
         ? Boolean(row.memory_enabled)
@@ -125,8 +127,8 @@ const getMessages = db.prepare<[string], MessageRow>(
 );
 
 const insertConversation = db.prepare(
-  `INSERT INTO conversations (id, title, model, created_at, updated_at, tools_enabled)
-   VALUES (@id, @title, @model, @createdAt, @updatedAt, @toolsEnabled)`,
+  `INSERT INTO conversations (id, title, model, created_at, updated_at, tools_enabled, folder_id, folder)
+   VALUES (@id, @title, @model, @createdAt, @updatedAt, @toolsEnabled, @folderId, @folder)`,
 );
 
 const updateConversationMeta = db.prepare(
@@ -217,10 +219,26 @@ export async function conversationsRoutes(app: FastifyInstance) {
 
   /** POST /api/conversations -- create a new conversation. */
   app.post("/api/conversations", async (req: FastifyRequest, reply: FastifyReply) => {
-    const body = (req.body ?? {}) as { title?: string; model?: string; toolsEnabled?: boolean };
+    const body = (req.body ?? {}) as {
+      title?: string;
+      model?: string;
+      toolsEnabled?: boolean;
+      folderId?: string | null;
+    };
     const now = Date.now();
     const id = crypto.randomUUID();
     const toolsEnabled = body.toolsEnabled !== undefined ? (body.toolsEnabled ? 1 : 0) : 1;
+    let folderId: string | null = null;
+    let folderName: string | null = null;
+    if (body.folderId) {
+      const folderRow = db
+        .prepare<[string], { id: string; name: string }>("SELECT id, name FROM folders WHERE id = ?")
+        .get(body.folderId);
+      if (folderRow) {
+        folderId = folderRow.id;
+        folderName = folderRow.name;
+      }
+    }
     insertConversation.run({
       id,
       title: body.title ?? "New conversation",
@@ -228,6 +246,8 @@ export async function conversationsRoutes(app: FastifyInstance) {
       createdAt: now,
       updatedAt: now,
       toolsEnabled,
+      folderId,
+      folder: folderName,
     });
     const row = getConversation.get(id)!;
     return reply.code(201).send(rowToSummary(row));
@@ -413,6 +433,48 @@ export async function conversationsRoutes(app: FastifyInstance) {
       db.prepare("UPDATE conversations SET is_archived = ? WHERE id = ?").run(body.isArchived ? 1 : 0, id);
     }
 
+    if (body.folderId !== undefined) {
+      if (body.folderId === null || body.folderId === "") {
+        db.prepare("UPDATE conversations SET folder_id = NULL, folder = NULL WHERE id = ?").run(id);
+      } else {
+        const folderRow = db
+          .prepare<[string], { id: string; name: string }>("SELECT id, name FROM folders WHERE id = ?")
+          .get(body.folderId);
+        if (!folderRow) {
+          return reply.code(404).send({ error: { message: `Folder "${body.folderId}" not found.` } });
+        }
+        db.prepare("UPDATE conversations SET folder_id = ?, folder = ? WHERE id = ?").run(
+          folderRow.id,
+          folderRow.name,
+          id
+        );
+      }
+    } else if (body.folder !== undefined) {
+      const normalized = typeof body.folder === "string" ? body.folder.trim() : "";
+      if (!normalized) {
+        db.prepare("UPDATE conversations SET folder_id = NULL, folder = NULL WHERE id = ?").run(id);
+      } else {
+        const existingFolder = db
+          .prepare<[string], { id: string; name: string }>(
+            "SELECT id, name FROM folders WHERE LOWER(name) = LOWER(?)"
+          )
+          .get(normalized);
+        const targetFolderId = existingFolder?.id ?? crypto.randomUUID();
+        const targetFolderName = existingFolder?.name ?? normalized;
+        if (!existingFolder) {
+          const ts = Date.now();
+          db.prepare(
+            "INSERT INTO folders (id, name, description, is_expanded, created_at, updated_at) VALUES (?, ?, '', 1, ?, ?)"
+          ).run(targetFolderId, targetFolderName, ts, ts);
+        }
+        db.prepare("UPDATE conversations SET folder_id = ?, folder = ? WHERE id = ?").run(
+          targetFolderId,
+          targetFolderName,
+          id
+        );
+      }
+    }
+
     if (body.memoryEnabled !== undefined) {
       db.prepare("UPDATE conversations SET memory_enabled = ? WHERE id = ?").run(
         body.memoryEnabled === null ? null : body.memoryEnabled ? 1 : 0,
@@ -452,6 +514,84 @@ export async function conversationsRoutes(app: FastifyInstance) {
     deleteConversation.run(id);
 
     return reply.code(204).send();
+  });
+
+  /** POST /api/conversations/batch -- bulk archive, unarchive, move to folder, or delete conversations. */
+  app.post("/api/conversations/batch", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = (req.body ?? {}) as {
+      ids?: string[];
+      action?: "archive" | "unarchive" | "delete" | "set_folder";
+      folder?: string | null;
+      folderId?: string | null;
+    };
+    const ids = Array.isArray(body.ids)
+      ? Array.from(new Set(body.ids.filter((id): id is string => typeof id === "string" && id.trim().length > 0)))
+      : [];
+    if (ids.length === 0) {
+      return reply.code(400).send({ error: { message: "No conversation IDs provided." } });
+    }
+    const action = body.action;
+    if (action === "delete") {
+      for (const id of ids) {
+        removeConversationUploads(id);
+        deleteConversation.run(id);
+      }
+      return { updated: ids.length };
+    }
+    const placeholders = ids.map(() => "?").join(",");
+    if (action === "archive") {
+      db.prepare(`UPDATE conversations SET is_archived = 1 WHERE id IN (${placeholders})`).run(...ids);
+      return { updated: ids.length };
+    }
+    if (action === "unarchive") {
+      db.prepare(`UPDATE conversations SET is_archived = 0 WHERE id IN (${placeholders})`).run(...ids);
+      return { updated: ids.length };
+    }
+    if (action === "set_folder") {
+      if (body.folderId !== undefined) {
+        if (!body.folderId) {
+          db.prepare(`UPDATE conversations SET folder_id = NULL, folder = NULL WHERE id IN (${placeholders})`).run(...ids);
+        } else {
+          const folderRow = db
+            .prepare<[string], { id: string; name: string }>("SELECT id, name FROM folders WHERE id = ?")
+            .get(body.folderId);
+          if (!folderRow) {
+            return reply.code(404).send({ error: { message: `Folder "${body.folderId}" not found.` } });
+          }
+          db.prepare(`UPDATE conversations SET folder_id = ?, folder = ? WHERE id IN (${placeholders})`).run(
+            folderRow.id,
+            folderRow.name,
+            ...ids
+          );
+        }
+        return { updated: ids.length };
+      }
+      const normalized = typeof body.folder === "string" ? body.folder.trim() : "";
+      if (!normalized) {
+        db.prepare(`UPDATE conversations SET folder_id = NULL, folder = NULL WHERE id IN (${placeholders})`).run(...ids);
+      } else {
+        const existingFolder = db
+          .prepare<[string], { id: string; name: string }>(
+            "SELECT id, name FROM folders WHERE LOWER(name) = LOWER(?)"
+          )
+          .get(normalized);
+        const targetFolderId = existingFolder?.id ?? crypto.randomUUID();
+        const targetFolderName = existingFolder?.name ?? normalized;
+        if (!existingFolder) {
+          const ts = Date.now();
+          db.prepare(
+            "INSERT INTO folders (id, name, description, is_expanded, created_at, updated_at) VALUES (?, ?, '', 1, ?, ?)"
+          ).run(targetFolderId, targetFolderName, ts, ts);
+        }
+        db.prepare(`UPDATE conversations SET folder_id = ?, folder = ? WHERE id IN (${placeholders})`).run(
+          targetFolderId,
+          targetFolderName,
+          ...ids
+        );
+      }
+      return { updated: ids.length };
+    }
+    return reply.code(400).send({ error: { message: `Invalid batch action "${String(action)}".` } });
   });
 
   /** PATCH /api/conversations/:convId/messages/:msgId -- update message content & attachments. */

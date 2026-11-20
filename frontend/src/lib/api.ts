@@ -7,6 +7,7 @@ import type {
   ChatMessage,
   ConversationSummary,
   ConversationDetail,
+  FolderInfo,
   MessageOut,
   ModelInfo,
   AttachmentOut,
@@ -354,6 +355,13 @@ export async function deleteUpload(id: string): Promise<void> {
 export function serveUploadUrl(id: string, download = false): string {
   return `/api/uploads/${encodeURIComponent(id)}${download ? "?download=1" : ""}`;
 }
+export async function fetchUploadViewUrl(id: string): Promise<string> {
+  const res = await apiFetch(`/api/uploads/${encodeURIComponent(id)}/view-token`, {
+    method: "POST",
+  });
+  const data = await jsonOrThrow<{ token: string; url: string }>(res);
+  return new URL(data.url, window.location.origin).href;
+}
 export async function fetchUploadText(id: string): Promise<{
   text: string;
   isBinary: boolean;
@@ -366,6 +374,37 @@ export async function fetchUploadText(id: string): Promise<{
 // ---------------------------------------------------------------------------
 // Conversations
 // ---------------------------------------------------------------------------
+export async function fetchFolders(): Promise<FolderInfo[]> {
+  const res = await apiFetch("/api/folders");
+  return jsonOrThrow<FolderInfo[]>(res);
+}
+export async function createFolder(body: { name: string; description?: string }): Promise<FolderInfo> {
+  const res = await apiFetch("/api/folders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<FolderInfo>(res);
+}
+export async function updateFolder(
+  id: string,
+  patch: { name?: string; description?: string; isExpanded?: boolean },
+): Promise<FolderInfo> {
+  const res = await apiFetch(`/api/folders/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return jsonOrThrow<FolderInfo>(res);
+}
+export async function deleteFolder(id: string): Promise<void> {
+  const res = await apiFetch(`/api/folders/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
+  }
+}
+
 export async function fetchConversations(): Promise<ConversationSummary[]> {
   const res = await apiFetch("/api/conversations");
   return jsonOrThrow<ConversationSummary[]>(res);
@@ -374,7 +413,7 @@ export async function fetchConversation(id: string): Promise<ConversationDetail>
   const res = await apiFetch(`/api/conversations/${encodeURIComponent(id)}`);
   return jsonOrThrow<ConversationDetail>(res);
 }
-export async function createConversation(opts?: { title?: string; model?: string; toolsEnabled?: boolean }): Promise<ConversationSummary> {
+export async function createConversation(opts?: { title?: string; model?: string; toolsEnabled?: boolean; folderId?: string | null }): Promise<ConversationSummary> {
   const res = await apiFetch("/api/conversations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -389,6 +428,8 @@ export async function updateConversation(
     model?: string;
     isPinned?: boolean;
     isArchived?: boolean;
+    folder?: string | null;
+    folderId?: string | null;
     memoryEnabled?: boolean | null;
     systemPromptOverride?: string | null;
     samplingOverrides?: ConversationSamplingOverrides | null;
@@ -440,8 +481,30 @@ export async function deleteConversation(id: string): Promise<void> {
   if (typeof localStorage !== "undefined") {
     try {
       localStorage.removeItem(`blombrain_branches_${id}`);
+      localStorage.removeItem(`blombrain_draft_${id}`);
     } catch { }
   }
+}
+export async function batchUpdateConversations(
+  ids: string[],
+  action: "archive" | "unarchive" | "delete" | "set_folder",
+  folderId?: string | null,
+): Promise<{ updated: number }> {
+  const res = await apiFetch("/api/conversations/batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, action, folderId }),
+  });
+  const result = await jsonOrThrow<{ updated: number }>(res);
+  if (action === "delete" && typeof localStorage !== "undefined") {
+    for (const id of ids) {
+      try {
+        localStorage.removeItem(`blombrain_branches_${id}`);
+        localStorage.removeItem(`blombrain_draft_${id}`);
+      } catch { }
+    }
+  }
+  return result;
 }
 export async function patchMessage(convId: string, msgId: string, content: string, attachmentIds?: string[]): Promise<MessageOut> {
   const res = await apiFetch(`/api/conversations/${encodeURIComponent(convId)}/messages/${encodeURIComponent(msgId)}`, {

@@ -9,6 +9,7 @@ import {
   extractDocumentTextAsync,
   isCodeOrTextFilename,
 } from "../services/documentExtractor.js";
+import { createUploadViewToken } from "../services/uploadTokens.js";
 
 export const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -211,6 +212,24 @@ export async function uploadsRoutes(app: FastifyInstance) {
 
     const extracted = await extractDocumentTextAsync(row.disk_path, row.original_name, row.mime_type);
     return reply.send(extracted);
+  });
+
+  // Generate a temporary view token to open raw file in external browser
+  app.post<{ Params: { id: string } }>("/api/uploads/:id/view-token", async (req, reply) => {
+    const { id } = req.params;
+    const row = db.prepare(`SELECT * FROM attachments WHERE id = ?`).get(id) as AttachmentRow | undefined;
+    if (!row) {
+      return reply.status(404).send({ error: "Attachment not found" });
+    }
+    if (!fs.existsSync(row.disk_path)) {
+      return reply.status(404).send({ error: "File missing on disk" });
+    }
+
+    const token = createUploadViewToken(id);
+    return reply.send({
+      token,
+      url: `/api/uploads/${encodeURIComponent(id)}?token=${encodeURIComponent(token)}`,
+    });
   });
 
   // Serve a file

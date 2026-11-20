@@ -11,6 +11,7 @@ import { backendsRoutes } from "./routes/backends.js";
 import { modelsRoutes } from "./routes/models.js";
 import { chatRoutes } from "./routes/chat.js";
 import { conversationsRoutes } from "./routes/conversations.js";
+import { foldersRoutes } from "./routes/folders.js";
 import { uploadsRoutes } from "./routes/uploads.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { mcpRoutes } from "./routes/mcp.js";
@@ -20,6 +21,7 @@ import { authRoutes } from "./routes/auth.js";
 import { memoriesRoutes } from "./routes/memories.js";
 import { backupRoutes } from "./routes/backup.js";
 import { speechRoutes } from "./routes/speech.js";
+import { verifyUploadViewToken } from "./services/uploadTokens.js";
 
 const LOCAL_ORIGIN_REGEX =
   /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$|^tauri:\/\/localhost$|^https?:\/\/tauri\.localhost$/i;
@@ -53,6 +55,14 @@ export function isLoopbackHost(host: string): boolean {
 function isAllowedLoopbackHostHeader(hostHeader: string | undefined, port: number): boolean {
   if (!hostHeader) return true;
   const normalized = hostHeader.trim().toLowerCase();
+  if (port === 0) {
+    return (
+      normalized.startsWith("127.0.0.1") ||
+      normalized.startsWith("localhost") ||
+      normalized.startsWith("[::1]") ||
+      normalized === "::1"
+    );
+  }
   return (
     normalized === `127.0.0.1:${port}` ||
     normalized === `localhost:${port}` ||
@@ -139,10 +149,31 @@ export async function createBlombrainApp(opts: AppServerOptions): Promise<Fastif
       }
     }
 
+    // Check if this request is authorized by a valid upload view token or launch parameter
+    let isUploadViewAuthorized = false;
+    if (rawUrl.startsWith("/api/uploads/")) {
+      const qIdx = rawUrl.indexOf("?");
+      if (qIdx !== -1) {
+        const params = new URLSearchParams(rawUrl.slice(qIdx + 1));
+        const viewToken = params.get("token");
+        const suppliedLaunch = params.get("launch");
+        if (suppliedLaunch && launchSecret && safeTokenEqual(suppliedLaunch, launchSecret)) {
+          isUploadViewAuthorized = true;
+        } else if (viewToken) {
+          const pathOnly = rawUrl.slice(0, qIdx);
+          const match = pathOnly.match(/^\/api\/uploads\/([^/?#]+)/);
+          const uploadId = match ? decodeURIComponent(match[1]) : "";
+          if (uploadId && verifyUploadViewToken(viewToken, uploadId)) {
+            isUploadViewAuthorized = true;
+          }
+        }
+      }
+    }
+
     if (!rawUrl.startsWith("/api")) return;
     if (rawUrl === "/api/health" || rawUrl.startsWith("/api/health?")) return;
 
-    if (launchSecret) {
+    if (launchSecret && !isUploadViewAuthorized) {
       const launchCookie = req.cookies?.blombrain_launch;
       if (!launchCookie || !safeTokenEqual(launchCookie, desktopCookieToken)) {
         return reply.code(401).send({ error: { message: "Desktop launch session required" } });
@@ -151,6 +182,18 @@ export async function createBlombrainApp(opts: AppServerOptions): Promise<Fastif
 
     if (rawUrl.startsWith("/api/auth/")) return;
     if (rawUrl.startsWith("/api/instance-info")) return;
+
+    if (isUploadViewAuthorized) {
+      if (launchSecret && desktopCookieToken) {
+        reply.setCookie("blombrain_launch", desktopCookieToken, {
+          path: "/",
+          httpOnly: true,
+          sameSite: "lax",
+          maxAge: 60 * 60 * 24 * 30,
+        });
+      }
+      return;
+    }
 
     const row = db
       .prepare<[string], { password_hash: string | null }>(
@@ -186,6 +229,7 @@ export async function createBlombrainApp(opts: AppServerOptions): Promise<Fastif
   await app.register(modelsRoutes);
   await app.register(chatRoutes);
   await app.register(conversationsRoutes);
+  await app.register(foldersRoutes);
   await app.register(uploadsRoutes);
   await app.register(settingsRoutes);
   await app.register(mcpRoutes);

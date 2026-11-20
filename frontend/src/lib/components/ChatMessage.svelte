@@ -5,7 +5,7 @@
   import { encodeToWav } from "../audio";
   import { chatStore } from "../stores/chat.svelte";
   import { settingsStore } from "../stores/settings.svelte";
-  import { Paperclip, Check, Send as SendIcon, X, Info } from "@lucide/svelte";
+  import { Paperclip, Check, Send as SendIcon, X, Info, Scissors, AlertTriangle } from "@lucide/svelte";
   import ThinkingBlock from "./ThinkingBlock.svelte";
   import ToolTranscriptBlock from "./ToolTranscriptBlock.svelte";
   import MessageTimestamp from "./MessageTimestamp.svelte";
@@ -607,7 +607,20 @@
           <p class="font-medium text-danger">{message.error}</p>
         {:else if parsedSegments.length > 0}
           {#each parsedSegments as seg (seg.id)}
-            {#if seg.type === "think"}
+            {#if seg.type === "notice" && seg.content}
+              <div
+                class="mb-2 flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs select-none {seg.noticeKind === 'tools_pruned'
+                  ? 'border-warning/35 bg-warning/10 text-warning'
+                  : 'border-line/70 bg-bg-inset/70 text-fg-muted'}"
+              >
+                {#if seg.noticeKind === "tools_pruned"}
+                  <AlertTriangle size={12} class="shrink-0" />
+                {:else}
+                  <Scissors size={12} class="shrink-0" />
+                {/if}
+                <span>{seg.content}</span>
+              </div>
+            {:else if seg.type === "think"}
               <ThinkingBlock
                 thinkingContent={seg.content}
                 thinkingDone={seg.isDone}

@@ -94,7 +94,7 @@ function formatCodeLines(highlightedHtml: string): string {
       const lineWithTags = `${prepended}${line}${appended}`;
       const indented = preserveLeadingIndent(lineWithTags);
 
-      return `<div class="flex w-full min-w-full hover:bg-bg-hover/50"><span class="shrink-0 text-right pr-2 mr-3.5 border-r border-line/50 text-fg-muted/40 select-none w-10 font-mono text-[11px] py-0.5">${i + 1}</span><span class="flex-1 min-w-0 whitespace-pre-wrap wrap-anywhere pr-4 text-fg font-mono py-0.5">${indented || " "}</span></div>`;
+      return `<div class="flex w-full min-w-full hover:bg-bg-hover/50"><span class="shrink-0 text-right pr-2 mr-3.5 border-r border-line/50 text-fg-muted/40 select-none w-10 font-mono text-[11px] py-0.5">${i + 1}</span><span class="code-line-text flex-1 min-w-0 whitespace-pre-wrap wrap-anywhere pr-4 text-fg font-mono py-0.5">${indented || " "}</span></div>`;
     })
     .join("\n");
 }
@@ -245,30 +245,52 @@ marked.use({
       }
 
       const formattedLines = formatCodeLines(highlightedCode);
+      const lineCount = text.split("\n").length;
 
       return `<div class="code-block-wrapper relative my-4 rounded-md border border-line shadow-sm group" data-code="${encodeBase64(text)}">
-  <div style="position:absolute;inset:0 0 4.5rem 0;z-index:10;pointer-events:none;">
+  <div class="code-header-overlay" style="position:absolute;inset:0 0 4.5rem 0;z-index:10;pointer-events:none;">
     <div class="code-sticky-sentinel" aria-hidden="true" style="height:1px;margin-bottom:-1px;pointer-events:none;visibility:hidden;"></div>
-    <div class="code-block-header sticky top-0 pl-4 pr-1.5 py-1.5 rounded-t-md border-b border-line/50 bg-bg text-[11px] font-mono text-fg-muted flex items-center justify-between" style="pointer-events:auto;">
-      <span>${displayLang}</span>
-      <button
-        type="button"
-        class="copy-code-btn flex items-center gap-1.5 rounded-sm border border-line bg-bg-elevated px-2 py-0.5 text-[11px] font-mono font-medium text-fg-muted transition-all hover:bg-bg-hover hover:text-fg shadow-xs"
-        aria-label="Copy code block"
-      >
-        <svg class="copy-icon w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
-          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-        </svg>
-        <svg class="check-icon hidden w-3.5 h-3.5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="20 6 9 17 4 12"/>
-        </svg>
-        <span class="btn-text">Copy</span>
-      </button>
+    <div class="code-block-header sticky top-0 pl-4 pr-1.5 py-1.5 rounded-t-md border-b border-line/50 bg-bg text-[11px] font-mono text-fg-muted flex items-center justify-between gap-2" style="pointer-events:auto;">
+      <span class="truncate">${displayLang} <span class="text-fg-subtle/70">(${lineCount} line${lineCount === 1 ? "" : "s"})</span></span>
+      <div class="flex items-center gap-1 shrink-0">
+        <button
+          type="button"
+          class="toggle-wrap-code-btn flex items-center gap-1 rounded-sm border border-line bg-bg-elevated px-2 py-0.5 text-[11px] font-mono font-medium text-fg-muted transition-all hover:bg-bg-hover hover:text-fg shadow-xs cursor-pointer"
+          aria-label="Toggle line wrap"
+          title="Toggle line wrap / horizontal scroll"
+        >
+          <span class="wrap-btn-text">Scroll</span>
+        </button>
+        <button
+          type="button"
+          class="toggle-collapse-code-btn flex items-center gap-1 rounded-sm border border-line bg-bg-elevated px-2 py-0.5 text-[11px] font-mono font-medium text-fg-muted transition-all hover:bg-bg-hover hover:text-fg shadow-xs cursor-pointer"
+          aria-label="Collapse or expand code block"
+          title="Collapse or expand code block"
+        >
+          <span class="collapse-btn-text">Collapse</span>
+        </button>
+        <button
+          type="button"
+          class="copy-code-btn flex items-center gap-1.5 rounded-sm border border-line bg-bg-elevated px-2 py-0.5 text-[11px] font-mono font-medium text-fg-muted transition-all hover:bg-bg-hover hover:text-fg shadow-xs cursor-pointer"
+          aria-label="Copy code block"
+        >
+          <svg class="copy-icon w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+          </svg>
+          <svg class="check-icon hidden w-3.5 h-3.5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          <span class="btn-text">Copy</span>
+        </button>
+      </div>
     </div>
   </div>
-  <div class="overflow-x-auto rounded-md bg-bg-elevated font-mono text-xs leading-relaxed" style="padding-top:38px;">
+  <div class="code-block-body overflow-x-auto rounded-md bg-bg-elevated font-mono text-xs leading-relaxed" style="padding-top:38px;">
     ${formattedLines}
+  </div>
+  <div class="code-collapsed-banner hidden px-4 py-2 text-[11px] font-mono text-fg-subtle bg-bg-elevated rounded-b-md" style="margin-top:34px;">
+    Code block collapsed (${lineCount} line${lineCount === 1 ? "" : "s"})
   </div>
 </div>`;
     },
@@ -367,5 +389,23 @@ export function renderMarkdown(
   } catch (err) {
     console.error("[markdown] parse error:", err);
     return escapeHtml(content);
+  }
+}
+
+export function markdownToPlainText(markdown: string): string {
+  if (!markdown) return "";
+  if (typeof document === "undefined") {
+    return markdown;
+  }
+  try {
+    const plainMarked = new Marked({ gfm: true, breaks: true });
+    const rawHtml = plainMarked.parse(markdown) as string;
+    const cleanHtml = DOMPurify.sanitize(rawHtml);
+    const container = document.createElement("div");
+    container.innerHTML = cleanHtml;
+    const text = container.innerText || container.textContent || "";
+    return text.replace(/\n{3,}/g, "\n\n").trim();
+  } catch {
+    return markdown;
   }
 }

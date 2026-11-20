@@ -367,6 +367,7 @@
       },
       content: value,
       onUpdate: ({ editor }) => {
+        if (suppressTriggerEvents) return;
         checkAlerts(editor);
         const rawMd =
           (editor.storage as any).markdown?.getMarkdown() ?? editor.getText();
@@ -412,7 +413,11 @@
         } finally {
           suppressTriggerEvents = false;
         }
-        updateTriggerState(ed);
+        if (ed.isFocused) {
+          updateTriggerState(ed);
+        } else {
+          emitTrigger(null);
+        }
       }
     });
   });
