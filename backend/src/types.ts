@@ -125,11 +125,17 @@ export interface ConversationSummaryOverrides {
   reasoningEffort?: string | null;
 }
 
+export type WorkspaceSource = "conversation" | "folder" | null;
+export type WorkspaceApprovalMode = "auto" | "ask";
+
 export interface FolderRow {
   id: string;
   name: string;
   description: string;
   is_expanded: number;
+  workspace_path?: string | null;
+  workspace_write_enabled?: number;
+  workspace_approval_mode?: string;
   created_at: number;
   updated_at: number;
 }
@@ -139,6 +145,9 @@ export interface FolderOut {
   name: string;
   description: string;
   isExpanded: boolean;
+  workspacePath: string | null;
+  workspaceWriteEnabled: boolean;
+  workspaceApprovalMode?: WorkspaceApprovalMode;
   createdAt: number;
   updatedAt: number;
 }
@@ -157,6 +166,9 @@ export interface ConversationRow {
   memory_enabled?: number | null;
   system_prompt_override?: string | null;
   sampling_overrides?: string | null;
+  workspace_path?: string | null;
+  workspace_write_enabled?: number;
+  workspace_approval_mode?: string;
 }
 
 export interface MessageRow {
@@ -188,6 +200,13 @@ export interface ConversationSummary {
   memoryEnabled?: boolean | null;
   systemPromptOverride?: string | null;
   samplingOverrides?: ConversationSummaryOverrides | null;
+  workspacePath?: string | null;
+  workspaceWriteEnabled?: boolean;
+  workspaceApprovalMode?: WorkspaceApprovalMode;
+  effectiveWorkspacePath?: string | null;
+  effectiveWorkspaceWriteEnabled?: boolean;
+  effectiveWorkspaceApprovalMode?: WorkspaceApprovalMode;
+  workspaceSource?: WorkspaceSource;
 }
 
 /** Full conversation with messages, sent on GET /api/conversations/:id */
@@ -260,7 +279,7 @@ export interface ToolExecutionEvent {
   args: Record<string, any>;
   result?: string;
   error?: string;
-  status: "executing" | "completed" | "error" | "polling" | "cancelled";
+  status: "executing" | "completed" | "error" | "polling" | "cancelled" | "awaiting_approval";
   progress?: number;
   total?: number;
   message?: string;
@@ -268,6 +287,73 @@ export interface ToolExecutionEvent {
   elapsedMs?: number;
   attempts?: number;
   cacheable?: boolean;
+  checkpointId?: string;
+  reverted?: boolean;
+  diffPreview?: string;
+  commandPreview?: string;
+  cwd?: string;
+}
+
+export interface WorkspaceCheckpointRow {
+  id: string;
+  conversation_id: string;
+  tool_call_id: string | null;
+  tool_name: string;
+  workspace_root: string;
+  rel_path: string;
+  dest_rel_path: string | null;
+  action: "create" | "overwrite" | "edit" | "delete" | "rename";
+  previous_content: string | null;
+  new_content: string | null;
+  is_reverted: number;
+  created_at: number;
+}
+
+export interface WorkspaceCheckpointOut {
+  id: string;
+  conversationId: string;
+  toolCallId: string | null;
+  toolName: string;
+  workspaceRoot: string;
+  relPath: string;
+  destRelPath: string | null;
+  action: "create" | "overwrite" | "edit" | "delete" | "rename";
+  isReverted: boolean;
+  createdAt: number;
+  diffPreview?: string;
+}
+
+export interface WorkspaceGitFileStatus {
+  path: string;
+  code: string; // e.g. "M", "A", "D", "R", "?"
+  staged: boolean;
+  unstaged: boolean;
+}
+
+export interface WorkspaceGitStatusOut {
+  isGitRepo: boolean;
+  branch: string | null;
+  ahead: number;
+  behind: number;
+  files: WorkspaceGitFileStatus[];
+}
+
+export interface PromptTemplateRow {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface PromptTemplateOut {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /** Message shape sent to the frontend. */
@@ -301,6 +387,9 @@ export interface ConversationPatchBody {
   memoryEnabled?: boolean | null;
   systemPromptOverride?: string | null;
   samplingOverrides?: ConversationSummaryOverrides | null;
+  workspacePath?: string | null;
+  workspaceWriteEnabled?: boolean;
+  workspaceApprovalMode?: WorkspaceApprovalMode;
 }
 
 // ---------------------------------------------------------------------------
@@ -356,7 +445,7 @@ export interface McpToolOut {
 }
 
 export interface SlashToolSelection {
-  kind: "builtin_tool" | "skill" | "mcp_server" | "mcp_tool";
+  kind: "builtin_tool" | "skill" | "mcp_server" | "mcp_tool" | "prompt_template";
   id: string;
   name: string;
 }

@@ -31,6 +31,13 @@ import type {
   ArtifactInfo,
   SpeechProviderType,
   SpeechDeviceType,
+  WorkspaceApprovalMode,
+  WorkspaceCheckpointInfo,
+  WorkspaceFilesResponse,
+  WorkspaceFilePreviewResponse,
+  WorkspaceGitStatusResponse,
+  WorkspaceGitDiffResponse,
+  PromptTemplateInfo,
 } from "./types";
 export type {
   CtxOverflowBehavior,
@@ -371,6 +378,18 @@ export async function fetchUploadText(id: string): Promise<{
   return jsonOrThrow(res);
 }
 
+export function hasNativeWorkspacePicker(): boolean {
+  return typeof window !== "undefined" && typeof (window as any).__TAURI_INTERNALS__?.invoke === "function";
+}
+
+export async function pickNativeWorkspaceDirectory(): Promise<string | null> {
+  const invoke =
+    typeof window !== "undefined" ? (window as any).__TAURI_INTERNALS__?.invoke : null;
+  if (!invoke) return null;
+  const chosen = await invoke("pick_workspace_directory");
+  return typeof chosen === "string" && chosen.trim() ? chosen.trim() : null;
+}
+
 // ---------------------------------------------------------------------------
 // Conversations
 // ---------------------------------------------------------------------------
@@ -378,7 +397,13 @@ export async function fetchFolders(): Promise<FolderInfo[]> {
   const res = await apiFetch("/api/folders");
   return jsonOrThrow<FolderInfo[]>(res);
 }
-export async function createFolder(body: { name: string; description?: string }): Promise<FolderInfo> {
+export async function createFolder(body: {
+  name: string;
+  description?: string;
+  workspacePath?: string | null;
+  workspaceWriteEnabled?: boolean;
+  workspaceApprovalMode?: WorkspaceApprovalMode;
+}): Promise<FolderInfo> {
   const res = await apiFetch("/api/folders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -388,7 +413,14 @@ export async function createFolder(body: { name: string; description?: string })
 }
 export async function updateFolder(
   id: string,
-  patch: { name?: string; description?: string; isExpanded?: boolean },
+  patch: {
+    name?: string;
+    description?: string;
+    isExpanded?: boolean;
+    workspacePath?: string | null;
+    workspaceWriteEnabled?: boolean;
+    workspaceApprovalMode?: WorkspaceApprovalMode;
+  },
 ): Promise<FolderInfo> {
   const res = await apiFetch(`/api/folders/${encodeURIComponent(id)}`, {
     method: "PATCH",
@@ -413,7 +445,15 @@ export async function fetchConversation(id: string): Promise<ConversationDetail>
   const res = await apiFetch(`/api/conversations/${encodeURIComponent(id)}`);
   return jsonOrThrow<ConversationDetail>(res);
 }
-export async function createConversation(opts?: { title?: string; model?: string; toolsEnabled?: boolean; folderId?: string | null }): Promise<ConversationSummary> {
+export async function createConversation(opts?: {
+  title?: string;
+  model?: string;
+  toolsEnabled?: boolean;
+  folderId?: string | null;
+  workspacePath?: string | null;
+  workspaceWriteEnabled?: boolean;
+  workspaceApprovalMode?: WorkspaceApprovalMode;
+}): Promise<ConversationSummary> {
   const res = await apiFetch("/api/conversations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -433,6 +473,9 @@ export async function updateConversation(
     memoryEnabled?: boolean | null;
     systemPromptOverride?: string | null;
     samplingOverrides?: ConversationSamplingOverrides | null;
+    workspacePath?: string | null;
+    workspaceWriteEnabled?: boolean;
+    workspaceApprovalMode?: WorkspaceApprovalMode;
   },
 ): Promise<ConversationSummary> {
   const res = await apiFetch(`/api/conversations/${encodeURIComponent(id)}`, {
@@ -441,6 +484,164 @@ export async function updateConversation(
     body: JSON.stringify(patch),
   });
   return jsonOrThrow<ConversationSummary>(res);
+}
+export async function fetchConversationWorkspaceFiles(
+  conversationId: string,
+): Promise<WorkspaceFilesResponse> {
+  const res = await apiFetch(
+    `/api/conversations/${encodeURIComponent(conversationId)}/workspace/files`,
+  );
+  return jsonOrThrow<WorkspaceFilesResponse>(res);
+}
+export async function fetchConversationWorkspaceFile(
+  conversationId: string,
+  filePath: string,
+): Promise<WorkspaceFilePreviewResponse> {
+  const params = new URLSearchParams({ path: filePath });
+  const res = await apiFetch(
+    `/api/conversations/${encodeURIComponent(conversationId)}/workspace/file?${params.toString()}`,
+  );
+  return jsonOrThrow<WorkspaceFilePreviewResponse>(res);
+}
+export async function fetchWorkspaceFilesByPath(
+  workspacePath: string,
+): Promise<WorkspaceFilesResponse> {
+  const params = new URLSearchParams({ path: workspacePath });
+  const res = await apiFetch(`/api/workspace/files?${params.toString()}`);
+  return jsonOrThrow<WorkspaceFilesResponse>(res);
+}
+export async function fetchWorkspaceFileByPath(
+  rootPath: string,
+  filePath: string,
+): Promise<WorkspaceFilePreviewResponse> {
+  const params = new URLSearchParams({ root: rootPath, path: filePath });
+  const res = await apiFetch(`/api/workspace/file?${params.toString()}`);
+  return jsonOrThrow<WorkspaceFilePreviewResponse>(res);
+}
+export async function fetchWorkspaceCheckpoints(
+  conversationId: string,
+  options?: { relPath?: string; includeDiff?: boolean },
+): Promise<WorkspaceCheckpointInfo[]> {
+  const params = new URLSearchParams();
+  if (options?.relPath) params.set("relPath", options.relPath);
+  if (options?.includeDiff) params.set("includeDiff", "1");
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  const res = await apiFetch(
+    `/api/conversations/${encodeURIComponent(conversationId)}/workspace/checkpoints${qs}`,
+  );
+  return jsonOrThrow<WorkspaceCheckpointInfo[]>(res);
+}
+export async function revertWorkspaceCheckpoint(
+  conversationId: string,
+  checkpointId: string,
+): Promise<WorkspaceCheckpointInfo> {
+  const res = await apiFetch(
+    `/api/conversations/${encodeURIComponent(conversationId)}/workspace/checkpoints/${encodeURIComponent(checkpointId)}/revert`,
+    { method: "POST" },
+  );
+  return jsonOrThrow<WorkspaceCheckpointInfo>(res);
+}
+export async function fetchConversationGitStatus(
+  conversationId: string,
+): Promise<WorkspaceGitStatusResponse> {
+  const res = await apiFetch(
+    `/api/conversations/${encodeURIComponent(conversationId)}/workspace/git-status`,
+  );
+  return jsonOrThrow<WorkspaceGitStatusResponse>(res);
+}
+export async function fetchConversationGitDiff(
+  conversationId: string,
+  relPath?: string,
+): Promise<WorkspaceGitDiffResponse> {
+  const qs = relPath ? `?path=${encodeURIComponent(relPath)}` : "";
+  const res = await apiFetch(
+    `/api/conversations/${encodeURIComponent(conversationId)}/workspace/git-diff${qs}`,
+  );
+  return jsonOrThrow<WorkspaceGitDiffResponse>(res);
+}
+export async function fetchWorkspaceGitStatusByPath(
+  workspacePath: string,
+): Promise<WorkspaceGitStatusResponse> {
+  const params = new URLSearchParams({ path: workspacePath });
+  const res = await apiFetch(`/api/workspace/git-status?${params.toString()}`);
+  return jsonOrThrow<WorkspaceGitStatusResponse>(res);
+}
+export async function fetchWorkspaceGitDiffByPath(
+  rootPath: string,
+  relPath?: string,
+): Promise<WorkspaceGitDiffResponse> {
+  const params = new URLSearchParams({ root: rootPath });
+  if (relPath) params.set("path", relPath);
+  const res = await apiFetch(`/api/workspace/git-diff?${params.toString()}`);
+  return jsonOrThrow<WorkspaceGitDiffResponse>(res);
+}
+export async function saveConversationWorkspaceFile(
+  conversationId: string,
+  filePath: string,
+  content: string,
+): Promise<{ path: string; sizeBytes: number; checkpointId?: string; artifactId?: string }> {
+  const res = await apiFetch(
+    `/api/conversations/${encodeURIComponent(conversationId)}/workspace/file`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: filePath, content }),
+    },
+  );
+  return jsonOrThrow(res);
+}
+export async function submitToolApproval(
+  callId: string,
+  approved: boolean,
+  conversationId?: string | null,
+  approveAllInTurn = false,
+): Promise<{ ok: boolean; resolved?: boolean }> {
+  const res = await apiFetch("/api/chat/tool-approval", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ callId, approved, conversationId, approveAllInTurn }),
+  });
+  return jsonOrThrow<{ ok: boolean; resolved?: boolean }>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Prompt Templates (/commands)
+// ---------------------------------------------------------------------------
+export async function fetchPromptTemplates(): Promise<PromptTemplateInfo[]> {
+  const res = await apiFetch("/api/prompt-templates");
+  return jsonOrThrow<PromptTemplateInfo[]>(res);
+}
+export async function createPromptTemplate(body: {
+  name: string;
+  description?: string;
+  content: string;
+}): Promise<PromptTemplateInfo> {
+  const res = await apiFetch("/api/prompt-templates", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<PromptTemplateInfo>(res);
+}
+export async function updatePromptTemplate(
+  id: string,
+  body: { name?: string; description?: string; content?: string },
+): Promise<PromptTemplateInfo> {
+  const res = await apiFetch(`/api/prompt-templates/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<PromptTemplateInfo>(res);
+}
+export async function deletePromptTemplate(id: string): Promise<void> {
+  const res = await apiFetch(`/api/prompt-templates/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok && res.status !== 204) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
+  }
 }
 export async function searchConversations(
   query: string,
@@ -932,6 +1133,18 @@ export async function fetchArtifactContent(artifactId: string): Promise<string> 
     throw new Error(`Failed to fetch artifact content: ${res.statusText}`);
   }
   return res.text();
+}
+
+export async function updateArtifactContent(
+  artifactId: string,
+  content: string,
+): Promise<ArtifactInfo> {
+  const res = await apiFetch(`/api/artifacts/${encodeURIComponent(artifactId)}/content`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  return jsonOrThrow<ArtifactInfo>(res);
 }
 
 // ---------------------------------------------------------------------------

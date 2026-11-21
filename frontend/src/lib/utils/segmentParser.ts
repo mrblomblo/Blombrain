@@ -57,7 +57,7 @@ export function parseMessageSegments(
     fullRaw = `<think>${loadedThinkingContent}</think>\n${fullRaw}`;
   }
 
-  if (!fullRaw.trim()) return [];
+  if (!fullRaw.trim() && (!activeToolExecutions || activeToolExecutions.length === 0)) return [];
 
   const segments: MessageSegment[] = [];
   let pos = 0;
@@ -217,16 +217,23 @@ export function parseMessageSegments(
 
   // Append any live (streaming) tool executions not yet in the raw buffer
   if (activeToolExecutions && activeToolExecutions.length > 0) {
-    const closedCallIds = new Set(
-      segments
-        .filter((s) => s.type === "tool" && s.execution)
-        .map((s) => s.execution!.callId),
-    );
+    const closedToolSegments = segments
+      .filter((s) => s.type === "tool" && s.execution)
+      .map((s) => s.execution!);
 
     for (const exec of activeToolExecutions) {
-      if (closedCallIds.has(exec.callId)) continue;
+      const isActiveStatus =
+        exec.status === "executing" ||
+        exec.status === "awaiting_approval" ||
+        exec.status === "polling";
+      const matchingClosed = closedToolSegments.find((c) => c.callId === exec.callId);
+      // Only skip if this exact callId already closed for the same tool AND is no longer active.
+      // If a backend reused callId across rounds, an active executing/awaiting_approval event must still render!
+      if (matchingClosed && (!isActiveStatus || matchingClosed.toolName === exec.toolName && !isActiveStatus)) {
+        continue;
+      }
       segments.push({
-        id: `tool_live_${exec.callId}`,
+        id: `tool_live_${exec.callId}_${exec.toolName}`,
         type: "tool",
         execution: exec,
       });

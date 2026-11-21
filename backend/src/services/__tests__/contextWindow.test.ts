@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import {
   estimateTokens,
   partitionMessageGroups,
@@ -17,13 +18,14 @@ describe("contextWindow service", () => {
     it("drops built-in tools before MCP tools", () => {
       const tools = [makeTool("execute_skill_script"), makeTool("mcpserver__search")];
       const result = pruneToolDefinitionsToFit(tools, 20, []);
-      expect(result.toolDefinitions.some((t: any) => t.function.name === "execute_skill_script")).toBe(false);
+      assert.equal(result.toolDefinitions.some((t: any) => t.function.name === "execute_skill_script"), false);
     });
 
     it("never drops forced tools while non-forced tools remain", () => {
       const tools = [makeTool("mcpserver__forced"), makeTool("mcpserver__other")];
-      const result = pruneToolDefinitionsToFit(tools, 1, ["mcpserver__forced"]);
-      expect(result.toolDefinitions.some((t: any) => t.function.name === "mcpserver__forced")).toBe(true);
+      const result = pruneToolDefinitionsToFit(tools, 130, ["mcpserver__forced"]);
+      assert.equal(result.toolDefinitions.some((t: any) => t.function.name === "mcpserver__forced"), true);
+      assert.equal(result.toolDefinitions.some((t: any) => t.function.name === "mcpserver__other"), false);
     });
   });
 
@@ -47,9 +49,9 @@ describe("contextWindow service", () => {
         behavior: "truncate_middle",
       });
 
-      expect(result.action).toBe("proceed");
-      expect(result.prunedToolCount).toBeGreaterThan(0);
-      expect(result.toolDefinitions.length).toBeLessThan(toolDefinitions.length);
+      assert.equal(result.action, "proceed");
+      assert.ok(result.prunedToolCount > 0);
+      assert.ok(result.toolDefinitions.length < toolDefinitions.length);
     });
 
     it("still returns impossible_fit when system+query alone exceed budget, even with 0 tools", () => {
@@ -67,14 +69,14 @@ describe("contextWindow service", () => {
         behavior: "truncate_middle",
       });
 
-      expect(result.action).toBe("impossible_fit");
+      assert.equal(result.action, "impossible_fit");
     });
   });
 
   describe("estimateTokens", () => {
     it("estimates simple strings conservatively", () => {
       const text = "Hello world"; // 11 chars -> ceil(11/4) + 4 = 7
-      expect(estimateTokens(text)).toBe(7);
+      assert.equal(estimateTokens(text), 7);
     });
 
     it("handles base64 image trap without ballooning token counts", () => {
@@ -85,8 +87,8 @@ describe("contextWindow service", () => {
       ];
       // Should be 4 + ceil(19/4) + 510 = 519 tokens, NOT 33,000+ tokens!
       const tokens = estimateTokens(multimodalContent);
-      expect(tokens).toBeLessThan(2000);
-      expect(tokens).toBeGreaterThan(400);
+      assert.ok(tokens < 2000);
+      assert.ok(tokens > 400);
     });
   });
 
@@ -102,10 +104,10 @@ describe("contextWindow service", () => {
       ];
 
       const groups = partitionMessageGroups(messages);
-      expect(groups.length).toBe(4);
-      expect(groups[0].kind).toBe("system");
-      expect(groups[1].kind).toBe("first_user_anchor");
-      expect(groups[1].messages.length).toBe(2); // Injected reminder + user message!
+      assert.equal(groups.length, 4);
+      assert.equal(groups[0].kind, "system");
+      assert.equal(groups[1].kind, "first_user_anchor");
+      assert.equal(groups[1].messages.length, 2); // Injected reminder + user message!
     });
 
     it("groups assistant tool_calls with subsequent tool responses atomically", () => {
@@ -123,10 +125,10 @@ describe("contextWindow service", () => {
       ];
 
       const groups = partitionMessageGroups(messages);
-      expect(groups.some((g) => g.kind === "tool_round")).toBe(true);
+      assert.equal(groups.some((g) => g.kind === "tool_round"), true);
 
       const toolRound = groups.find((g) => g.kind === "tool_round")!;
-      expect(toolRound.messages.length).toBe(3); // Assistant tool call + Tool result + Assistant continuation!
+      assert.equal(toolRound.messages.length, 3); // Assistant tool call + Tool result + Assistant continuation!
     });
   });
 
@@ -143,8 +145,8 @@ describe("contextWindow service", () => {
         behavior: "truncate_middle",
       });
 
-      expect(result.action).toBe("proceed");
-      expect(result.trimmed).toBe(false);
+      assert.equal(result.action, "proceed");
+      assert.equal(result.trimmed, false);
     });
 
     it("stops generation if behavior is 'stop' and budget exceeded", () => {
@@ -160,8 +162,8 @@ describe("contextWindow service", () => {
         behavior: "stop",
       });
 
-      expect(result.action).toBe("stop");
-      expect(result.trimmed).toBe(false);
+      assert.equal(result.action, "stop");
+      assert.equal(result.trimmed, false);
     });
 
     it("applies truncate_middle by keeping system + first user anchor + newest query", () => {
@@ -182,14 +184,14 @@ describe("contextWindow service", () => {
         behavior: "truncate_middle",
       });
 
-      expect(result.action).toBe("proceed");
-      expect(result.trimmed).toBe(true);
+      assert.equal(result.action, "proceed");
+      assert.equal(result.trimmed, true);
 
       const resultContents = result.messages.map((m) => m.content);
-      expect(resultContents).toContain("System prompt");
-      expect(resultContents).toContain("Initial Task: Create website");
-      expect(resultContents).toContain("Latest Query: Fix navbar");
-      expect(resultContents).not.toContain("Res 1 " + "X".repeat(2000));
+      assert.ok(resultContents.includes("System prompt"));
+      assert.ok(resultContents.includes("Initial Task: Create website"));
+      assert.ok(resultContents.includes("Latest Query: Fix navbar"));
+      assert.ok(!resultContents.includes("Res 1 " + "X".repeat(2000)));
     });
 
     it("triggers impossible_fit when system prompt + query alone exceed prompt budget", () => {
@@ -206,7 +208,7 @@ describe("contextWindow service", () => {
         behavior: "truncate_middle",
       });
 
-      expect(result.action).toBe("impossible_fit");
+      assert.equal(result.action, "impossible_fit");
     });
   });
 
@@ -220,20 +222,20 @@ describe("contextWindow service", () => {
 
     it("leaves all reasoning tags intact for 'all' mode", () => {
       const res = filterReasoningContent(messages, "all");
-      expect(res[1].content).toContain("<think>Step 1</think>");
-      expect(res[3].content).toContain("<think>Step 2</think>");
+      assert.ok(res[1].content.includes("<think>Step 1</think>"));
+      assert.ok(res[3].content.includes("<think>Step 2</think>"));
     });
 
     it("strips past reasoning tags but keeps latest reasoning for 'latest' mode", () => {
       const res = filterReasoningContent(messages, "latest");
-      expect(res[1].content).toBe("Answer 1");
-      expect(res[3].content).toContain("<think>Step 2</think>");
+      assert.equal(res[1].content, "Answer 1");
+      assert.ok(res[3].content.includes("<think>Step 2</think>"));
     });
 
     it("strips all reasoning tags for 'none' mode", () => {
       const res = filterReasoningContent(messages, "none");
-      expect(res[1].content).toBe("Answer 1");
-      expect(res[3].content).toBe("Answer 2");
+      assert.equal(res[1].content, "Answer 1");
+      assert.equal(res[3].content, "Answer 2");
     });
   });
 });

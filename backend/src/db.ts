@@ -656,7 +656,108 @@ const migration8: Migration = {
   },
 };
 
-const migrations: Migration[] = [migration1, migration2, migration3, migration4, migration5, migration6, migration7, migration8];
+const migration9: Migration = {
+  version: 9,
+  description: "Add workspace_path and workspace_write_enabled to conversations and folders",
+  run: () => {
+    const convCols = (db.pragma("table_info(conversations)") as { name: string }[]).map((c) => c.name);
+    if (!convCols.includes("workspace_path")) {
+      db.exec(`ALTER TABLE conversations ADD COLUMN workspace_path TEXT`);
+    }
+    if (!convCols.includes("workspace_write_enabled")) {
+      db.exec(`ALTER TABLE conversations ADD COLUMN workspace_write_enabled INTEGER NOT NULL DEFAULT 0`);
+    }
+
+    const folderCols = (db.pragma("table_info(folders)") as { name: string }[]).map((c) => c.name);
+    if (!folderCols.includes("workspace_path")) {
+      db.exec(`ALTER TABLE folders ADD COLUMN workspace_path TEXT`);
+    }
+    if (!folderCols.includes("workspace_write_enabled")) {
+      db.exec(`ALTER TABLE folders ADD COLUMN workspace_write_enabled INTEGER NOT NULL DEFAULT 0`);
+    }
+  },
+};
+
+const migration10: Migration = {
+  version: 10,
+  description: "Add workspace_approval_mode, workspace_checkpoints table, and prompt_templates table",
+  run: () => {
+    const convCols = (db.pragma("table_info(conversations)") as { name: string }[]).map((c) => c.name);
+    if (!convCols.includes("workspace_approval_mode")) {
+      db.exec(`ALTER TABLE conversations ADD COLUMN workspace_approval_mode TEXT NOT NULL DEFAULT 'auto'`);
+    }
+
+    const folderCols = (db.pragma("table_info(folders)") as { name: string }[]).map((c) => c.name);
+    if (!folderCols.includes("workspace_approval_mode")) {
+      db.exec(`ALTER TABLE folders ADD COLUMN workspace_approval_mode TEXT NOT NULL DEFAULT 'auto'`);
+    }
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS workspace_checkpoints (
+        id               TEXT PRIMARY KEY,
+        conversation_id  TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        tool_call_id     TEXT,
+        tool_name        TEXT NOT NULL,
+        workspace_root   TEXT NOT NULL,
+        rel_path         TEXT NOT NULL,
+        dest_rel_path    TEXT,
+        action           TEXT NOT NULL,
+        previous_content TEXT,
+        new_content      TEXT,
+        is_reverted      INTEGER NOT NULL DEFAULT 0,
+        created_at       INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_ws_checkpoints_conv
+        ON workspace_checkpoints(conversation_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS prompt_templates (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL UNIQUE,
+        description TEXT NOT NULL DEFAULT '',
+        content     TEXT NOT NULL,
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL
+      );
+    `);
+
+    const countRow = db
+      .prepare<[], { c: number }>("SELECT COUNT(*) as c FROM prompt_templates")
+      .get();
+    if (!countRow || countRow.c === 0) {
+      const now = Date.now();
+      const insertTpl = db.prepare(
+        "INSERT INTO prompt_templates (id, name, description, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+      );
+      insertTpl.run(
+        crypto.randomUUID(),
+        "review",
+        "Perform a thorough code review for bugs, edge cases, security, and maintainability",
+        "Review the target code or recent changes thoroughly. Identify concrete bugs, security vulnerabilities, race conditions, edge cases, and maintainability improvements. Provide actionable fixes with exact file references.",
+        now,
+        now
+      );
+      insertTpl.run(
+        crypto.randomUUID(),
+        "tests",
+        "Write comprehensive unit and integration tests for the target module",
+        "Write comprehensive, deterministic unit and integration tests covering happy paths, boundary conditions, and error handling for the target code.",
+        now,
+        now
+      );
+      insertTpl.run(
+        crypto.randomUUID(),
+        "explain",
+        "Explain how the target code, algorithm, or architecture works step by step",
+        "Explain clearly and concisely how the referenced code or architecture works, tracing the data flow, key invariants, and edge cases.",
+        now,
+        now
+      );
+    }
+  },
+};
+
+const migrations: Migration[] = [migration1, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10];
 
 const currentVersion = db.pragma("user_version", { simple: true }) as number;
 

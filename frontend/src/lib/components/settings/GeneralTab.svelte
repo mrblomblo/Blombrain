@@ -297,8 +297,8 @@ import { createQuery, useQueryClient } from "@tanstack/svelte-query";
         <p class="text-[11px] text-fg-subtle mt-0.5">
           Run a lightweight pre-pass model to filter out irrelevant tool and
           skill descriptions before sending the prompt to the primary chat
-          model. Note that it will still run the pre-pass model if the combined
-          schemas of the active tools and skills are too big.
+          model. When set to Disabled, the pre-pass is skipped completely and
+          all enabled schemas are sent directly.
         </p>
       </div>
 

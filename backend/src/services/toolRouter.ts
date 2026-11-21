@@ -360,7 +360,10 @@ export async function routeToolsAndSkills(
   onToken?: (text: string) => void,
   priorContext?: string,
   signal?: AbortSignal,
-  conversationMemoryEnabled?: boolean | null
+  conversationMemoryEnabled?: boolean | null,
+  workspacePath?: string | null,
+  workspaceWriteEnabled?: boolean,
+  onRoutingStart?: () => void
 ): Promise<ToolRoutingResult> {
   // Check global settings for tool_routing_mode, tool_routing_model, network_tools_enabled, disabled_builtin_tools, memory_enabled, cross_chat_recall_enabled
   const settingsRow = db.prepare("SELECT tool_routing_mode, tool_routing_model, network_tools_enabled, disabled_builtin_tools, memory_enabled, cross_chat_recall_enabled, cross_chat_include_archived FROM global_settings LIMIT 1").get() as any;
@@ -392,6 +395,8 @@ export async function routeToolsAndSkills(
       memoryEnabled: effectiveMemoryEnabled,
       crossChatRecallEnabled,
       crossChatIncludeArchived,
+      workspacePath,
+      workspaceWriteEnabled,
     },
     { allowNetwork, disabledTools }
   );
@@ -423,24 +428,12 @@ export async function routeToolsAndSkills(
     };
   });
 
-  // Single unified token estimation (1 token ~= 4 chars)
-  const totalSchemaLength =
-    JSON.stringify(allMcpTools).length +
-    JSON.stringify(allSkills).length +
-    JSON.stringify(allBuiltInTools).length;
-  const estimatedTokens = Math.ceil(totalSchemaLength / 4);
-
   const mode = settingsRow?.tool_routing_mode || "off";
   const designatedModel = settingsRow?.tool_routing_model;
 
-  // Determine whether to run LLM pre-pass:
-  // - If mode is 'off', auto-trigger routing once tool/skill schemas would eat
-  //   more than 30% of the target model's context window.
-  // - If context limit is unknown, assume a conservative 8K context to protect small models.
-  // - Capped at 20,000 tokens for models with very large/no limit set.
-  const effectiveContextLimit = contextLimit && contextLimit > 0 ? contextLimit : 8192;
-  const dynamicRoutingThreshold = Math.min(20000, Math.floor(effectiveContextLimit * 0.30));
-  const shouldRoute = mode !== "off" || estimatedTokens >= dynamicRoutingThreshold;
+  // Strictly respect disabled pre-pass routing ("off").
+  // Context overflow protection in contextWindow.ts handles schema pruning if needed.
+  const shouldRoute = mode !== "off";
 
   if (!shouldRoute || !userQuery.trim() || (allMcpTools.length === 0 && allSkills.length === 0 && allBuiltInTools.length === 0)) {
     return {
@@ -470,6 +463,8 @@ export async function routeToolsAndSkills(
     console.warn("[toolRouter] No valid model available for routing pre-pass, skipping routing.");
     return { mcpTools: allMcpTools, selectedSkills: allSkills, selectedBuiltInTools: allBuiltInTools };
   }
+
+  onRoutingStart?.();
 
   try {
     const systemPrompt = `You are a precision AI tool and skill selector.

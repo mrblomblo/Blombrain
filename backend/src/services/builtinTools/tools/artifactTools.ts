@@ -342,8 +342,18 @@ export const writeFileToolDef: BuiltInToolDefinition = {
     }
 
     const artifactRow = resolved.artifactRow!;
+    const uploadsRoot = path.resolve(DATA_DIR, "uploads") + path.sep;
+    const isUploadedArtifact = path.resolve(resolved.diskPath).startsWith(uploadsRoot);
+    if (!isUploadedArtifact && !ctx.workspaceWriteEnabled) {
+      return {
+        content: `Error: '${filename}' is a workspace file and workspace write access is currently disabled (read-only mode).`,
+        isError: true,
+      };
+    }
     try {
-      const filePath = resolveSandboxedPath(getConvUploadsDir(ctx), "artifacts", filename);
+      const filePath = isUploadedArtifact
+        ? resolveSandboxedPath(getConvUploadsDir(ctx), "artifacts", filename)
+        : resolved.diskPath;
       fs.writeFileSync(filePath, content, "utf-8");
       const stat = fs.statSync(filePath);
       const now = Date.now();
@@ -393,11 +403,21 @@ export const editFileToolDef: BuiltInToolDefinition = {
       }
     }
 
+    const uploadsRoot = path.resolve(DATA_DIR, "uploads") + path.sep;
+    const isUploadedArtifact =
+      resolved.type === "artifact" &&
+      path.resolve(resolved.diskPath).startsWith(uploadsRoot);
+    if (resolved.type === "artifact" && !isUploadedArtifact && !ctx.workspaceWriteEnabled) {
+      return {
+        content: `Error: '${filename}' is a workspace file and workspace write access is currently disabled (read-only mode).`,
+        isError: true,
+      };
+    }
+
     try {
-      const filePath =
-        resolved.type === "artifact"
-          ? resolveSandboxedPath(getConvUploadsDir(ctx), "artifacts", filename)
-          : resolved.diskPath;
+      const filePath = isUploadedArtifact
+        ? resolveSandboxedPath(getConvUploadsDir(ctx), "artifacts", filename)
+        : resolved.diskPath;
       let content = fs.readFileSync(filePath, "utf-8");
 
       let matchedOldText = oldText;

@@ -588,6 +588,21 @@ async fn open_external_url(app: AppHandle, url: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to open external URL {url}: {e}"))
 }
 
+#[tauri::command]
+async fn pick_workspace_directory(app: AppHandle) -> Result<Option<String>, String> {
+    let (tx, mut rx) = tauri::async_runtime::channel(1);
+    app.dialog()
+        .file()
+        .pick_folder(move |chosen| {
+            let path = chosen
+                .and_then(|fp| fp.into_path().ok())
+                .map(|p| p.to_string_lossy().into_owned());
+            let _ = tx.try_send(path);
+        });
+
+    Ok(rx.recv().await.flatten())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -622,7 +637,8 @@ pub fn run() {
             read_dropped_files,
             start_audio_recording,
             stop_audio_recording,
-            open_external_url
+            open_external_url,
+            pick_workspace_directory
         ]);
 
     let app = builder

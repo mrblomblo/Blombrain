@@ -21,6 +21,7 @@ fn main() {
                 "start_audio_recording",
                 "stop_audio_recording",
                 "open_external_url",
+                "pick_workspace_directory",
             ]),
         ),
     )

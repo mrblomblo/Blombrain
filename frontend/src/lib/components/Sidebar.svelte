@@ -96,6 +96,10 @@
   let editingFolder = $state<FolderInfo | null>(null);
   let folderFormName = $state("");
   let folderFormDesc = $state("");
+  let folderFormWorkspacePath = $state("");
+  let folderFormWorkspaceWrite = $state(false);
+  let folderFormWorkspaceApproval = $state<import("../types").WorkspaceApprovalMode>("auto");
+  let folderFormError = $state<string | null>(null);
   let isSavingFolder = $state(false);
   let dragOverTarget = $state<string | null>(null);
   let isBatchWorking = $state(false);
@@ -227,6 +231,10 @@
     editingFolder = null;
     folderFormName = "";
     folderFormDesc = "";
+    folderFormWorkspacePath = "";
+    folderFormWorkspaceWrite = false;
+    folderFormWorkspaceApproval = "auto";
+    folderFormError = null;
     folderModalMode = "create";
   }
 
@@ -235,28 +243,52 @@
     editingFolder = folder;
     folderFormName = folder.name;
     folderFormDesc = folder.description || "";
+    folderFormWorkspacePath = folder.workspacePath ?? "";
+    folderFormWorkspaceWrite = Boolean(folder.workspaceWriteEnabled);
+    folderFormWorkspaceApproval = folder.workspaceApprovalMode ?? "auto";
+    folderFormError = null;
     folderModalMode = "edit";
   }
 
-  async function submitFolderModal(name: string, description: string) {
+  async function submitFolderModal(
+    name: string,
+    description: string,
+    workspacePath: string | null = null,
+    workspaceWriteEnabled: boolean = false,
+    workspaceApprovalMode: import("../types").WorkspaceApprovalMode = "auto",
+  ) {
     isSavingFolder = true;
+    folderFormError = null;
     try {
       sidebarError = null;
       if (folderModalMode === "create") {
-        const created = await createFolder({ name, description });
+        const created = await createFolder({
+          name,
+          description,
+          workspacePath,
+          workspaceWriteEnabled,
+          workspaceApprovalMode,
+        });
         foldersSectionOpen = true;
         await queryClient.invalidateQueries({ queryKey: ["folders"] });
         chatStore.openFolder(created.id);
         onCloseMobile?.();
       } else if (folderModalMode === "edit" && editingFolder) {
-        await updateFolder(editingFolder.id, { name, description });
+        await updateFolder(editingFolder.id, {
+          name,
+          description,
+          workspacePath,
+          workspaceWriteEnabled,
+          workspaceApprovalMode,
+        });
         await queryClient.invalidateQueries({ queryKey: ["folders"] });
         await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+        await chatStore.refreshWorkspaceFiles();
       }
       folderModalMode = null;
       editingFolder = null;
     } catch (err) {
-      sidebarError = `Failed to save folder: ${(err as Error).message || "Unknown error"}`;
+      folderFormError = (err as Error).message || "Failed to save folder.";
     } finally {
       isSavingFolder = false;
     }
@@ -291,6 +323,7 @@
       }
       await queryClient.invalidateQueries({ queryKey: ["folders"] });
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      await chatStore.refreshWorkspaceFiles();
     } catch (err) {
       sidebarError = `Failed to delete folder: ${(err as Error).message || "Unknown error"}`;
     }
@@ -318,6 +351,10 @@
         }
       }
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      if (chatStore.activeConversationId && ids.includes(chatStore.activeConversationId)) {
+        chatStore.conversationFolderId = folderId;
+        await chatStore.refreshWorkspaceFiles(chatStore.activeConversationId);
+      }
     } catch (err) {
       sidebarError = `Failed to move conversation: ${(err as Error).message || "Unknown error"}`;
     }
@@ -1015,10 +1052,20 @@
                         onCloseMobile?.();
                       }}
                       disabled={chatStore.isStreaming}
+                      title={folder.workspacePath
+                        ? `${folder.name} -- Workspace: ${folder.workspacePath} (${folder.workspaceWriteEnabled ? "Read-Write" : "Read-Only"})`
+                        : folder.name}
                       class="flex min-w-0 flex-1 items-center gap-1.5 text-left cursor-pointer disabled:pointer-events-none disabled:opacity-50"
                     >
                       <Folder size={13} class="shrink-0 text-accent/85" />
                       <span class="truncate">{folder.name}</span>
+                      {#if folder.workspacePath}
+                        <span
+                          class="shrink-0 rounded bg-accent/15 px-1 py-0.2 font-mono text-[9px] font-medium text-accent"
+                        >
+                          {folder.workspaceWriteEnabled ? "WS:RW" : "WS"}
+                        </span>
+                      {/if}
                     </button>
                     <div
                       class="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity"
@@ -1257,11 +1304,16 @@
   mode={folderModalMode ?? "create"}
   bind:name={folderFormName}
   bind:description={folderFormDesc}
+  bind:workspacePath={folderFormWorkspacePath}
+  bind:workspaceWriteEnabled={folderFormWorkspaceWrite}
+  bind:workspaceApprovalMode={folderFormWorkspaceApproval}
+  error={folderFormError}
   isSaving={isSavingFolder}
   onsubmit={submitFolderModal}
   onclose={() => {
     folderModalMode = null;
     editingFolder = null;
+    folderFormError = null;
   }}
 />
 

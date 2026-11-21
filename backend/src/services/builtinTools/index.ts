@@ -34,6 +34,16 @@ import {
   memoryDeleteToolDef,
   chatHistorySearchToolDef,
 } from "./tools/memoryTools.js";
+import {
+  workspaceListToolDef,
+  workspaceSearchToolDef,
+  workspaceReadToolDef,
+  workspaceEditToolDef,
+  workspaceWriteToolDef,
+  workspaceDeleteToolDef,
+  workspaceRenameToolDef,
+  workspaceRunToolDef,
+} from "./tools/workspaceTools.js";
 
 export * from "./types.js";
 
@@ -72,6 +82,14 @@ class BuiltInToolRegistry {
     this.register(memoryUpdateToolDef);
     this.register(memoryDeleteToolDef);
     this.register(chatHistorySearchToolDef);
+    this.register(workspaceListToolDef);
+    this.register(workspaceSearchToolDef);
+    this.register(workspaceReadToolDef);
+    this.register(workspaceEditToolDef);
+    this.register(workspaceWriteToolDef);
+    this.register(workspaceDeleteToolDef);
+    this.register(workspaceRenameToolDef);
+    this.register(workspaceRunToolDef);
   }
 
   public register(tool: BuiltInToolDefinition) {
@@ -123,7 +141,7 @@ class BuiltInToolRegistry {
     name: string,
     args: Record<string, any>,
     ctx: BuiltInToolContext
-  ): Promise<{ content: string; isError?: boolean }> {
+  ): Promise<import("./types.js").BuiltInToolResult> {
     const tool = this.getTool(name);
     if (!tool) {
       return { content: `[built-in tool] Tool '${name}' not found`, isError: true };

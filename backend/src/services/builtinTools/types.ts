@@ -7,6 +7,7 @@ export interface ToolVisibilityOptions {
 
 export interface BuiltInToolContext {
   conversationId?: string;
+  callId?: string;
   activeSkillIds?: string[];
   activeSkills?: any[];
   abortSignal?: AbortSignal;
@@ -14,7 +15,22 @@ export interface BuiltInToolContext {
   memoryEnabled?: boolean;
   crossChatRecallEnabled?: boolean;
   crossChatIncludeArchived?: boolean;
+  workspacePath?: string | null;
+  workspaceWriteEnabled?: boolean;
+  workspaceApprovalMode?: "auto" | "ask";
+  autoApproveCommands?: boolean;
+  isTurnWriteApproved?: () => boolean;
+  markTurnWriteApproved?: () => void;
   emitEvent?: (type: string, payload: Record<string, any>) => void;
+}
+
+export interface BuiltInToolResult {
+  content: string;
+  isError?: boolean;
+  checkpointId?: string;
+  diffPreview?: string;
+  commandPreview?: string;
+  cwd?: string;
 }
 
 export interface BuiltInToolDefinition {
@@ -29,5 +45,5 @@ export interface BuiltInToolDefinition {
   execute: (
     args: Record<string, any>,
     ctx: BuiltInToolContext
-  ) => Promise<{ content: string; isError?: boolean }>;
+  ) => Promise<BuiltInToolResult>;
 }

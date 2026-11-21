@@ -11,6 +11,7 @@
   import { decorateTriggerTokensInElement } from "../utils/inputTriggers";
   import { themeStore } from "../theme.svelte";
   import { getCachedMermaidSvg, renderMermaidDiagram } from "../utils/mermaidRenderer";
+  import { fetchConversationWorkspaceFile, fetchWorkspaceFileByPath } from "../api";
 
   interface Props {
     content: string;
@@ -506,6 +507,40 @@
           return;
         }
       }
+    }
+
+    const convId = chatStore.activeConversationId;
+    const effWsPath = chatStore.effectiveWorkspacePath;
+    if (effWsPath) {
+      const cleaned = rawName.trim().replace(/^workspace:/i, "");
+      const cleanedLower = cleaned.toLowerCase();
+      const matchedRel =
+        chatStore.workspaceFiles.find((p) => p.toLowerCase() === cleanedLower) ??
+        chatStore.workspaceFiles.find(
+          (p) => p.split("/").pop()?.toLowerCase() === cleanedLower,
+        ) ??
+        cleaned;
+
+      void (async () => {
+        try {
+          const preview = convId
+            ? await fetchConversationWorkspaceFile(convId, matchedRel)
+            : await fetchWorkspaceFileByPath(effWsPath, matchedRel);
+          artifactStore.openArtifact(
+            {
+              id: `workspace:${preview.path}`,
+              filename: preview.path,
+              conversationId: convId ?? undefined,
+              code: preview.content,
+              language: preview.language || "text",
+              title: preview.path,
+            },
+            false,
+          );
+        } catch (err) {
+          console.warn("[Markdown] Failed to preview workspace file:", err);
+        }
+      })();
     }
   }
 

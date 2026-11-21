@@ -28,10 +28,12 @@
     fetchMcpServers,
     fetchMcpTools,
     fetchSkills,
+    fetchPromptTemplates,
   } from "../api";
   import { encodeToWav } from "../audio";
   import { createQuery } from "@tanstack/svelte-query";
   import type {
+    PromptTemplateInfo,
     SessionFileItem,
     SlashToolSelection,
   } from "../types";
@@ -42,6 +44,9 @@
 
   import MarkdownInput, { type EditorTriggerState } from "./MarkdownInput.svelte";
   import ToolsPopover from "./ToolsPopover.svelte";
+  import PromptTemplatesModal from "./PromptTemplatesModal.svelte";
+
+  let promptTemplatesModalOpen = $state(false);
 
   let fileInput: HTMLInputElement | undefined = $state();
   let isUploading = $derived(chatStore.isUploadingDraft);
@@ -97,6 +102,11 @@
     queryFn: fetchSkills,
   }));
 
+  const promptTemplatesQuery = createQuery(() => ({
+    queryKey: ["promptTemplates"],
+    queryFn: fetchPromptTemplates,
+  }));
+
   type SlashCatalogItem = {
     key: string;
     kind: SlashToolSelection["kind"];
@@ -112,6 +122,18 @@
   let slashCatalog = $derived.by((): SlashCatalogItem[] => {
     const items: SlashCatalogItem[] = [];
     const disabledBuiltIn = new Set(settingsStore.disabledBuiltInTools);
+
+    for (const tpl of promptTemplatesQuery.data ?? []) {
+      items.push({
+        key: `prompt:${tpl.id}`,
+        kind: "prompt_template",
+        id: tpl.id,
+        name: tpl.name,
+        badge: "Prompt",
+        description: tpl.description || tpl.content,
+        isDisabled: false,
+      });
+    }
 
     for (const t of builtInToolsQuery.data ?? []) {
       items.push({
@@ -208,12 +230,14 @@
   let filteredAtItems = $derived.by(() => {
     if (!activeTrigger || activeTrigger.type !== "@") return [];
     const q = activeTrigger.query.trim().toLowerCase();
-    if (!q) return sessionFiles;
-    return sessionFiles.filter(
-      (f) =>
-        f.name.toLowerCase().includes(q) ||
-        f.subtitle.toLowerCase().includes(q),
-    );
+    if (!q) return sessionFiles.slice(0, 80);
+    return sessionFiles
+      .filter(
+        (f) =>
+          f.name.toLowerCase().includes(q) ||
+          f.subtitle.toLowerCase().includes(q),
+      )
+      .slice(0, 80);
   });
 
   let filteredSlashItems = $derived.by(() => {
@@ -982,15 +1006,29 @@
             <span>
               {activeTrigger.type === "@"
                 ? "Session Files"
-                : "Inject Tools, Skills & MCPs"}
+                : "Prompts, Tools, Skills & MCPs"}
             </span>
-            <span class="font-normal normal-case text-fg-subtle">
-              {#if activeTrigger.quoted}
-                Quoted search (close with ")
-              {:else}
-                Use {activeTrigger.type}"..." for spaces
+            <div class="flex items-center gap-2">
+              {#if activeTrigger.type === "/"}
+                <button
+                  type="button"
+                  onmousedown={(e) => {
+                    e.preventDefault();
+                    promptTemplatesModalOpen = true;
+                  }}
+                  class="font-semibold normal-case text-accent hover:underline cursor-pointer"
+                >
+                  Manage Prompts
+                </button>
               {/if}
-            </span>
+              <span class="font-normal normal-case text-fg-subtle">
+                {#if activeTrigger.quoted}
+                  Quoted search (close with ")
+                {:else}
+                  Use {activeTrigger.type}"..." for spaces
+                {/if}
+              </span>
+            </div>
           </div>
 
           {#if activeTrigger.type === "@"}
@@ -1050,7 +1088,9 @@
                     : 'text-fg-muted hover:bg-bg-inset'}"
                 >
                   <div class="flex min-w-0 flex-1 items-center gap-2">
-                    {#if item.kind === "skill"}
+                    {#if item.kind === "prompt_template"}
+                      <FileText size={13} class="shrink-0 text-accent" />
+                    {:else if item.kind === "skill"}
                       <Sparkles size={13} class="shrink-0 text-accent" />
                     {:else if item.kind === "mcp_server"}
                       <Server size={13} class="shrink-0 text-accent" />
@@ -1165,6 +1205,16 @@
           {/if}
           <ToolsPopover />
           <Button
+            variant="default"
+            outline
+            size="icon"
+            onclick={() => (promptTemplatesModalOpen = true)}
+            aria-label="Prompt templates"
+            title="Reusable slash prompt templates (/commands)"
+          >
+            <FileText size={15} />
+          </Button>
+          <Button
             variant={isRecording ? "danger" : "default"}
             outline={!isRecording}
             size="icon"
@@ -1264,6 +1314,17 @@
     </div>
   </div>
 </div>
+
+<PromptTemplatesModal
+  isOpen={promptTemplatesModalOpen}
+  onclose={() => (promptTemplatesModalOpen = false)}
+  onselect={(tpl: PromptTemplateInfo) => {
+    const token = formatTriggerToken("/", tpl.name);
+    const cur = chatStore.draftText;
+    const prefix = cur && !/\s$/.test(cur) ? " " : "";
+    chatStore.draftText = `${cur}${prefix}${token}`;
+  }}
+/>
 
 <style>
   .input-container:focus-within,

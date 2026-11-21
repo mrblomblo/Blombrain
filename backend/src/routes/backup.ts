@@ -103,6 +103,8 @@ export async function backupRoutes(app: FastifyInstance) {
             : null,
       }));
 
+      const folders = db.prepare("SELECT * FROM folders").all() as any[];
+      const promptTemplates = db.prepare("SELECT * FROM prompt_templates").all() as any[];
       const conversations = db.prepare("SELECT * FROM conversations").all() as any[];
       const messages = db.prepare("SELECT * FROM messages").all() as any[];
       const scratchpad = db.prepare("SELECT * FROM conversation_scratchpad").all() as any[];
@@ -152,6 +154,8 @@ export async function backupRoutes(app: FastifyInstance) {
           mcpServers,
           skills,
           memories,
+          folders,
+          promptTemplates,
           conversations,
           messages,
           scratchpad,
@@ -193,6 +197,8 @@ export async function backupRoutes(app: FastifyInstance) {
         mcpServers: 0,
         skills: 0,
         memories: 0,
+        folders: 0,
+        promptTemplates: 0,
         conversations: 0,
         messages: 0,
         artifacts: 0,
@@ -203,11 +209,14 @@ export async function backupRoutes(app: FastifyInstance) {
         const tx = db.transaction(() => {
           if (mode === "replace") {
             db.exec(`
+              DELETE FROM workspace_checkpoints;
               DELETE FROM conversation_scratchpad;
               DELETE FROM artifacts;
               DELETE FROM attachments;
               DELETE FROM messages;
               DELETE FROM conversations;
+              DELETE FROM folders;
+              DELETE FROM prompt_templates;
               DELETE FROM memories;
               DELETE FROM skills;
               DELETE FROM mcp_servers;
@@ -475,15 +484,64 @@ export async function backupRoutes(app: FastifyInstance) {
             }
           }
 
+          // 6b. Folders
+          if (Array.isArray(d.folders)) {
+            const stmt = db.prepare(
+              `INSERT OR REPLACE INTO folders (
+                 id, name, description, is_expanded,
+                 workspace_path, workspace_write_enabled, workspace_approval_mode,
+                 created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            );
+            for (const f of d.folders) {
+              if (!f.id || !f.name) continue;
+              stmt.run(
+                f.id,
+                f.name,
+                f.description ?? "",
+                f.is_expanded !== undefined ? (f.is_expanded ? 1 : 0) : 1,
+                f.workspace_path ?? null,
+                f.workspace_write_enabled ? 1 : 0,
+                f.workspace_approval_mode === "ask" ? "ask" : "auto",
+                f.created_at || Date.now(),
+                f.updated_at || Date.now()
+              );
+              counts.folders++;
+            }
+          }
+
+          // 6c. Prompt Templates
+          if (Array.isArray(d.promptTemplates)) {
+            const stmt = db.prepare(
+              `INSERT OR REPLACE INTO prompt_templates (id, name, description, content, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)`
+            );
+            for (const pt of d.promptTemplates) {
+              if (!pt.id || !pt.name || typeof pt.content !== "string") continue;
+              try {
+                stmt.run(
+                  pt.id,
+                  pt.name,
+                  pt.description ?? "",
+                  pt.content,
+                  pt.created_at || Date.now(),
+                  pt.updated_at || Date.now()
+                );
+                counts.promptTemplates++;
+              } catch { }
+            }
+          }
+
           // 7. Conversations
           if (Array.isArray(d.conversations)) {
             const stmt = db.prepare(
               `INSERT OR REPLACE INTO conversations (
                  id, title, model, created_at, updated_at,
                  excluded_mcps, excluded_skills, tools_enabled,
-                 is_pinned, is_archived, memory_enabled,
-                 system_prompt_override, sampling_overrides
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                 is_pinned, is_archived, folder, folder_id, memory_enabled,
+                 system_prompt_override, sampling_overrides,
+                 workspace_path, workspace_write_enabled, workspace_approval_mode
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             );
             for (const c of d.conversations) {
               if (!c.id) continue;
@@ -498,13 +556,18 @@ export async function backupRoutes(app: FastifyInstance) {
                 c.tools_enabled !== undefined ? (c.tools_enabled ? 1 : 0) : 1,
                 c.is_pinned ? 1 : 0,
                 c.is_archived ? 1 : 0,
+                c.folder ?? null,
+                c.folder_id ?? null,
                 c.memory_enabled === null || c.memory_enabled === undefined
                   ? null
                   : c.memory_enabled
                     ? 1
                     : 0,
                 c.system_prompt_override ?? null,
-                c.sampling_overrides ?? null
+                c.sampling_overrides ?? null,
+                c.workspace_path ?? null,
+                c.workspace_write_enabled ? 1 : 0,
+                c.workspace_approval_mode === "ask" ? "ask" : "auto"
               );
               counts.conversations++;
             }

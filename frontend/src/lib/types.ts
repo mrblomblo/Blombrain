@@ -157,7 +157,7 @@ export interface ToolExecutionEvent {
   args: Record<string, any>;
   result?: string;
   error?: string;
-  status: "executing" | "completed" | "error" | "polling" | "cancelled";
+  status: "executing" | "completed" | "error" | "polling" | "cancelled" | "awaiting_approval";
   progress?: number;
   total?: number;
   message?: string;
@@ -165,6 +165,11 @@ export interface ToolExecutionEvent {
   elapsedMs?: number;
   attempts?: number;
   cacheable?: boolean;
+  checkpointId?: string;
+  reverted?: boolean;
+  diffPreview?: string;
+  commandPreview?: string;
+  cwd?: string;
 }
 
 export interface ChatMessage {
@@ -249,11 +254,17 @@ export interface ArtifactInfo {
 export type SpeechProviderType = "browser" | "openai_compatible" | "local_cli";
 export type SpeechDeviceType = "cpu" | "gpu";
 
+export type WorkspaceSource = "conversation" | "folder" | null;
+export type WorkspaceApprovalMode = "auto" | "ask";
+
 export interface FolderInfo {
   id: string;
   name: string;
   description: string;
   isExpanded: boolean;
+  workspacePath?: string | null;
+  workspaceWriteEnabled?: boolean;
+  workspaceApprovalMode?: WorkspaceApprovalMode;
   createdAt: number;
   updatedAt: number;
 }
@@ -273,6 +284,13 @@ export interface ConversationSummary {
   memoryEnabled?: boolean | null;
   systemPromptOverride?: string | null;
   samplingOverrides?: ConversationSamplingOverrides | null;
+  workspacePath?: string | null;
+  workspaceWriteEnabled?: boolean;
+  workspaceApprovalMode?: WorkspaceApprovalMode;
+  effectiveWorkspacePath?: string | null;
+  effectiveWorkspaceWriteEnabled?: boolean;
+  effectiveWorkspaceApprovalMode?: WorkspaceApprovalMode;
+  workspaceSource?: WorkspaceSource;
 }
 
 /** A full conversation with its messages. */
@@ -373,7 +391,7 @@ export interface McpToolInfo {
 }
 
 export interface SlashToolSelection {
-  kind: "builtin_tool" | "skill" | "mcp_server" | "mcp_tool";
+  kind: "builtin_tool" | "skill" | "mcp_server" | "mcp_tool" | "prompt_template";
   id: string;
   name: string;
 }
@@ -381,7 +399,68 @@ export interface SlashToolSelection {
 export interface SessionFileItem {
   id: string;
   name: string;
-  source: "pending" | "attachment" | "artifact";
+  source: "pending" | "attachment" | "artifact" | "workspace";
   subtitle: string;
   mimeType?: string;
+  workspacePath?: string;
+}
+
+export interface WorkspaceFilesResponse {
+  files: string[];
+  effectiveWorkspacePath: string | null;
+  workspaceWriteEnabled: boolean;
+  workspaceApprovalMode?: WorkspaceApprovalMode;
+  workspaceSource: WorkspaceSource;
+}
+
+export interface WorkspaceFilePreviewResponse {
+  path: string;
+  content: string;
+  sizeBytes: number;
+  language: string;
+  truncated?: boolean;
+}
+
+export interface WorkspaceCheckpointInfo {
+  id: string;
+  conversationId: string;
+  toolCallId: string | null;
+  toolName: string;
+  workspaceRoot: string;
+  relPath: string;
+  destRelPath: string | null;
+  action: "create" | "overwrite" | "edit" | "delete" | "rename";
+  isReverted: boolean;
+  createdAt: number;
+  diffPreview?: string;
+}
+
+export interface WorkspaceGitFileStatus {
+  path: string;
+  code: string;
+  staged: boolean;
+  unstaged: boolean;
+}
+
+export interface WorkspaceGitStatusResponse {
+  isGitRepo: boolean;
+  branch: string | null;
+  ahead: number;
+  behind: number;
+  files: WorkspaceGitFileStatus[];
+}
+
+export interface WorkspaceGitDiffResponse {
+  isGitRepo: boolean;
+  diff: string;
+  truncated: boolean;
+}
+
+export interface PromptTemplateInfo {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
 }

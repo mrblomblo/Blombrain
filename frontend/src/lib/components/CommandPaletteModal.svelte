@@ -3,6 +3,9 @@
   import {
     searchConversations,
     fetchModels,
+    fetchPromptTemplates,
+    fetchConversationWorkspaceFile,
+    fetchWorkspaceFileByPath,
     exportBackupUrl,
     triggerDownload,
   } from "../api";
@@ -23,6 +26,9 @@
     PanelLeft,
     Code,
     X,
+    FileText,
+    Sparkles,
+    RefreshCw,
   } from "@lucide/svelte";
   import { fade, fly } from "svelte/transition";
 
@@ -31,6 +37,7 @@
     initialView?: "commands" | "shortcuts";
     onClose: () => void;
     onOpenSettings: () => void;
+    onOpenPromptTemplates?: () => void;
     onToggleSidebar: () => void;
   }
 
@@ -39,6 +46,7 @@
     initialView = "commands",
     onClose,
     onOpenSettings,
+    onOpenPromptTemplates,
     onToggleSidebar,
   }: Props = $props();
 
@@ -58,6 +66,12 @@
   const modelsQuery = createQuery(() => ({
     queryKey: ["models"],
     queryFn: fetchModels,
+    enabled: open,
+  }));
+
+  const promptTemplatesQuery = createQuery(() => ({
+    queryKey: ["promptTemplates"],
+    queryFn: fetchPromptTemplates,
     enabled: open,
   }));
 
@@ -154,6 +168,35 @@
           onClose();
         },
       },
+      ...(onOpenPromptTemplates
+        ? [
+            {
+              id: "act-manage-prompt-templates",
+              group: "Actions",
+              label: "Manage Prompt Templates (/commands)",
+              icon: Sparkles,
+              action: () => {
+                onClose();
+                onOpenPromptTemplates();
+              },
+            },
+          ]
+        : []),
+      ...(chatStore.effectiveWorkspacePath
+        ? [
+            {
+              id: "act-refresh-workspace",
+              group: "Actions",
+              label: "Refresh Attached Workspace Files",
+              sublabel: chatStore.effectiveWorkspacePath,
+              icon: RefreshCw,
+              action: () => {
+                void chatStore.refreshWorkspaceFiles();
+                onClose();
+              },
+            },
+          ]
+        : []),
       {
         id: "act-export-backup",
         group: "Actions",
@@ -181,6 +224,67 @@
     for (const a of actions) {
       if (!q || a.label.toLowerCase().includes(q)) {
         list.push(a);
+      }
+    }
+
+    // 1b. Attached Workspace Files
+    if (chatStore.effectiveWorkspacePath && chatStore.workspaceFiles.length > 0) {
+      const wsMatches = q
+        ? chatStore.workspaceFiles.filter((f) => f.toLowerCase().includes(q)).slice(0, 10)
+        : chatStore.workspaceFiles.slice(0, 5);
+      for (const relPath of wsMatches) {
+        list.push({
+          id: `wsfile-${relPath}`,
+          group: "Workspace Files",
+          label: relPath,
+          sublabel: "Open in Artifact Panel",
+          icon: FileText,
+          action: () => {
+            const wsRoot = chatStore.effectiveWorkspacePath;
+            const convId = chatStore.activeConversationId;
+            onClose();
+            if (!wsRoot) return;
+            const loadPromise = convId
+              ? fetchConversationWorkspaceFile(convId, relPath)
+              : fetchWorkspaceFileByPath(wsRoot, relPath);
+            void loadPromise
+              .then((preview) => {
+                artifactStore.openArtifact({
+                  id: `workspace:${preview.path}`,
+                  filename: preview.path,
+                  conversationId: convId ?? undefined,
+                  code: preview.content,
+                  language: preview.language,
+                  title: preview.path,
+                });
+              })
+              .catch((err) => console.error("Failed to open workspace file:", err));
+          },
+        });
+      }
+    }
+
+    // 1c. Prompt Templates (/commands)
+    for (const tpl of promptTemplatesQuery.data ?? []) {
+      if (
+        !q ||
+        tpl.name.toLowerCase().includes(q) ||
+        (tpl.description || "").toLowerCase().includes(q) ||
+        "prompt template".includes(q)
+      ) {
+        list.push({
+          id: `prompt-${tpl.id}`,
+          group: "Prompt Templates",
+          label: `/${tpl.name}`,
+          sublabel: tpl.description || tpl.content.slice(0, 80),
+          icon: Sparkles,
+          action: () => {
+            const cur = chatStore.draftText;
+            const sep = cur && !/\s$/.test(cur) ? " " : "";
+            chatStore.draftText = `${cur}${sep}/${tpl.name} `;
+            onClose();
+          },
+        });
       }
     }
 

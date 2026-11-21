@@ -1,5 +1,6 @@
 <script lang="ts">
   import { artifactStore } from "../stores/artifact.svelte";
+  import { chatStore } from "../stores/chat.svelte";
   import { themeStore } from "../theme.svelte";
   import { copyToClipboard } from "../utils/clipboard";
   import hljs from "highlight.js";
@@ -16,6 +17,9 @@
     Download,
     Globe,
     Trash2,
+    Pencil,
+    Save,
+    GitCompare,
   } from "@lucide/svelte";
   import Markdown from "./Markdown.svelte";
   import ToggleSwitch from "./ui/ToggleSwitch.svelte";
@@ -23,18 +27,155 @@
   import WindowControls from "./WindowControls.svelte";
   import { confirmStore } from "../stores/confirmStore.svelte";
   import { desktopWindow } from "../stores/window.svelte";
-  import { saveBytesDownload } from "../api";
+  import {
+    fetchWorkspaceCheckpoints,
+    saveBytesDownload,
+    saveConversationWorkspaceFile,
+    updateArtifactContent,
+  } from "../api";
+  import type { WorkspaceCheckpointInfo } from "../types";
 
-  let viewMode = $state<"preview" | "code">("preview");
+  let viewMode = $state<"preview" | "code" | "diff">("preview");
   let copied = $state(false);
   let copyTimer: ReturnType<typeof setTimeout> | null = null;
   let showDownloadMenu = $state(false);
 
+  // Direct inline editing state
+  let isEditingCode = $state(false);
+  let editDraft = $state("");
+  let isSavingEdit = $state(false);
+  let editSaveError = $state<string | null>(null);
+  let editSavedNotice = $state(false);
+  let editSavedTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Per-file checkpoint diffs for the Diff tab
+  let fileCheckpoints = $state<WorkspaceCheckpointInfo[]>([]);
+  let isLoadingDiffs = $state(false);
+
   let debouncedCode = $state(artifactStore.code);
 
-  let isIframeArtifact = $derived(
-    artifactStore.language !== "markdown" && artifactStore.language !== "md",
+  let hasVisualPreview = $derived(
+    ["html", "htm", "svg", "markdown", "md"].includes(
+      (artifactStore.language || "").toLowerCase(),
+    ),
   );
+
+  let isWorkspacePreview = $derived(
+    Boolean(artifactStore.activeId?.startsWith("workspace:")),
+  );
+
+  let canSaveDirect = $derived(
+    Boolean(
+      artifactStore.activeId &&
+        (!isWorkspacePreview ||
+          (chatStore.activeConversationId && chatStore.effectiveWorkspaceWriteEnabled)),
+    ),
+  );
+
+  let isDirty = $derived(isEditingCode && editDraft !== artifactStore.code);
+
+  let isIframeArtifact = $derived(
+    hasVisualPreview &&
+      artifactStore.language !== "markdown" &&
+      artifactStore.language !== "md",
+  );
+
+  async function loadFileCheckpoints() {
+    const convId = chatStore.activeConversationId;
+    const relPath = artifactStore.filename?.trim();
+    if (!convId || !relPath) {
+      fileCheckpoints = [];
+      return;
+    }
+    isLoadingDiffs = true;
+    try {
+      fileCheckpoints = await fetchWorkspaceCheckpoints(convId, {
+        relPath,
+        includeDiff: true,
+      });
+    } catch {
+      fileCheckpoints = [];
+    } finally {
+      isLoadingDiffs = false;
+    }
+  }
+
+  $effect(() => {
+    const _id = artifactStore.activeId;
+    const _fname = artifactStore.filename;
+    const _code = artifactStore.code;
+    isEditingCode = false;
+    editSaveError = null;
+    if (!hasVisualPreview) {
+      viewMode = "code";
+    } else if (!isCurrentArtifactGenerating) {
+      viewMode = "preview";
+    }
+    if (chatStore.activeConversationId && _fname) {
+      void loadFileCheckpoints();
+    } else {
+      fileCheckpoints = [];
+    }
+  });
+
+  function startEditingCode() {
+    editDraft = artifactStore.code;
+    editSaveError = null;
+    isEditingCode = true;
+    viewMode = "code";
+  }
+
+  function discardEditingCode() {
+    isEditingCode = false;
+    editDraft = "";
+    editSaveError = null;
+  }
+
+  async function saveEditedCode() {
+    if (!artifactStore.activeId || isSavingEdit) return;
+    isSavingEdit = true;
+    editSaveError = null;
+    try {
+      if (isWorkspacePreview) {
+        const relPath = artifactStore.activeId.slice("workspace:".length);
+        if (!chatStore.activeConversationId) {
+          throw new Error("Save the conversation before editing workspace files.");
+        }
+        const saved = await saveConversationWorkspaceFile(
+          chatStore.activeConversationId,
+          relPath,
+          editDraft,
+        );
+        artifactStore.code = editDraft;
+        if (saved.artifactId) {
+          artifactStore.activeId = saved.artifactId;
+          artifactStore.artifactId = saved.artifactId;
+        }
+        await artifactStore.loadConversationArtifacts(chatStore.activeConversationId);
+        await chatStore.refreshWorkspaceFiles(chatStore.activeConversationId);
+      } else {
+        await updateArtifactContent(artifactStore.activeId, editDraft);
+        artifactStore.code = editDraft;
+        if (chatStore.activeConversationId) {
+          await artifactStore.loadConversationArtifacts(chatStore.activeConversationId);
+          if (chatStore.effectiveWorkspacePath) {
+            await chatStore.refreshWorkspaceFiles(chatStore.activeConversationId);
+          }
+        }
+      }
+      isEditingCode = false;
+      editSavedNotice = true;
+      if (editSavedTimer) clearTimeout(editSavedTimer);
+      editSavedTimer = setTimeout(() => {
+        editSavedNotice = false;
+      }, 2200);
+      await loadFileCheckpoints();
+    } catch (err) {
+      editSaveError = (err as Error).message || "Failed to save changes.";
+    } finally {
+      isSavingEdit = false;
+    }
+  }
 
   let isCurrentArtifactGenerating = $derived(
     isIframeArtifact &&
@@ -76,9 +217,22 @@
 
   let srcDoc = $derived.by(() => {
     const code = debouncedCode;
+    const convId = chatStore.activeConversationId;
+    const hasWorkspace = Boolean(convId && chatStore.effectiveWorkspacePath);
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const rawFilename = (artifactStore.filename || "").replace(/\\/g, "/").replace(/^\/+/, "");
+    const lastSlash = rawFilename.lastIndexOf("/");
+    const dirPrefix = lastSlash >= 0 ? `${rawFilename.slice(0, lastSlash + 1)}` : "";
+    const workspaceBaseHref =
+      hasWorkspace && origin && convId
+        ? `${origin}/api/conversations/${encodeURIComponent(convId)}/workspace/raw/${dirPrefix}`
+        : "";
+    const BASE_TAG = workspaceBaseHref ? `<base href="${workspaceBaseHref}">` : "";
+    const originAllow = workspaceBaseHref && origin ? ` ${origin}` : "";
+
     const CSP_META = artifactStore.networkAccess
-      ? `<meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline' data: blob:; img-src * data: blob:; font-src * data: blob:; connect-src * data: blob:; base-uri 'none'; form-action 'none';">`
-      : `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https:; font-src data: https:; connect-src 'none'; base-uri 'none'; form-action 'none';">`;
+      ? `<meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline' data: blob:; img-src * data: blob:; font-src * data: blob:; connect-src * data: blob:; base-uri ${workspaceBaseHref ? origin : "'none'"}; form-action 'none';">`
+      : `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'${originAllow}; style-src 'unsafe-inline'${originAllow}; img-src data: https:${originAllow}; font-src data: https:${originAllow}; connect-src ${originAllow || "'none'"}; base-uri ${workspaceBaseHref ? origin : "'none'"}; form-action 'none';">`;
     const INTERCEPTOR_SCRIPT = `<script>
 document.addEventListener('click', function(e) {
   const a = e.target.closest('a');
@@ -99,7 +253,7 @@ document.addEventListener('submit', function(e) {
   e.preventDefault();
 });
 <\/script>`;
-    const HEAD_INJECTIONS = `${CSP_META}\n${INTERCEPTOR_SCRIPT}`;
+    const HEAD_INJECTIONS = `${BASE_TAG ? `${BASE_TAG}\n` : ""}${CSP_META}\n${INTERCEPTOR_SCRIPT}`;
 
     if (artifactStore.language === "svg") {
       themeStore.current;
@@ -225,34 +379,29 @@ document.addEventListener('submit', function(e) {
 
   async function handleDownload() {
     if (!artifactStore.code) return;
-    let ext = artifactStore.language;
-    if (ext === "markdown") ext = "md";
+    let filename: string;
+    const rawName = (artifactStore.filename || "").replace(/\\/g, "/").trim();
+    const baseFilename = rawName ? rawName.split("/").pop() || "" : "";
 
-    if (
-      ![
-        "html",
-        "svg",
-        "md",
-        "txt",
-        "js",
-        "json",
-        "ts",
-        "css",
-        "py",
-        "jsx",
-        "tsx",
-      ].includes(ext)
-    ) {
-      ext = "txt";
+    if (baseFilename && /\.[a-z0-9_-]+$/i.test(baseFilename)) {
+      filename = baseFilename;
+    } else {
+      let ext = (artifactStore.language || "txt").toLowerCase();
+      if (ext === "markdown") ext = "md";
+      else if (ext === "javascript") ext = "js";
+      else if (ext === "typescript") ext = "ts";
+      else if (ext === "python") ext = "py";
+      else if (ext === "rust") ext = "rs";
+      else if (ext === "bash" || ext === "shell") ext = "sh";
+      else if (ext === "text" || !/^[a-z0-9]+$/.test(ext)) ext = "txt";
+
+      const baseName =
+        baseFilename ||
+        artifactStore.title.replace(/[^a-z0-9_-]/gi, "_").toLowerCase() ||
+        "artifact";
+      filename = `${baseName}.${ext}`;
     }
 
-    // Use the actual filename if available, otherwise fallback to title
-    const baseName = artifactStore.filename
-      ? artifactStore.filename.replace(/\.[^/.]+$/, "")
-      : artifactStore.title.replace(/[^a-z0-9]/gi, "_").toLowerCase() ||
-        "artifact";
-
-    const filename = `${baseName}.${ext}`;
     showDownloadMenu = false;
 
     try {
@@ -268,7 +417,7 @@ document.addEventListener('submit', function(e) {
 </script>
 
 <div
-  class="flex h-full w-full flex-col bg-bg {artifactStore.isExpanded
+  class="flex h-full w-full flex-col bg-bg {artifactStore.effectiveExpanded
     ? ''
     : 'border-l border-line'} shadow-xl overflow-hidden"
 >
@@ -278,15 +427,15 @@ document.addEventListener('submit', function(e) {
     class="@container flex h-14 shrink-0 items-center justify-between gap-2 border-b border-line bg-bg-elevated px-2.5 z-30"
   >
     <!-- Title & Language / Switcher -->
-    <div class="flex items-center gap-2 min-w-0 flex-1">
+    <div class="flex items-center gap-2 min-w-36 flex-1 overflow-hidden">
       <span
-        class="hidden @[340px]:inline-block shrink-0 text-[11px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-bg-inset border border-line text-accent"
+        class="inline-block shrink-0 text-[11px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-bg-inset border border-line text-accent"
       >
         {artifactStore.language === "markdown" ? "md" : artifactStore.language}
       </span>
       {#if artifactStore.conversationArtifacts.length > 1}
         <div
-          class="min-w-0 flex-1 max-w-60"
+          class="min-w-20 flex-1 max-w-60"
           data-tauri-drag-region={desktopWindow.isTauri ? "false" : undefined}
         >
           <Dropdown
@@ -310,49 +459,112 @@ document.addEventListener('submit', function(e) {
           />
         </div>
       {:else}
-        <h3 class="text-sm font-semibold text-fg truncate min-w-0">
+        <h3 class="text-sm font-semibold text-fg truncate min-w-20 flex-1">
           {artifactStore.title}
         </h3>
       {/if}
     </div>
 
-    <!-- Toggle View Mode Switcher -->
-    <div
-      class="flex items-center h-8 shrink-0 rounded-lg border border-line bg-bg-inset p-0.5 shadow-xs"
-    >
-      <button
-        type="button"
-        disabled={isCurrentArtifactGenerating}
-        onclick={() => (viewMode = "preview")}
-        title={isCurrentArtifactGenerating
-          ? "Preview is unavailable while artifact is generating"
-          : "Switch to Preview"}
-        class="flex items-center justify-center gap-1.5 h-full rounded-md px-2 @[480px]:px-2.5 text-xs font-medium transition-all {isCurrentArtifactGenerating
-          ? 'opacity-40 cursor-not-allowed text-fg-muted'
-          : viewMode === 'preview'
+    <!-- Toggle View Mode Switcher (hidden while editing code) -->
+    {#if !isEditingCode}
+      <div
+        class="flex items-center h-8 shrink-0 rounded-lg border border-line bg-bg-inset p-0.5 shadow-xs"
+      >
+        <button
+          type="button"
+          disabled={isCurrentArtifactGenerating || !hasVisualPreview}
+          onclick={() => (viewMode = "preview")}
+          title={isCurrentArtifactGenerating
+            ? "Preview is unavailable while artifact is generating"
+            : !hasVisualPreview
+              ? "Visual preview is only available for HTML, SVG, and Markdown"
+              : "Switch to Preview"}
+          class="flex items-center justify-center gap-1.5 h-full rounded-md px-2 @[620px]:px-2.5 text-xs font-medium transition-all {isCurrentArtifactGenerating ||
+          !hasVisualPreview
+            ? 'opacity-40 cursor-not-allowed text-fg-muted'
+            : viewMode === 'preview'
+              ? 'bg-bg-elevated text-fg shadow-xs font-semibold'
+              : 'text-fg-muted hover:text-fg'}"
+        >
+          <Eye size={13} />
+          <span class="hidden @[620px]:inline">Preview</span>
+        </button>
+        <button
+          type="button"
+          onclick={() => (viewMode = "code")}
+          title="View Code"
+          aria-label="View Code"
+          class="flex items-center justify-center gap-1.5 h-full rounded-md px-2 @[620px]:px-2.5 text-xs font-medium transition-all {viewMode ===
+          'code'
             ? 'bg-bg-elevated text-fg shadow-xs font-semibold'
             : 'text-fg-muted hover:text-fg'}"
-      >
-        <Eye size={13} />
-        <span class="hidden @[480px]:inline">Preview</span>
-      </button>
-      <button
-        type="button"
-        onclick={() => (viewMode = "code")}
-        title="View Code"
-        aria-label="View Code"
-        class="flex items-center justify-center gap-1.5 h-full rounded-md px-2 @[480px]:px-2.5 text-xs font-medium transition-all {viewMode ===
-        'code'
-          ? 'bg-bg-elevated text-fg shadow-xs font-semibold'
-          : 'text-fg-muted hover:text-fg'}"
-      >
-        <Code size={13} />
-        <span class="hidden @[480px]:inline">Code</span>
-      </button>
-    </div>
+        >
+          <Code size={13} />
+          <span class="hidden @[620px]:inline">Code</span>
+        </button>
+        {#if fileCheckpoints.length > 0}
+          <button
+            type="button"
+            onclick={() => {
+              viewMode = "diff";
+              void loadFileCheckpoints();
+            }}
+            title="View recorded edits diff for this file"
+            aria-label="View Diff"
+            class="flex items-center justify-center gap-1.5 h-full rounded-md px-2 @[680px]:px-2.5 text-xs font-medium transition-all {viewMode ===
+            'diff'
+              ? 'bg-bg-elevated text-fg shadow-xs font-semibold'
+              : 'text-fg-muted hover:text-fg'}"
+          >
+            <GitCompare size={13} />
+            <span class="hidden @[680px]:inline">Diff</span>
+          </button>
+        {/if}
+      </div>
+    {/if}
 
     <!-- Action Buttons -->
     <div class="flex items-center gap-1.5 shrink-0">
+      {#if isEditingCode}
+        <button
+          type="button"
+          onclick={discardEditingCode}
+          disabled={isSavingEdit}
+          title="Discard changes (Esc)"
+          aria-label="Discard changes"
+          class="flex items-center gap-1 h-8 rounded-lg border border-line bg-bg-inset px-2 text-xs font-medium text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors cursor-pointer disabled:opacity-40"
+        >
+          <X size={13} />
+          <span class="hidden @[480px]:inline">Discard</span>
+        </button>
+        <button
+          type="button"
+          onclick={saveEditedCode}
+          disabled={isSavingEdit || !isDirty}
+          title="Save changes (Ctrl+S)"
+          aria-label="Save changes"
+          class="flex items-center gap-1 h-8 rounded-lg bg-accent px-2 @[480px]:px-2.5 text-xs font-semibold text-accent-fg hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-40"
+        >
+          <Save size={13} />
+          <span class="hidden @[480px]:inline">{isSavingEdit ? "Saving..." : "Save"}</span>
+        </button>
+      {:else if canSaveDirect}
+        <button
+          type="button"
+          onclick={startEditingCode}
+          title="Edit file directly"
+          aria-label="Edit file"
+          class="flex items-center gap-1 h-8 rounded-lg border border-line bg-bg-inset px-2 text-xs font-medium text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors cursor-pointer"
+        >
+          {#if editSavedNotice}
+            <Check size={13} class="text-success" />
+            <span class="hidden @[560px]:inline text-success">Saved</span>
+          {:else}
+            <Pencil size={13} />
+            <span class="hidden @[560px]:inline">Edit</span>
+          {/if}
+        </button>
+      {/if}
       <!-- Copy / Download Split Button -->
       <div
         class="relative flex items-center h-8 rounded-lg border border-line bg-bg-inset shadow-xs"
@@ -362,14 +574,14 @@ document.addEventListener('submit', function(e) {
           onclick={handleCopy}
           aria-label="Copy artifact code"
           title="Copy code"
-          class="flex items-center gap-1.5 h-full px-2 @[380px]:px-2.5 text-xs font-medium text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors rounded-l-lg border-r border-line"
+          class="flex items-center gap-1.5 h-full px-2 @[520px]:px-2.5 text-xs font-medium text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors rounded-l-lg border-r border-line"
         >
           {#if copied}
             <Check class="w-3.5 h-3.5 text-success" />
-            <span class="hidden @[380px]:inline text-success">Copied</span>
+            <span class="hidden @[520px]:inline text-success">Copied</span>
           {:else}
             <Copy class="w-3.5 h-3.5" />
-            <span class="hidden @[380px]:inline">Copy</span>
+            <span class="hidden @[520px]:inline">Copy</span>
           {/if}
         </button>
         <button
@@ -433,7 +645,7 @@ document.addEventListener('submit', function(e) {
               <Download size={14} class="text-fg-muted" />
               <span>Download</span>
             </button>
-            {#if artifactStore.activeId}
+            {#if artifactStore.activeId && !isWorkspacePreview}
               <button
                 type="button"
                 onclick={async () => {
@@ -462,21 +674,23 @@ document.addEventListener('submit', function(e) {
         {/if}
       </div>
 
-      <button
-        type="button"
-        onclick={() => artifactStore.toggleExpand()}
-        aria-label={artifactStore.isExpanded
-          ? "Collapse artifact panel"
-          : "Expand artifact panel"}
-        title={artifactStore.isExpanded ? "Collapse" : "Expand"}
-        class="hidden @[420px]:flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted hover:bg-bg-hover hover:text-fg transition-colors cursor-pointer"
-      >
-        {#if artifactStore.isExpanded}
-          <Minimize2 size={15} />
-        {:else}
-          <Maximize2 size={15} />
-        {/if}
-      </button>
+      {#if !artifactStore.forceExpanded}
+        <button
+          type="button"
+          onclick={() => artifactStore.toggleExpand()}
+          aria-label={artifactStore.isExpanded
+            ? "Collapse artifact panel"
+            : "Expand artifact panel"}
+          title={artifactStore.isExpanded ? "Collapse" : "Expand"}
+          class="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted hover:bg-bg-hover hover:text-fg transition-colors cursor-pointer"
+        >
+          {#if artifactStore.isExpanded}
+            <Minimize2 size={15} />
+          {:else}
+            <Maximize2 size={15} />
+          {/if}
+        </button>
+      {/if}
 
       <button
         type="button"
@@ -527,6 +741,20 @@ document.addEventListener('submit', function(e) {
     </div>
   {/if}
 
+  {#if editSaveError}
+    <div class="flex items-center justify-between gap-2 border-b border-danger/30 bg-danger/10 px-4 py-1.5 text-xs text-danger shrink-0">
+      <span class="truncate">{editSaveError}</span>
+      <button
+        type="button"
+        onclick={() => (editSaveError = null)}
+        class="rounded p-0.5 hover:bg-danger/20 cursor-pointer"
+        aria-label="Dismiss save error"
+      >
+        <X size={13} />
+      </button>
+    </div>
+  {/if}
+
   <!-- Content Pane -->
   <div class="relative min-h-0 flex-1 w-full overflow-hidden bg-bg">
     {#if viewMode === "preview"}
@@ -544,6 +772,74 @@ document.addEventListener('submit', function(e) {
           class="absolute inset-0 h-full w-full border-0 {artifactStore.language === 'svg' ? 'bg-bg' : 'bg-white'}"
         ></iframe>
       {/if}
+    {:else if viewMode === "diff"}
+      <div class="h-full w-full overflow-auto p-4 bg-bg-elevated space-y-3 font-mono text-xs">
+        {#if isLoadingDiffs}
+          <div class="py-6 text-center text-fg-subtle">Loading file diffs...</div>
+        {:else if fileCheckpoints.length === 0}
+          <div class="py-6 text-center text-fg-subtle">No recorded edits for this file in this conversation.</div>
+        {:else}
+          {#each fileCheckpoints as cp (cp.id)}
+            <div class="rounded-lg border border-line bg-bg overflow-hidden">
+              <div class="flex items-center justify-between gap-2 border-b border-line bg-bg-inset px-3 py-1.5 text-[11px]">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-accent">
+                    {cp.action}
+                  </span>
+                  <span class="text-fg truncate">{cp.toolName}</span>
+                  {#if cp.isReverted}
+                    <span class="rounded bg-bg-elevated border border-line px-1.5 py-0.5 text-[10px] text-fg-subtle">
+                      Reverted
+                    </span>
+                  {/if}
+                </div>
+                <span class="text-fg-subtle shrink-0">
+                  {new Date(cp.createdAt).toLocaleTimeString()}
+                </span>
+              </div>
+              {#if cp.diffPreview}
+                <div class="p-2 overflow-x-auto leading-relaxed">
+                  {#each cp.diffPreview.split("\n") as dLine}
+                    <div
+                      class="whitespace-pre-wrap break-all px-1.5 py-0.2 rounded-xs {dLine.startsWith('+') &&
+                      !dLine.startsWith('+++')
+                        ? 'bg-success/15 text-success'
+                        : dLine.startsWith('-') && !dLine.startsWith('---')
+                          ? 'bg-danger/15 text-danger'
+                          : dLine.startsWith('@@')
+                            ? 'text-accent font-semibold'
+                            : 'text-fg-muted'}"
+                    >
+                      {dLine || " "}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/each}
+        {/if}
+      </div>
+    {:else if isEditingCode}
+      <div class="h-full w-full flex flex-col bg-bg-elevated">
+        <textarea
+          bind:value={editDraft}
+          spellcheck="false"
+          onkeydown={(e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+              e.preventDefault();
+              void saveEditedCode();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              discardEditingCode();
+            }
+          }}
+          class="flex-1 w-full resize-none bg-bg-elevated p-4 font-mono text-xs leading-relaxed text-fg focus:outline-none"
+        ></textarea>
+        <div class="flex items-center justify-between border-t border-line bg-bg-inset px-3 py-1.5 text-[11px] text-fg-subtle">
+          <span>{isDirty ? "Unsaved changes" : "No changes"}</span>
+          <span>Ctrl+S to save, Esc to discard</span>
+        </div>
+      </div>
     {:else}
       <div
         class="h-full w-full overflow-auto py-4 bg-bg-elevated font-mono text-xs leading-relaxed"

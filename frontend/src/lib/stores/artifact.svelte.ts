@@ -14,6 +14,8 @@ export interface ArtifactData {
 class ArtifactStore {
   isOpen = $state(false);
   isExpanded = $state(false);
+  forceExpanded = $state(false);
+  effectiveExpanded = $derived(this.isExpanded || this.forceExpanded);
   activeId = $state<string | null>(null);
   artifactId = $state<string | null>(null);
   filename = $state<string | null>(null);
@@ -67,7 +69,7 @@ class ArtifactStore {
     if (data.id) {
       this.userClosedIds.delete(data.id);
     }
-    if (this.activeId !== data.id) {
+    if (this.activeId !== data.id || !this.isOpen) {
       this.networkAccess = settingsStore.artifactNetworkEnabled;
     }
     this.activeId = data.id;
@@ -87,7 +89,7 @@ class ArtifactStore {
 
   async loadArtifact(artifactId: string, conversationId: string, filename: string, title: string, language: string) {
     this.userClosedIds.delete(artifactId);
-    if (this.activeId !== artifactId) {
+    if (this.activeId !== artifactId || !this.isOpen) {
       this.networkAccess = settingsStore.artifactNetworkEnabled;
     }
     this.activeId = artifactId;

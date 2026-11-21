@@ -108,6 +108,7 @@ export const ollamaAdapter: ApiAdapter = {
   createStreamParser() {
     const decoder = new TextDecoder();
     let buffer = "";
+    const streamNonce = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
     return (chunk: Buffer | string): StreamEvent[] => {
       const text = typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
@@ -130,7 +131,7 @@ export const ollamaAdapter: ApiAdapter = {
           // Tool calls the model requests mid-stream (ChatStreamEvent.message.tool_calls).
           const toolCalls = Array.isArray(parsed?.message?.tool_calls)
             ? parsed.message.tool_calls.map((tc: any, idx: number) => ({
-              id: tc?.id || `ollama_tc_${idx}`,
+              id: tc?.id || `ollama_tc_${streamNonce}_${idx}`,
               index: idx,
               function: {
                 name: tc?.function?.name,

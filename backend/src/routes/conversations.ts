@@ -14,6 +14,20 @@ import {
   searchChatHistory,
   stripInternalMessageTags,
 } from "../services/memory.js";
+import {
+  getWorkspaceGitDiff,
+  getWorkspaceGitStatus,
+  isLikelyBinaryBuffer,
+  listWorkspaceCheckpoints,
+  listWorkspaceEntries,
+  normalizeApprovalMode,
+  recordWorkspaceCheckpoint,
+  resolveEffectiveWorkspace,
+  resolveWorkspacePath,
+  revertWorkspaceCheckpoint,
+  upsertWorkspaceFileArtifact,
+  validateWorkspaceDirectory,
+} from "../services/builtinTools/tools/workspaceUtils.js";
 import type {
   ConversationRow,
   MessageRow,
@@ -39,7 +53,73 @@ function parseSamplingOverrides(raw: string | null | undefined): ConversationSum
   return null;
 }
 
-function rowToSummary(row: ConversationRow): ConversationSummary {
+function inferLanguageFromPath(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".html": case ".htm": return "html";
+    case ".svg": return "svg";
+    case ".md": case ".markdown": return "markdown";
+    case ".py": return "python";
+    case ".js": case ".mjs": case ".cjs": return "javascript";
+    case ".ts": case ".mts": case ".cts": return "typescript";
+    case ".jsx": return "jsx";
+    case ".tsx": return "tsx";
+    case ".svelte": return "svelte";
+    case ".vue": return "vue";
+    case ".json": return "json";
+    case ".css": return "css";
+    case ".scss": return "scss";
+    case ".rs": return "rust";
+    case ".go": return "go";
+    case ".c": case ".cpp": case ".h": case ".hpp": return "cpp";
+    case ".sh": case ".bash": return "bash";
+    case ".sql": return "sql";
+    case ".yml": case ".yaml": return "yaml";
+    case ".toml": return "toml";
+    default: return ext.replace(".", "") || "text";
+  }
+}
+
+type ConversationWithFolderWorkspaceRow = ConversationRow & {
+  folder_workspace_path?: string | null;
+  folder_workspace_write_enabled?: number | null;
+  folder_workspace_approval_mode?: string | null;
+};
+
+function rowToSummary(row: ConversationWithFolderWorkspaceRow): ConversationSummary {
+  let effectivePath: string | null;
+  let effectiveWriteEnabled: boolean;
+  let effectiveApprovalMode: import("../types.js").WorkspaceApprovalMode;
+  let workspaceSource: "conversation" | "folder" | null;
+
+  const ownPath = row.workspace_path?.trim() || null;
+  const ownApprovalMode = normalizeApprovalMode(row.workspace_approval_mode);
+  if (ownPath) {
+    effectivePath = ownPath;
+    effectiveWriteEnabled = Boolean(row.workspace_write_enabled);
+    effectiveApprovalMode = ownApprovalMode;
+    workspaceSource = "conversation";
+  } else if ("folder_workspace_path" in row) {
+    const folderPath = row.folder_workspace_path?.trim() || null;
+    if (folderPath) {
+      effectivePath = folderPath;
+      effectiveWriteEnabled = Boolean(row.folder_workspace_write_enabled);
+      effectiveApprovalMode = normalizeApprovalMode(row.folder_workspace_approval_mode);
+      workspaceSource = "folder";
+    } else {
+      effectivePath = null;
+      effectiveWriteEnabled = false;
+      effectiveApprovalMode = "auto";
+      workspaceSource = null;
+    }
+  } else {
+    const eff = resolveEffectiveWorkspace(row.id);
+    effectivePath = eff.path;
+    effectiveWriteEnabled = eff.writeEnabled;
+    effectiveApprovalMode = eff.approvalMode;
+    workspaceSource = eff.source;
+  }
+
   return {
     id: row.id,
     title: row.title,
@@ -60,6 +140,13 @@ function rowToSummary(row: ConversationRow): ConversationSummary {
         : null,
     systemPromptOverride: row.system_prompt_override ?? null,
     samplingOverrides: parseSamplingOverrides(row.sampling_overrides),
+    workspacePath: ownPath,
+    workspaceWriteEnabled: Boolean(row.workspace_write_enabled),
+    workspaceApprovalMode: ownApprovalMode,
+    effectiveWorkspacePath: effectivePath,
+    effectiveWorkspaceWriteEnabled: effectiveWriteEnabled,
+    effectiveWorkspaceApprovalMode: effectiveApprovalMode,
+    workspaceSource,
   };
 }
 
@@ -114,12 +201,18 @@ function getConversationMessagesWithAttachments(convId: string): MessageOut[] {
 // Prepared statements (created once, reused on every call)
 // ---------------------------------------------------------------------------
 
-const listConversations = db.prepare<[], ConversationRow>(
-  "SELECT * FROM conversations ORDER BY COALESCE(is_pinned, 0) DESC, updated_at DESC",
+const listConversations = db.prepare<[], ConversationWithFolderWorkspaceRow>(
+  `SELECT c.*, f.workspace_path AS folder_workspace_path, f.workspace_write_enabled AS folder_workspace_write_enabled, f.workspace_approval_mode AS folder_workspace_approval_mode
+   FROM conversations c
+   LEFT JOIN folders f ON c.folder_id = f.id
+   ORDER BY COALESCE(c.is_pinned, 0) DESC, c.updated_at DESC`,
 );
 
-const getConversation = db.prepare<[string], ConversationRow>(
-  "SELECT * FROM conversations WHERE id = ?",
+const getConversation = db.prepare<[string], ConversationWithFolderWorkspaceRow>(
+  `SELECT c.*, f.workspace_path AS folder_workspace_path, f.workspace_write_enabled AS folder_workspace_write_enabled, f.workspace_approval_mode AS folder_workspace_approval_mode
+   FROM conversations c
+   LEFT JOIN folders f ON c.folder_id = f.id
+   WHERE c.id = ?`,
 );
 
 const getMessages = db.prepare<[string], MessageRow>(
@@ -224,6 +317,9 @@ export async function conversationsRoutes(app: FastifyInstance) {
       model?: string;
       toolsEnabled?: boolean;
       folderId?: string | null;
+      workspacePath?: string | null;
+      workspaceWriteEnabled?: boolean;
+      workspaceApprovalMode?: import("../types.js").WorkspaceApprovalMode;
     };
     const now = Date.now();
     const id = crypto.randomUUID();
@@ -239,6 +335,19 @@ export async function conversationsRoutes(app: FastifyInstance) {
         folderName = folderRow.name;
       }
     }
+
+    let validatedWorkspacePath: string | null = null;
+    let workspaceWriteFlag = 0;
+    let workspaceApprovalMode = normalizeApprovalMode(body.workspaceApprovalMode);
+    if (typeof body.workspacePath === "string" && body.workspacePath.trim()) {
+      const check = validateWorkspaceDirectory(body.workspacePath);
+      if (!check.ok) {
+        return reply.code(400).send({ error: { message: check.error } });
+      }
+      validatedWorkspacePath = check.realPath;
+      workspaceWriteFlag = body.workspaceWriteEnabled ? 1 : 0;
+    }
+
     insertConversation.run({
       id,
       title: body.title ?? "New conversation",
@@ -249,6 +358,11 @@ export async function conversationsRoutes(app: FastifyInstance) {
       folderId,
       folder: folderName,
     });
+    if (validatedWorkspacePath) {
+      db.prepare(
+        "UPDATE conversations SET workspace_path = ?, workspace_write_enabled = ?, workspace_approval_mode = ? WHERE id = ?"
+      ).run(validatedWorkspacePath, workspaceWriteFlag, workspaceApprovalMode, id);
+    }
     const row = getConversation.get(id)!;
     return reply.code(201).send(rowToSummary(row));
   });
@@ -496,8 +610,435 @@ export async function conversationsRoutes(app: FastifyInstance) {
       );
     }
 
+    if (body.workspacePath !== undefined) {
+      if (body.workspacePath === null || !String(body.workspacePath).trim()) {
+        db.prepare(
+          "UPDATE conversations SET workspace_path = NULL, workspace_write_enabled = 0, workspace_approval_mode = 'auto' WHERE id = ?"
+        ).run(id);
+      } else {
+        const check = validateWorkspaceDirectory(String(body.workspacePath));
+        if (!check.ok) {
+          return reply.code(400).send({ error: { message: check.error } });
+        }
+        const writeFlag =
+          body.workspaceWriteEnabled !== undefined
+            ? body.workspaceWriteEnabled
+              ? 1
+              : 0
+            : row.workspace_write_enabled ?? 0;
+        const approvalMode =
+          body.workspaceApprovalMode !== undefined
+            ? normalizeApprovalMode(body.workspaceApprovalMode)
+            : normalizeApprovalMode(row.workspace_approval_mode);
+        db.prepare(
+          "UPDATE conversations SET workspace_path = ?, workspace_write_enabled = ?, workspace_approval_mode = ? WHERE id = ?"
+        ).run(check.realPath, writeFlag, approvalMode, id);
+      }
+    } else {
+      if (body.workspaceWriteEnabled !== undefined) {
+        db.prepare("UPDATE conversations SET workspace_write_enabled = ? WHERE id = ?").run(
+          body.workspaceWriteEnabled ? 1 : 0,
+          id
+        );
+      }
+      if (body.workspaceApprovalMode !== undefined) {
+        db.prepare("UPDATE conversations SET workspace_approval_mode = ? WHERE id = ?").run(
+          normalizeApprovalMode(body.workspaceApprovalMode),
+          id
+        );
+      }
+    }
+
     return rowToSummary(getConversation.get(id)!);
   });
+
+  /** GET /api/conversations/:id/workspace/checkpoints -- list recent workspace edit checkpoints. */
+  app.get<{ Params: { id: string }; Querystring: { relPath?: string; includeDiff?: string } }>(
+    "/api/conversations/:id/workspace/checkpoints",
+    async (req, reply) => {
+      const { id } = req.params;
+      const row = getConversation.get(id);
+      if (!row) {
+        return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
+      }
+      const relPath = typeof req.query.relPath === "string" ? req.query.relPath.trim() : undefined;
+      const includeDiff = req.query.includeDiff === "1" || req.query.includeDiff === "true";
+      return listWorkspaceCheckpoints(id, { relPath, includeDiff });
+    }
+  );
+
+  /** GET /api/conversations/:id/workspace/git-status -- inspect git branch and dirty files in the effective workspace. */
+  app.get("/api/conversations/:id/workspace/git-status", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const row = getConversation.get(id);
+    if (!row) {
+      return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
+    }
+    const eff = resolveEffectiveWorkspace(id);
+    if (!eff.path) {
+      return { isGitRepo: false, branch: null, ahead: 0, behind: 0, files: [] };
+    }
+    return getWorkspaceGitStatus(eff.path);
+  });
+
+  /** GET /api/conversations/:id/workspace/git-diff -- inspect uncommitted git diff in the effective workspace. */
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>(
+    "/api/conversations/:id/workspace/git-diff",
+    async (req, reply) => {
+      const { id } = req.params;
+      const row = getConversation.get(id);
+      if (!row) {
+        return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
+      }
+      const eff = resolveEffectiveWorkspace(id);
+      if (!eff.path) {
+        return { isGitRepo: false, diff: "", truncated: false };
+      }
+      const relPath = typeof req.query.path === "string" ? req.query.path.trim() : undefined;
+      return getWorkspaceGitDiff(eff.path, relPath);
+    }
+  );
+
+  /** GET /api/workspace/git-status?path=... -- inspect git status for an unsaved conversation workspace. */
+  app.get<{ Querystring: { path?: string } }>("/api/workspace/git-status", async (req, reply) => {
+    const rawPath = typeof req.query.path === "string" ? req.query.path.trim() : "";
+    if (!rawPath) {
+      return reply.code(400).send({ error: { message: "Query parameter 'path' is required." } });
+    }
+    return getWorkspaceGitStatus(rawPath);
+  });
+
+  /** GET /api/workspace/git-diff?root=...&path=... -- inspect git diff for an unsaved conversation workspace. */
+  app.get<{ Querystring: { root?: string; path?: string } }>("/api/workspace/git-diff", async (req, reply) => {
+    const rawRoot = typeof req.query.root === "string" ? req.query.root.trim() : "";
+    if (!rawRoot) {
+      return reply.code(400).send({ error: { message: "Query parameter 'root' is required." } });
+    }
+    const relPath = typeof req.query.path === "string" ? req.query.path.trim() : undefined;
+    return getWorkspaceGitDiff(rawRoot, relPath);
+  });
+
+  /** PUT /api/conversations/:id/workspace/file -- save direct user edits to a workspace file from ArtifactPanel. */
+  app.put<{ Params: { id: string }; Body: { path?: string; content?: string } }>(
+    "/api/conversations/:id/workspace/file",
+    async (req, reply) => {
+      const { id } = req.params;
+      const reqPath = typeof req.body?.path === "string" ? req.body.path.trim() : "";
+      const content = req.body?.content;
+      if (!reqPath || typeof content !== "string") {
+        return reply.code(400).send({ error: { message: "Body must include `path` and string `content`." } });
+      }
+      const row = getConversation.get(id);
+      if (!row) {
+        return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
+      }
+      const eff = resolveEffectiveWorkspace(id);
+      if (!eff.path) {
+        return reply.code(400).send({ error: { message: "No workspace is attached to this conversation." } });
+      }
+      if (!eff.writeEnabled) {
+        return reply.code(403).send({
+          error: { message: "Workspace is in Read-Only mode. Switch to Ask First or Read-Write to save edits." },
+        });
+      }
+      try {
+        const target = resolveWorkspacePath(eff.path, reqPath, { allowMissingLeaf: true });
+        const existed = fs.existsSync(target.absPath);
+        const previousContent = existed ? fs.readFileSync(target.absPath, "utf-8") : null;
+        fs.mkdirSync(path.dirname(target.absPath), { recursive: true });
+        fs.writeFileSync(target.absPath, content, "utf-8");
+
+        const checkpointId = recordWorkspaceCheckpoint({
+          conversationId: id,
+          toolName: "manual_edit",
+          workspaceRoot: target.realRoot,
+          relPath: target.relPath,
+          action: existed ? "edit" : "create",
+          previousContent,
+          newContent: content,
+        });
+
+        const artifactId = upsertWorkspaceFileArtifact({
+          conversationId: id,
+          relPath: target.relPath,
+          absPath: target.absPath,
+        });
+
+        return {
+          path: target.relPath,
+          sizeBytes: Buffer.byteLength(content, "utf-8"),
+          checkpointId,
+          artifactId,
+        };
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        const code = msg.includes("Access denied") ? 403 : 400;
+        return reply.code(code).send({ error: { message: msg } });
+      }
+    }
+  );
+
+  /** POST /api/conversations/:id/workspace/checkpoints/:checkpointId/revert -- revert a workspace edit checkpoint. */
+  app.post(
+    "/api/conversations/:id/workspace/checkpoints/:checkpointId/revert",
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const { id, checkpointId } = req.params as { id: string; checkpointId: string };
+      const row = getConversation.get(id);
+      if (!row) {
+        return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
+      }
+      try {
+        const reverted = revertWorkspaceCheckpoint(id, checkpointId);
+        return reverted;
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        const code = msg.includes("not found") ? 404 : 400;
+        return reply.code(code).send({ error: { message: msg } });
+      }
+    }
+  );
+
+  /** GET /api/conversations/:id/workspace/files -- list filtered relative file paths in the effective workspace. */
+  app.get("/api/conversations/:id/workspace/files", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const row = getConversation.get(id);
+    if (!row) {
+      return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
+    }
+
+    const eff = resolveEffectiveWorkspace(id);
+    if (!eff.path) {
+      return {
+        files: [],
+        effectiveWorkspacePath: null,
+        workspaceWriteEnabled: false,
+        workspaceSource: null,
+      };
+    }
+
+    try {
+      const { entries } = listWorkspaceEntries(eff.path, {
+        maxDepth: 8,
+        maxEntries: 2000,
+        includeDirs: false,
+      });
+      return {
+        files: entries.filter((e) => e.type === "file").map((e) => e.path),
+        effectiveWorkspacePath: eff.path,
+        workspaceWriteEnabled: eff.writeEnabled,
+        workspaceSource: eff.source,
+      };
+    } catch (err: any) {
+      return reply.code(400).send({
+        error: { message: err?.message || "Failed to list workspace files." },
+      });
+    }
+  });
+
+  /** GET /api/conversations/:id/workspace/file?path=... -- read a file from the effective workspace for UI preview. */
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>(
+    "/api/conversations/:id/workspace/file",
+    async (req, reply) => {
+      const { id } = req.params;
+      const reqPath = typeof req.query.path === "string" ? req.query.path.trim() : "";
+      if (!reqPath) {
+        return reply.code(400).send({ error: { message: "Query parameter 'path' is required." } });
+      }
+
+      const row = getConversation.get(id);
+      if (!row) {
+        return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
+      }
+
+      const eff = resolveEffectiveWorkspace(id);
+      if (!eff.path) {
+        return reply.code(400).send({ error: { message: "No workspace is attached to this conversation." } });
+      }
+
+      try {
+        const target = resolveWorkspacePath(eff.path, reqPath);
+        const stat = fs.statSync(target.realPath);
+        if (!stat.isFile()) {
+          return reply.code(400).send({ error: { message: `'${target.relPath}' is not a regular file.` } });
+        }
+
+        const MAX_PREVIEW_BYTES = 512 * 1024;
+        const truncated = stat.size > MAX_PREVIEW_BYTES;
+        const fd = fs.openSync(target.realPath, "r");
+        let buf: Buffer;
+        try {
+          const readLen = Math.min(stat.size, MAX_PREVIEW_BYTES);
+          buf = Buffer.alloc(readLen);
+          fs.readSync(fd, buf, 0, readLen, 0);
+        } finally {
+          fs.closeSync(fd);
+        }
+
+        if (isLikelyBinaryBuffer(buf)) {
+          return reply.code(400).send({ error: { message: `'${target.relPath}' is a binary file.` } });
+        }
+
+        return {
+          path: target.relPath,
+          content: buf.toString("utf-8"),
+          sizeBytes: stat.size,
+          language: inferLanguageFromPath(target.relPath),
+          truncated,
+        };
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        const code = msg.includes("does not exist") ? 404 : msg.includes("Access denied") ? 403 : 400;
+        return reply.code(code).send({ error: { message: msg } });
+      }
+    }
+  );
+
+  /** GET /api/conversations/:id/workspace/raw/* -- serve raw workspace assets (CSS/JS/images/fonts) for ArtifactPanel HTML preview. */
+  app.get("/api/conversations/:id/workspace/raw/*", async (req: FastifyRequest, reply: FastifyReply) => {
+    const params = req.params as { id: string; "*": string };
+    const id = params.id;
+    const wildcardPath = typeof params["*"] === "string" ? params["*"].trim() : "";
+    if (!wildcardPath) {
+      return reply.code(400).send({ error: { message: "Asset path is required." } });
+    }
+
+    const row = getConversation.get(id);
+    if (!row) {
+      return reply.code(404).send({ error: { message: `Conversation "${id}" not found.` } });
+    }
+
+    const eff = resolveEffectiveWorkspace(id);
+    if (!eff.path) {
+      return reply.code(400).send({ error: { message: "No workspace is attached to this conversation." } });
+    }
+
+    try {
+      const target = resolveWorkspacePath(eff.path, wildcardPath);
+      const stat = fs.statSync(target.realPath);
+      if (!stat.isFile()) {
+        return reply.code(404).send({ error: { message: `'${target.relPath}' is not a regular file.` } });
+      }
+      if (stat.size > 15 * 1024 * 1024) {
+        return reply.code(413).send({ error: { message: "Asset too large." } });
+      }
+
+      const ext = path.extname(target.realPath).toLowerCase();
+      const mimeMap: Record<string, string> = {
+        ".html": "text/html; charset=utf-8",
+        ".htm": "text/html; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".js": "application/javascript; charset=utf-8",
+        ".mjs": "application/javascript; charset=utf-8",
+        ".cjs": "application/javascript; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+        ".svg": "image/svg+xml",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".ico": "image/x-icon",
+        ".woff2": "font/woff2",
+        ".woff": "font/woff",
+        ".ttf": "font/ttf",
+        ".otf": "font/otf",
+        ".txt": "text/plain; charset=utf-8",
+      };
+      const contentType = mimeMap[ext] || "application/octet-stream";
+      const buf = fs.readFileSync(target.realPath);
+      return reply
+        .header("Content-Type", contentType)
+        .header("Cache-Control", "no-store")
+        .send(buf);
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      const code = msg.includes("does not exist") ? 404 : msg.includes("Access denied") ? 403 : 400;
+      return reply.code(code).send({ error: { message: msg } });
+    }
+  });
+
+  /** GET /api/workspace/files?path=... -- validate and list files for a workspace directory (used for unsaved chats). */
+  app.get<{ Querystring: { path?: string } }>(
+    "/api/workspace/files",
+    async (req, reply) => {
+      const rawPath = typeof req.query.path === "string" ? req.query.path.trim() : "";
+      if (!rawPath) {
+        return reply.code(400).send({ error: { message: "Query parameter 'path' is required." } });
+      }
+      const check = validateWorkspaceDirectory(rawPath);
+      if (!check.ok) {
+        return reply.code(400).send({ error: { message: check.error } });
+      }
+      try {
+        const { entries } = listWorkspaceEntries(check.realPath, {
+          maxDepth: 8,
+          maxEntries: 2000,
+          includeDirs: false,
+        });
+        return {
+          files: entries.filter((e) => e.type === "file").map((e) => e.path),
+          effectiveWorkspacePath: check.realPath,
+          workspaceWriteEnabled: false,
+          workspaceSource: "conversation" as const,
+        };
+      } catch (err: any) {
+        return reply.code(400).send({
+          error: { message: err?.message || "Failed to list workspace files." },
+        });
+      }
+    }
+  );
+
+  /** GET /api/workspace/file?root=...&path=... -- read a file from a workspace directory for preview (used for unsaved chats). */
+  app.get<{ Querystring: { root?: string; path?: string } }>(
+    "/api/workspace/file",
+    async (req, reply) => {
+      const rawRoot = typeof req.query.root === "string" ? req.query.root.trim() : "";
+      const reqPath = typeof req.query.path === "string" ? req.query.path.trim() : "";
+      if (!rawRoot || !reqPath) {
+        return reply.code(400).send({ error: { message: "Query parameters 'root' and 'path' are required." } });
+      }
+      const check = validateWorkspaceDirectory(rawRoot);
+      if (!check.ok) {
+        return reply.code(400).send({ error: { message: check.error } });
+      }
+      try {
+        const target = resolveWorkspacePath(check.realPath, reqPath);
+        const stat = fs.statSync(target.realPath);
+        if (!stat.isFile()) {
+          return reply.code(400).send({ error: { message: `'${target.relPath}' is not a regular file.` } });
+        }
+
+        const MAX_PREVIEW_BYTES = 512 * 1024;
+        const truncated = stat.size > MAX_PREVIEW_BYTES;
+        const fd = fs.openSync(target.realPath, "r");
+        let buf: Buffer;
+        try {
+          const readLen = Math.min(stat.size, MAX_PREVIEW_BYTES);
+          buf = Buffer.alloc(readLen);
+          fs.readSync(fd, buf, 0, readLen, 0);
+        } finally {
+          fs.closeSync(fd);
+        }
+
+        if (isLikelyBinaryBuffer(buf)) {
+          return reply.code(400).send({ error: { message: `'${target.relPath}' is a binary file.` } });
+        }
+
+        return {
+          path: target.relPath,
+          content: buf.toString("utf-8"),
+          sizeBytes: stat.size,
+          language: inferLanguageFromPath(target.relPath),
+          truncated,
+        };
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        const code = msg.includes("does not exist") ? 404 : msg.includes("Access denied") ? 403 : 400;
+        return reply.code(code).send({ error: { message: msg } });
+      }
+    }
+  );
 
   /** DELETE /api/conversations/:id -- hard delete; cascades to messages. */
   app.delete("/api/conversations/:id", async (req: FastifyRequest, reply: FastifyReply) => {

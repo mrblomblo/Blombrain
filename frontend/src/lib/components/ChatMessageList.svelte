@@ -12,6 +12,7 @@
     ChevronDown,
     X,
     Folder,
+    FolderOpen,
     Pencil,
     MessageSquare,
   } from "@lucide/svelte";
@@ -62,23 +63,47 @@
   let editingFolderOpen = $state(false);
   let editingFolderName = $state("");
   let editingFolderDesc = $state("");
+  let editingFolderWorkspacePath = $state("");
+  let editingFolderWorkspaceWrite = $state(false);
+  let editingFolderWorkspaceApproval = $state<import("../types").WorkspaceApprovalMode>("auto");
+  let editingFolderError = $state<string | null>(null);
   let isSavingFolder = $state(false);
 
   function openEditActiveFolder() {
     if (!activeFolder) return;
     editingFolderName = activeFolder.name;
     editingFolderDesc = activeFolder.description || "";
+    editingFolderWorkspacePath = activeFolder.workspacePath ?? "";
+    editingFolderWorkspaceWrite = Boolean(activeFolder.workspaceWriteEnabled);
+    editingFolderWorkspaceApproval = activeFolder.workspaceApprovalMode ?? "auto";
+    editingFolderError = null;
     editingFolderOpen = true;
   }
 
-  async function submitEditActiveFolder(name: string, description: string) {
+  async function submitEditActiveFolder(
+    name: string,
+    description: string,
+    workspacePath: string | null = null,
+    workspaceWriteEnabled: boolean = false,
+    workspaceApprovalMode: import("../types").WorkspaceApprovalMode = "auto",
+  ) {
     if (!activeFolder) return;
     isSavingFolder = true;
+    editingFolderError = null;
     try {
-      await updateFolder(activeFolder.id, { name, description });
+      await updateFolder(activeFolder.id, {
+        name,
+        description,
+        workspacePath,
+        workspaceWriteEnabled,
+        workspaceApprovalMode,
+      });
       await queryClient.invalidateQueries({ queryKey: ["folders"] });
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      await chatStore.refreshWorkspaceFiles();
       editingFolderOpen = false;
+    } catch (err) {
+      editingFolderError = (err as Error).message || "Failed to save folder.";
     } finally {
       isSavingFolder = false;
     }
@@ -436,6 +461,15 @@
                       Start a new chat inside this folder or open one below.
                     </p>
                   {/if}
+                  {#if activeFolder.workspacePath}
+                    <div class="mt-1.5 inline-flex items-center gap-1.5 rounded-md border border-accent/30 bg-accent/10 px-2 py-0.5 text-[11px] text-accent">
+                      <FolderOpen size={12} class="shrink-0" />
+                      <span class="font-mono truncate max-w-md">{activeFolder.workspacePath}</span>
+                      <span class="rounded bg-bg-inset px-1 py-0.2 font-mono text-[9px] font-semibold {activeFolder.workspaceWriteEnabled ? 'text-warning' : 'text-fg-subtle'}">
+                        {activeFolder.workspaceWriteEnabled ? "RW" : "RO"}
+                      </span>
+                    </div>
+                  {/if}
                 </div>
               </div>
               <button
@@ -587,7 +621,14 @@
   mode="edit"
   bind:name={editingFolderName}
   bind:description={editingFolderDesc}
+  bind:workspacePath={editingFolderWorkspacePath}
+  bind:workspaceWriteEnabled={editingFolderWorkspaceWrite}
+  bind:workspaceApprovalMode={editingFolderWorkspaceApproval}
+  error={editingFolderError}
   isSaving={isSavingFolder}
   onsubmit={submitEditActiveFolder}
-  onclose={() => (editingFolderOpen = false)}
+  onclose={() => {
+    editingFolderOpen = false;
+    editingFolderError = null;
+  }}
 />

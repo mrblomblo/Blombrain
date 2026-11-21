@@ -10,6 +10,14 @@ import type { ArtifactRow, AttachmentRow, MessageRow, ModelSettingRow, SlashTool
 import { getAdapter } from "../adapters/index.js";
 import { mcpManager } from "../services/mcp.js";
 import { extractDocumentTextAsync } from "../services/documentExtractor.js";
+import {
+  isLikelyBinaryBuffer,
+  listWorkspaceEntries,
+  resolveEffectiveWorkspace,
+  resolveWorkspacePath,
+} from "../services/builtinTools/tools/workspaceUtils.js";
+import { resolveToolApproval } from "../services/toolApproval.js";
+import { getAllPromptTemplates } from "./promptTemplates.js";
 
 interface ChatCompletionBody {
   model: string;
@@ -218,6 +226,7 @@ export interface ActiveStream {
   originalUserContent: string;
   attachmentIds?: string[];
   assistantContent: string;
+  activeToolEvent?: Record<string, any> | null;
   reasoningMode: "oob" | "inband" | null;
   thinkingStartMs: number;
   usageStats: any;
@@ -250,15 +259,22 @@ async function runGenerationPass(opts: {
   abortController: AbortController;
   onChunk: (sseChunk: string) => void;
   stripPrefix?: string;
+  allocateCallId?: (rawId: string | undefined, idx: number) => string;
+  onToolCallStreaming?: (info: {
+    callId: string;
+    name: string;
+    argsBytes: number;
+    partialPath?: string;
+  }) => void;
 }): Promise<{
   content: string;
   reasoning: string;
-  toolCalls: Array<{ id?: string; name: string; arguments: Record<string, any> }>;
+  toolCalls: Array<{ id?: string; name: string; arguments: Record<string, any>; parseError?: string }>;
   usageStats?: any;
   streamError?: string;
   reasoningMode: "oob" | "inband" | null;
 }> {
-  const { adapter, buildParams, abortController, onChunk, stripPrefix } = opts;
+  const { adapter, buildParams, abortController, onChunk, stripPrefix, allocateCallId, onToolCallStreaming } = opts;
 
   let reqConfig;
   try {
@@ -292,8 +308,11 @@ async function runGenerationPass(opts: {
   let prefixBuffer = stripPrefix ? "" : undefined;
   const prefixToStrip = stripPrefix || "";
 
-  const pendingToolCalls = new Map<number, { id?: string; name?: string; argsText: string }>();
-  const completedToolCalls: Array<{ id?: string; name: string; arguments: Record<string, any> }> = [];
+  const pendingToolCalls = new Map<
+    number,
+    { id?: string; assignedCallId?: string; name?: string; argsText: string; lastProgressAt: number; lastProgressBytes: number }
+  >();
+  const completedToolCalls: Array<{ id?: string; name: string; arguments: Record<string, any>; parseError?: string }> = [];
 
   await new Promise<void>((resolve) => {
     nodeStream.on("data", (chunk: Buffer) => {
@@ -391,16 +410,21 @@ async function runGenerationPass(opts: {
               }
 
               const targetIdx = idx ?? 0;
-              const existing = pendingToolCalls.get(targetIdx) ?? { argsText: "" };
+              const existing = pendingToolCalls.get(targetIdx) ?? {
+                argsText: "",
+                lastProgressAt: 0,
+                lastProgressBytes: 0,
+              };
               if (tc.id) existing.id = tc.id;
               if (tc.function?.name !== undefined) existing.name = tc.function.name;
               if (tc.function?.arguments !== undefined) {
                 if (typeof tc.function.arguments === "string") {
                   const incoming = tc.function.arguments;
-                  if (existing.argsText && incoming.startsWith(existing.argsText)) {
+                  if (existing.argsText && incoming.length >= existing.argsText.length && incoming.startsWith(existing.argsText)) {
                     existing.argsText = incoming;
                   } else if (
                     existing.argsText &&
+                    incoming.trimStart().startsWith("{") &&
                     isCompleteJson(existing.argsText) &&
                     isCompleteJson(incoming)
                   ) {
@@ -412,7 +436,30 @@ async function runGenerationPass(opts: {
                   existing.argsText = JSON.stringify(tc.function.arguments);
                 }
               }
+              if (existing.name && !existing.assignedCallId && allocateCallId) {
+                existing.assignedCallId = allocateCallId(existing.id, targetIdx);
+              }
               pendingToolCalls.set(targetIdx, existing);
+
+              if (existing.name && existing.assignedCallId && onToolCallStreaming) {
+                const nowMs = Date.now();
+                const bytes = Buffer.byteLength(existing.argsText, "utf-8");
+                if (
+                  existing.lastProgressAt === 0 ||
+                  nowMs - existing.lastProgressAt >= 350 ||
+                  bytes - existing.lastProgressBytes >= 2048
+                ) {
+                  existing.lastProgressAt = nowMs;
+                  existing.lastProgressBytes = bytes;
+                  const pathMatch = existing.argsText.match(/"(?:path|filename|from_path|command)"\s*:\s*"([^"\n]{1,140})"/);
+                  onToolCallStreaming({
+                    callId: existing.assignedCallId,
+                    name: existing.name,
+                    argsBytes: bytes,
+                    partialPath: pathMatch?.[1],
+                  });
+                }
+              }
             }
           }
         }
@@ -452,11 +499,31 @@ async function runGenerationPass(opts: {
       if (err) streamError = err;
 
       // Flush any partial tool calls
-      for (const [, entry] of pendingToolCalls) {
+      for (const [entryIdx, entry] of pendingToolCalls) {
         if (entry.name) {
           let args: Record<string, any> = {};
-          try { args = entry.argsText ? JSON.parse(entry.argsText) : {}; } catch { }
-          completedToolCalls.push({ id: entry.id, name: entry.name, arguments: args });
+          let parseError: string | undefined;
+          if (entry.argsText && entry.argsText.trim()) {
+            try {
+              const parsed = JSON.parse(entry.argsText);
+              if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                args = parsed;
+              } else {
+                parseError = `Tool arguments must be a JSON object, got ${typeof parsed}.`;
+              }
+            } catch (parseErr: any) {
+              parseError = `Malformed or truncated JSON arguments for '${entry.name}' (${Buffer.byteLength(entry.argsText, "utf-8")} bytes received): ${parseErr?.message || String(parseErr)}. If the output was truncated by max_tokens, write a shorter file or split edits into smaller chunks.`;
+            }
+          }
+          const finalId =
+            entry.assignedCallId ??
+            (allocateCallId ? allocateCallId(entry.id, entryIdx) : entry.id);
+          completedToolCalls.push({
+            id: finalId,
+            name: entry.name,
+            arguments: args,
+            ...(parseError ? { parseError } : {}),
+          });
         }
       }
 
@@ -581,6 +648,21 @@ export async function chatRoutes(app: FastifyInstance) {
     return reply.send({ success: true });
   });
 
+  app.post("/api/chat/tool-approval", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { callId, approved, approveAllInTurn } = (req.body ?? {}) as {
+      conversationId?: string;
+      callId?: string;
+      approved?: boolean;
+      approveAllInTurn?: boolean;
+    };
+    if (!callId || typeof callId !== "string") {
+      return sendJsonError(reply, 400, "callId is required");
+    }
+    const decision = approveAllInTurn ? "approved_all_turn" : approved ? "approved" : "rejected";
+    const resolved = resolveToolApproval(callId, decision);
+    return reply.send({ ok: true, resolved });
+  });
+
   app.post("/api/chat/completions", async (req: FastifyRequest, reply: FastifyReply) => {
     const body = req.body as ChatCompletionBody;
     if (!body?.model || !Array.isArray(body.messages)) {
@@ -618,6 +700,10 @@ export async function chatRoutes(app: FastifyInstance) {
           model: existingStream.model,
           choices: [{ index: 0, delta: { content: existingStream.assistantContent }, finish_reason: null }],
         })}\n\n`);
+      }
+
+      if (existingStream.activeToolEvent) {
+        reply.raw.write(`data: ${JSON.stringify(existingStream.activeToolEvent)}\n\n`);
       }
 
       existingStream.subscribers.add(reply);
@@ -782,8 +868,21 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const subscribers = new Set<FastifyReply>();
     subscribers.add(reply);
+    let streamRef: ActiveStream | null = null;
 
     function broadcastChunk(sseChunk: string) {
+      if (streamRef && sseChunk.includes('"tool_execution"')) {
+        try {
+          const parsed = JSON.parse(sseChunk);
+          if (parsed?.type === "tool_execution") {
+            if (parsed.status === "executing" || parsed.status === "awaiting_approval" || parsed.status === "polling") {
+              streamRef.activeToolEvent = parsed;
+            } else {
+              streamRef.activeToolEvent = null;
+            }
+          }
+        } catch { }
+      }
       const line = `data: ${sseChunk}\n\n`;
       for (const sub of subscribers) {
         if (!sub.raw.writableEnded) sub.raw.write(line);
@@ -915,6 +1014,7 @@ export async function chatRoutes(app: FastifyInstance) {
       originalUserContent,
       attachmentIds,
       assistantContent,
+      activeToolEvent: null,
       reasoningMode: null,
       thinkingStartMs: 0,
       usageStats: undefined,
@@ -925,6 +1025,7 @@ export async function chatRoutes(app: FastifyInstance) {
       subscribers,
       doSaveTurn,
     };
+    streamRef = currentActiveStream;
     activeStreams.set(conversationId, currentActiveStream);
 
     const onClientDisconnect = () => { subscribers.delete(reply); };
@@ -934,6 +1035,8 @@ export async function chatRoutes(app: FastifyInstance) {
     const { extractPrefixTokens, resolveSlashInjections, routeToolsAndSkills, buildRecentContext } = await import(
       "../services/toolRouter.js"
     );
+
+    const effectiveWorkspace = resolveEffectiveWorkspace(conversationId);
 
     const slashInjections = !isContinue
       ? await resolveSlashInjections(
@@ -951,37 +1054,35 @@ export async function chatRoutes(app: FastifyInstance) {
       mcpTools = slashInjections.mcpTools;
       activeSkills = slashInjections.selectedSkills;
       builtInTools = slashInjections.selectedBuiltInTools;
-    } else {
-      // Emit routing status event if not a continue request
-      if (!isContinue) {
-        broadcastChunk(JSON.stringify({ type: "status", status: "routing" }));
-      }
-
-      if (toolsEnabled && !isContinue && !abortController.signal.aborted) {
-        const priorContext = buildRecentContext(body.messages);
-        try {
-          const routingResult = await routeToolsAndSkills(
-            userQuery,
-            excludedMcps,
-            excludedSkills,
-            forcedTools,
-            body.model,
-            contextLimit,
-            (text: string) => {
-              routerRawText += text;
-              broadcastChunk(JSON.stringify({ type: "router_token", text }));
-            },
-            priorContext,
-            abortController.signal,
-            convMemoryEnabled
-          );
-          mcpTools = routingResult.mcpTools ?? [];
-          activeSkills = routingResult.selectedSkills ?? [];
-          builtInTools = routingResult.selectedBuiltInTools ?? [];
-        } catch (err) {
-          if (!abortController.signal.aborted && !(err instanceof Error && (err.name === "AbortError" || err.message.includes("aborted")))) {
-            console.error("[toolRouter] Error during pre-pass routing:", err);
+    } else if (toolsEnabled && !isContinue && !abortController.signal.aborted) {
+      const priorContext = buildRecentContext(body.messages);
+      try {
+        const routingResult = await routeToolsAndSkills(
+          userQuery,
+          excludedMcps,
+          excludedSkills,
+          forcedTools,
+          body.model,
+          contextLimit,
+          (text: string) => {
+            routerRawText += text;
+            broadcastChunk(JSON.stringify({ type: "router_token", text }));
+          },
+          priorContext,
+          abortController.signal,
+          convMemoryEnabled,
+          effectiveWorkspace.path,
+          effectiveWorkspace.writeEnabled,
+          () => {
+            broadcastChunk(JSON.stringify({ type: "status", status: "routing" }));
           }
+        );
+        mcpTools = routingResult.mcpTools ?? [];
+        activeSkills = routingResult.selectedSkills ?? [];
+        builtInTools = routingResult.selectedBuiltInTools ?? [];
+      } catch (err) {
+        if (!abortController.signal.aborted && !(err instanceof Error && (err.name === "AbortError" || err.message.includes("aborted")))) {
+          console.error("[toolRouter] Error during pre-pass routing:", err);
         }
       }
     }
@@ -1010,13 +1111,22 @@ export async function chatRoutes(app: FastifyInstance) {
       outgoingMessages[outgoingMessages.length - 1].content = initialAssistantContent;
     }
 
-    const globalSettingsRow = db.prepare("SELECT ctx_overflow_behavior, reasoning_injection_mode, network_tools_enabled, memory_enabled, cross_chat_recall_enabled, cross_chat_include_archived FROM global_settings LIMIT 1").get() as any;
+    const globalSettingsRow = db.prepare("SELECT ctx_overflow_behavior, reasoning_injection_mode, network_tools_enabled, disabled_builtin_tools, memory_enabled, cross_chat_recall_enabled, cross_chat_include_archived FROM global_settings LIMIT 1").get() as any;
     const defaultReasoningMode = globalSettingsRow?.reasoning_injection_mode || "all";
     const effectiveReasoningMode = settingRow?.reasoning_injection_mode || defaultReasoningMode;
     const globalMemoryEnabled = globalSettingsRow?.memory_enabled !== undefined ? Boolean(globalSettingsRow.memory_enabled) : true;
     const effectiveMemoryEnabled = convMemoryEnabled !== null ? convMemoryEnabled : globalMemoryEnabled;
     const crossChatRecallEnabled = globalSettingsRow?.cross_chat_recall_enabled !== undefined ? Boolean(globalSettingsRow.cross_chat_recall_enabled) : true;
     const crossChatIncludeArchived = Boolean(globalSettingsRow?.cross_chat_include_archived);
+    const disabledBuiltInSet = new Set<string>();
+    if (globalSettingsRow?.disabled_builtin_tools) {
+      try {
+        const parsed = JSON.parse(globalSettingsRow.disabled_builtin_tools);
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) disabledBuiltInSet.add(String(item));
+        }
+      } catch { }
+    }
 
     const { filterReasoningContent } = await import("../services/contextWindow.js");
     outgoingMessages = filterReasoningContent(outgoingMessages, effectiveReasoningMode as any);
@@ -1058,12 +1168,21 @@ export async function chatRoutes(app: FastifyInstance) {
     // Inject conversation scratchpad and top relevant persistent user memories into the system prompt
     if (toolsEnabled || builtInTools.some((t) => t.category === "memory")) {
       const { getScratchpadEntries, searchMemories } = await import("../services/memory.js");
-      const memoryBlocks: string[] = [
-        `MEMORY & SCRATCHPAD:\n` +
-        `- Persistent memory (\`memory_set\`, \`memory_search\`, \`memory_update\`, \`memory_delete\`): proactively save durable user preferences, facts, or standing project context when the user shares or asks to remember them, and search memory when prior user context may apply.\n` +
-        `- Past conversations (\`chat_history_search\`): search earlier chats whenever the user refers to prior discussions or decisions.\n` +
+      const memoryGuideLines: string[] = [];
+      if (effectiveMemoryEnabled) {
+        memoryGuideLines.push(
+          `- Persistent memory (\`memory_set\`, \`memory_search\`, \`memory_update\`, \`memory_delete\`): proactively save durable user preferences, facts, or standing project context when the user shares or asks to remember them, and search memory when prior user context may apply.`
+        );
+      }
+      if (crossChatRecallEnabled) {
+        memoryGuideLines.push(
+          `- Past conversations (\`chat_history_search\`): search earlier chats whenever the user refers to prior discussions or decisions.`
+        );
+      }
+      memoryGuideLines.push(
         `- Conversation scratchpad (\`scratchpad_set\`, \`scratchpad_get\`): use for multi-step plans, checklists, or temporary working notes in this chat.`
-      ];
+      );
+      const memoryBlocks: string[] = [`MEMORY & SCRATCHPAD:\n${memoryGuideLines.join("\n")}`];
 
       const scratchEntries = getScratchpadEntries(conversationId);
       if (scratchEntries.length > 0) {
@@ -1162,6 +1281,43 @@ export async function chatRoutes(app: FastifyInstance) {
         `- To inspect workspace artifacts or user uploads, use \`list_files\`, \`read_file\`, and \`find_in_file\`. To update an existing artifact, use \`edit_file\` (matching raw content only; NEVER include \`N | \` line-number prefixes from \`read_file\`) or \`write_file\`.`;
 
       appendSystemBlock(artifactGuidance);
+    }
+
+    if (effectiveWorkspace.path && (toolsEnabled || builtInTools.some((t) => t.category === "workspace"))) {
+      const modeDesc = effectiveWorkspace.writeEnabled
+        ? `READ-WRITE (${effectiveWorkspace.approvalMode === "ask" ? "user approval required per write/edit" : "automatic write/edit"}; you may inspect and modify files using \`workspace_list\`, \`workspace_search\`, \`workspace_read\`, \`workspace_edit\`, \`workspace_write\`, \`workspace_delete\`, \`workspace_rename\`, and run verification commands via \`workspace_run\`)`
+        : "READ-ONLY (you may inspect files using `workspace_list`, `workspace_search`, and `workspace_read`; file edits and writes are disabled)";
+      appendSystemBlock(
+        `ATTACHED PROJECT WORKSPACE:\n` +
+        `- Active Workspace Root: ${effectiveWorkspace.path} (${effectiveWorkspace.source === "folder" ? "inherited from parent chat folder" : "attached to this conversation"})\n` +
+        `- Access Mode: ${modeDesc}\n` +
+        `- Use relative file paths inside the workspace when calling \`workspace_*\` tools. Never include \`N | \` line-number prefixes from \`workspace_read\` inside \`workspace_edit\` targets.`
+      );
+    }
+
+    // Resolve reusable slash prompt templates (/review, /tests, /explain, etc.) referenced in the user turn
+    if (!isContinue && originalUserContent) {
+      const slashTokens = extractPrefixTokens(originalUserContent, "/").map((t) => t.toLowerCase());
+      const explicitTemplateIds = new Set(
+        (Array.isArray(body.injectedTools) ? body.injectedTools : [])
+          .filter((sel) => sel && sel.kind === "prompt_template")
+          .map((sel) => sel.id)
+      );
+      if (slashTokens.length > 0 || explicitTemplateIds.size > 0) {
+        const allTemplates = getAllPromptTemplates();
+        const matchedTemplates = allTemplates.filter(
+          (tpl) =>
+            slashTokens.includes(tpl.name.toLowerCase()) || explicitTemplateIds.has(tpl.id)
+        );
+        if (matchedTemplates.length > 0) {
+          const tplBlocks = matchedTemplates
+            .map((tpl) => `### /${tpl.name}${tpl.description ? ` (${tpl.description})` : ""}\n${tpl.content}`)
+            .join("\n\n");
+          appendSystemBlock(
+            `ACTIVE PROMPT TEMPLATES -- apply these slash template instructions to the user's request:\n${tplBlocks}`
+          );
+        }
+      }
     }
 
     const { model: _incomingModel, conversationId: _incomingConvId, userMessageId: _umId, userParentId: _upId, assistantMessageId: _amId, attachments: _attachments, messages: _msgs, ...rest } = body;
@@ -1272,8 +1428,9 @@ export async function chatRoutes(app: FastifyInstance) {
         }
       }
 
-      // 4. Resolve @filename / @"file name" mentions in the latest user turn against session attachments & artifacts
+      // 4. Resolve @filename / @"file name" mentions in the latest user turn against session attachments, artifacts, and attached workspace files
       const mentionedArtifacts: ArtifactRow[] = [];
+      const mentionedWorkspaceFiles: Array<{ relPath: string; content: string; lang: string }> = [];
       if (isCurrentUserTurn && originalUserContent) {
         const atTokens = extractPrefixTokens(originalUserContent, "@");
         if (atTokens.length > 0) {
@@ -1296,6 +1453,8 @@ export async function chatRoutes(app: FastifyInstance) {
             )
             .all(conversationId);
 
+          let cachedWorkspaceFiles: string[] | null = null;
+
           for (const token of atTokens) {
             const lowerTok = token.toLowerCase();
             if (!collectedNames.has(lowerTok)) {
@@ -1311,8 +1470,151 @@ export async function chatRoutes(app: FastifyInstance) {
             const artMatch = sessionArts.find(
               (a) => a.filename.trim().toLowerCase() === lowerTok
             );
-            if (artMatch && !mentionedArtifacts.some((m) => m.id === artMatch.id)) {
-              mentionedArtifacts.push(artMatch);
+            if (artMatch) {
+              if (!mentionedArtifacts.some((m) => m.id === artMatch.id)) {
+                mentionedArtifacts.push(artMatch);
+              }
+              continue;
+            }
+
+            if (effectiveWorkspace.path) {
+              let candidateRel = token.replace(/^workspace:/i, "").trim();
+              const isExplicitDir = candidateRel.endsWith("/");
+              const cleanRel = candidateRel.replace(/\/+$/, "");
+              let resolvedTarget = null;
+              let resolvedDirTarget = null;
+              try {
+                const candidate = resolveWorkspacePath(effectiveWorkspace.path, cleanRel || ".", {
+                  allowRoot: isExplicitDir && !cleanRel,
+                });
+                if (fs.existsSync(candidate.realPath)) {
+                  const st = fs.statSync(candidate.realPath);
+                  if (st.isDirectory()) {
+                    resolvedDirTarget = candidate;
+                  } else if (st.isFile()) {
+                    resolvedTarget = candidate;
+                  }
+                }
+              } catch { }
+
+              if (resolvedDirTarget) {
+                try {
+                  const dirRel = resolvedDirTarget.relPath || ".";
+                  const listed = listWorkspaceEntries(effectiveWorkspace.path, {
+                    subPath: dirRel,
+                    maxDepth: 4,
+                    maxEntries: 200,
+                    includeDirs: false,
+                  });
+                  const dirFiles = listed.entries.filter((e) => e.type === "file").map((e) => e.path);
+                  const MAX_DIR_FILES = 12;
+                  const MAX_DIR_TOTAL_BYTES = 60 * 1024;
+                  const MAX_FILE_BYTES = 16 * 1024;
+                  let usedBytes = 0;
+                  let includedCount = 0;
+
+                  const outlineText =
+                    dirFiles.length > 0
+                      ? `Directory '${dirRel}/' contains ${dirFiles.length} file(s):\n${dirFiles.map((f) => `- ${f}`).join("\n")}`
+                      : `Directory '${dirRel}/' has no visible files.`;
+                  if (!mentionedWorkspaceFiles.some((w) => w.relPath === `${dirRel}/ (outline)`)) {
+                    mentionedWorkspaceFiles.push({
+                      relPath: `${dirRel}/ (outline)`,
+                      content: outlineText,
+                      lang: "text",
+                    });
+                  }
+
+                  for (const relFile of dirFiles) {
+                    if (includedCount >= MAX_DIR_FILES || usedBytes >= MAX_DIR_TOTAL_BYTES) break;
+                    if (mentionedWorkspaceFiles.some((w) => w.relPath === relFile)) continue;
+                    try {
+                      const fTarget = resolveWorkspacePath(effectiveWorkspace.path, relFile);
+                      const fStat = fs.statSync(fTarget.realPath);
+                      if (!fStat.isFile()) continue;
+                      const readLen = Math.min(fStat.size, MAX_FILE_BYTES, MAX_DIR_TOTAL_BYTES - usedBytes);
+                      if (readLen <= 0) break;
+                      const fd = fs.openSync(fTarget.realPath, "r");
+                      let buf: Buffer;
+                      try {
+                        buf = Buffer.alloc(readLen);
+                        fs.readSync(fd, buf, 0, readLen, 0);
+                      } finally {
+                        fs.closeSync(fd);
+                      }
+                      if (isLikelyBinaryBuffer(buf)) continue;
+                      usedBytes += readLen;
+                      includedCount++;
+                      const ext = path.extname(fTarget.relPath).replace(".", "") || "text";
+                      const suffix =
+                        fStat.size > readLen
+                          ? `\n... [truncated; use workspace_read for remaining lines]`
+                          : "";
+                      mentionedWorkspaceFiles.push({
+                        relPath: fTarget.relPath,
+                        content: buf.toString("utf-8") + suffix,
+                        lang: ext,
+                      });
+                    } catch { }
+                  }
+                } catch { }
+                continue;
+              }
+
+              if (!resolvedTarget && !candidateRel.includes("/")) {
+                try {
+                  if (!cachedWorkspaceFiles) {
+                    const listed = listWorkspaceEntries(effectiveWorkspace.path, {
+                      maxDepth: 6,
+                      maxEntries: 2000,
+                      includeDirs: false,
+                    });
+                    cachedWorkspaceFiles = listed.entries
+                      .filter((e) => e.type === "file")
+                      .map((e) => e.path);
+                  }
+                  const byBasename = cachedWorkspaceFiles.find(
+                    (p) => path.posix.basename(p).toLowerCase() === candidateRel.toLowerCase()
+                  );
+                  if (byBasename) {
+                    const candidate = resolveWorkspacePath(effectiveWorkspace.path, byBasename);
+                    if (fs.existsSync(candidate.realPath) && fs.statSync(candidate.realPath).isFile()) {
+                      resolvedTarget = candidate;
+                    }
+                  }
+                } catch { }
+              }
+
+              if (
+                resolvedTarget &&
+                !mentionedWorkspaceFiles.some((w) => w.relPath === resolvedTarget.relPath)
+              ) {
+                try {
+                  const stat = fs.statSync(resolvedTarget.realPath);
+                  const MAX_MENTION_BYTES = 128 * 1024;
+                  const readLen = Math.min(stat.size, MAX_MENTION_BYTES);
+                  const fd = fs.openSync(resolvedTarget.realPath, "r");
+                  let buf: Buffer;
+                  try {
+                    buf = Buffer.alloc(readLen);
+                    fs.readSync(fd, buf, 0, readLen, 0);
+                  } finally {
+                    fs.closeSync(fd);
+                  }
+                  if (!isLikelyBinaryBuffer(buf)) {
+                    const ext = path.extname(resolvedTarget.relPath).replace(".", "") || "text";
+                    const suffix =
+                      stat.size > MAX_MENTION_BYTES
+                        ? `\n... [truncated at 128 KB; use workspace_read for remaining lines]`
+                        : "";
+                    mentionedWorkspaceFiles.push({
+                      relPath: resolvedTarget.relPath,
+                      content: buf.toString("utf-8") + suffix,
+                      lang: ext,
+                    });
+                  }
+                } catch { }
+              }
             }
           }
         }
@@ -1346,6 +1648,19 @@ export async function chatRoutes(app: FastifyInstance) {
           } else if (Array.isArray(msg.content)) {
             msg.content.push({ type: "text", text: combined });
           }
+        }
+      }
+
+      if (mentionedWorkspaceFiles.length > 0) {
+        const wsBlocks = mentionedWorkspaceFiles.map(
+          (w) =>
+            `\n\n--- Referenced Workspace File: ${w.relPath} ---\n\`\`\`${w.lang}\n${w.content}\n\`\`\``
+        );
+        const combined = wsBlocks.join("");
+        if (typeof msg.content === "string") {
+          msg.content += combined;
+        } else if (Array.isArray(msg.content)) {
+          msg.content.push({ type: "text", text: combined });
         }
       }
     }
@@ -1388,6 +1703,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     const { builtInToolRegistry: _registry } = await import("../services/builtinTools/index.js");
+    let turnWriteApproved = false;
 
     const builtInCtx = {
       conversationId,
@@ -1398,6 +1714,13 @@ export async function chatRoutes(app: FastifyInstance) {
       memoryEnabled: effectiveMemoryEnabled,
       crossChatRecallEnabled,
       crossChatIncludeArchived,
+      workspacePath: effectiveWorkspace.path,
+      workspaceWriteEnabled: effectiveWorkspace.writeEnabled,
+      workspaceApprovalMode: effectiveWorkspace.approvalMode,
+      isTurnWriteApproved: () => turnWriteApproved,
+      markTurnWriteApproved: () => {
+        turnWriteApproved = true;
+      },
       emitEvent: (type: string, payload: Record<string, any>) => {
         if ((type === "artifact_created" || type === "artifact_updated") && typeof payload.filename === "string") {
           artifactFilenamesThisTurn.add(payload.filename);
@@ -1407,14 +1730,37 @@ export async function chatRoutes(app: FastifyInstance) {
     };
 
     const availableBuiltInTools =
-      toolsEnabled || slashInjections.hasInjections ? [...builtInTools] : [];
+      toolsEnabled || slashInjections.hasInjections
+        ? builtInTools.filter((t) =>
+            t.category === "workspace" ? (t.isAvailable ? t.isAvailable(builtInCtx) : true) : true
+          )
+        : [];
 
     if (toolsEnabled) {
-      // Force-include any artifact tools the router might have dropped
-      const artifactTools = builtInToolRegistry.getAllTools().filter((t) => t.category === "artifact");
+      // Force-include any non-disabled artifact tools the router might have dropped
+      const artifactTools = builtInToolRegistry
+        .getAllTools()
+        .filter((t) => t.category === "artifact" && !disabledBuiltInSet.has(t.name));
       for (const tool of artifactTools) {
         if (!availableBuiltInTools.some((t) => t.name.trim() === tool.name.trim())) {
           availableBuiltInTools.push(tool);
+        }
+      }
+
+      // When a workspace is attached, ensure available non-disabled workspace tools are always exposed
+      if (effectiveWorkspace.path) {
+        const workspaceTools = builtInToolRegistry
+          .getAllTools()
+          .filter(
+            (t) =>
+              t.category === "workspace" &&
+              !disabledBuiltInSet.has(t.name) &&
+              (!t.isAvailable || t.isAvailable(builtInCtx))
+          );
+        for (const tool of workspaceTools) {
+          if (!availableBuiltInTools.some((t) => t.name.trim() === tool.name.trim())) {
+            availableBuiltInTools.push(tool);
+          }
         }
       }
     }
@@ -1478,13 +1824,29 @@ export async function chatRoutes(app: FastifyInstance) {
     // -----------------------------------------------------------------------
     // 7. Agentic tool-call loop
     // -----------------------------------------------------------------------
-    const MAX_TOOL_ROUNDS = 10;
+    const MAX_TOOL_ROUNDS = 100;
     const TOOL_TIMEOUT_MS = 120_000; // 2 minute cap per individual tool call
     let currentMessages = [...outgoingMessages];
     let toolRound = 0;
     const executedToolCallsInTurn = new Map<string, string>();
+    const usedCallIds = new Set<string>();
     let lastRoundToolCallKeys = new Set<string>();
     currentToolExecution = null;
+
+    const allocateUniqueCallId = (rawId: string | undefined, roundNum: number, idx: number): string => {
+      const base = rawId && rawId.trim() ? rawId.trim() : `call_${userMessageId}_${roundNum}_${idx}`;
+      if (!usedCallIds.has(base)) {
+        usedCallIds.add(base);
+        return base;
+      }
+      let candidate = `${base}_r${roundNum}_${idx}`;
+      let suffix = 1;
+      while (usedCallIds.has(candidate)) {
+        candidate = `${base}_r${roundNum}_${idx}_${suffix++}`;
+      }
+      usedCallIds.add(candidate);
+      return candidate;
+    };
 
     const { applyContextOverflowPolicy } = await import("../services/contextWindow.js");
 
@@ -1567,12 +1929,32 @@ export async function chatRoutes(app: FastifyInstance) {
         };
 
         const passStart = Date.now();
+        const nextRoundNum = toolRound + 1;
+        const streamedCallIds = new Set<string>();
         const pass = await runGenerationPass({
           adapter,
           buildParams: passParams,
           abortController,
           onChunk: broadcastChunk,
           stripPrefix: isContinue && toolRound === 0 ? initialAssistantContent : undefined,
+          allocateCallId: (rawId, idx) => allocateUniqueCallId(rawId, nextRoundNum, idx),
+          onToolCallStreaming: ({ callId, name, argsBytes, partialPath }) => {
+            streamedCallIds.add(callId);
+            const sizeLabel =
+              argsBytes >= 1024 ? `${(argsBytes / 1024).toFixed(1)} KB` : `${argsBytes} B`;
+            const detail = partialPath
+              ? `Preparing ${partialPath} (${sizeLabel})...`
+              : `Preparing arguments (${sizeLabel})...`;
+            broadcastChunk(JSON.stringify({
+              type: "tool_execution",
+              callId,
+              toolName: name,
+              args: partialPath ? { path: partialPath } : {},
+              cacheable: false,
+              message: detail,
+              status: "executing",
+            }));
+          },
         });
 
         if (!pass.streamError || (pass.content || pass.reasoning || pass.toolCalls.length)) {
@@ -1670,23 +2052,32 @@ export async function chatRoutes(app: FastifyInstance) {
         toolRound++;
         const currentRoundToolCallKeys = new Set<string>();
 
+        // Ensure every tool call in this round has a unique callId across the turn
+        const resolvedRoundToolCalls = pass.toolCalls.map((tc, idx) => {
+          const callId =
+            tc.id && usedCallIds.has(tc.id)
+              ? tc.id
+              : allocateUniqueCallId(tc.id, toolRound, idx);
+          return { ...tc, callId };
+        });
+
         // Append assistant message with tool calls to the conversation
         currentMessages.push({
           role: "assistant",
           content: pass.content || "",
           // Tool calls in OpenAI format (needed for the next model pass)
-          tool_calls: pass.toolCalls.map((tc, idx) => ({
-            id: tc.id ?? `call_${userMessageId}_${toolRound}_${idx}`,
+          tool_calls: resolvedRoundToolCalls.map((tc) => ({
+            id: tc.callId,
             type: "function",
             function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
           })),
         } as any);
 
         // Execute each tool call and emit tool execution events to the stream
-        for (const [idx, tc] of pass.toolCalls.entries()) {
+        for (const tc of resolvedRoundToolCalls) {
           if (abortController.signal.aborted) break;
 
-          const callId = tc.id ?? `call_${userMessageId}_${toolRound}_${idx}`;
+          const callId = tc.callId;
           currentToolExecution = { callId, toolName: tc.name, args: tc.arguments };
 
           const builtInTool = builtInToolRegistry.getTool(tc.name);
@@ -1695,13 +2086,14 @@ export async function chatRoutes(app: FastifyInstance) {
           const isSkillRouted = activeSkills.some((s) => s.name === tc.name);
           const isCacheable = !isBuiltInTool || builtInTool?.cacheable !== false;
 
-          let result: { content: string; isError?: boolean };
+          let result: import("../services/builtinTools/types.js").BuiltInToolResult;
 
           const toolCallKey = `${tc.name}::${JSON.stringify(tc.arguments)}`;
           currentRoundToolCallKeys.add(toolCallKey);
           // For built-in pure tools (isBuiltInTool && isCacheable), cache across the turn.
           // For external MCP tools, only suppress if called identically in consecutive rounds (loop prevention).
           const isDuplicateCall =
+            !tc.parseError &&
             isCacheable &&
             executedToolCallsInTurn.has(toolCallKey) &&
             (isBuiltInTool || lastRoundToolCallKeys.has(toolCallKey));
@@ -1710,7 +2102,12 @@ export async function chatRoutes(app: FastifyInstance) {
             currentToolExecution = { callId, toolName: tc.name, args: tc.arguments };
           }
 
-          if (isDuplicateCall) {
+          if (tc.parseError) {
+            result = {
+              content: tc.parseError,
+              isError: true,
+            };
+          } else if (isDuplicateCall) {
             console.log(`[chat] Suppressing duplicate tool call execution and UI event: ${tc.name}`);
             const prevResult = executedToolCallsInTurn.get(toolCallKey) || "";
             result = {
@@ -1727,13 +2124,19 @@ export async function chatRoutes(app: FastifyInstance) {
               status: "executing",
             }));
 
+            const mayAwaitApproval =
+              tc.name === "workspace_run" ||
+              (builtInTool?.category === "workspace" && effectiveWorkspace.approvalMode === "ask");
+            const effectiveTimeoutMs = mayAwaitApproval ? 10 * 60_000 : TOOL_TIMEOUT_MS;
+
             try {
               result = await withTimeout(
                 builtInToolRegistry.executeTool(tc.name, tc.arguments, {
                   ...builtInCtx,
+                  callId,
                   abortSignal: abortController.signal,
                 }),
-                TOOL_TIMEOUT_MS,
+                effectiveTimeoutMs,
                 `${tc.name}`,
               );
             } catch (err) {
@@ -1789,6 +2192,10 @@ export async function chatRoutes(app: FastifyInstance) {
             args: tc.arguments,
             cacheable: isCacheable,
             ...(isCancelled ? {} : { result: result.content }),
+            ...(result.checkpointId ? { checkpointId: result.checkpointId } : {}),
+            ...(result.diffPreview ? { diffPreview: result.diffPreview } : {}),
+            ...(result.commandPreview ? { commandPreview: result.commandPreview } : {}),
+            ...(result.cwd ? { cwd: result.cwd } : {}),
             status,
           };
 
@@ -1806,6 +2213,12 @@ export async function chatRoutes(app: FastifyInstance) {
             // Append tool execution tag to assistantContent so it persists in DB
             assistantContent += `\n<tool_execution>${JSON.stringify(toolExecPayload)}</tool_execution>\n`;
             currentToolExecution = null;
+          } else if (streamedCallIds.has(callId)) {
+            broadcastChunk(JSON.stringify({
+              type: "tool_execution",
+              ...toolExecPayload,
+              status: "completed",
+            }));
           }
 
           if (isCancelled) break;

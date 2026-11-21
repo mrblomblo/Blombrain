@@ -23,6 +23,7 @@
     "allow-read-dropped-files",
     "allow-start-audio-recording",
     "allow-stop-audio-recording",
-    "allow-open-external-url"
+    "allow-open-external-url",
+    "allow-pick-workspace-directory"
   ]
 }

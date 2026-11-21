@@ -21,6 +21,7 @@ import { authRoutes } from "./routes/auth.js";
 import { memoriesRoutes } from "./routes/memories.js";
 import { backupRoutes } from "./routes/backup.js";
 import { speechRoutes } from "./routes/speech.js";
+import { promptTemplatesRoutes } from "./routes/promptTemplates.js";
 import { verifyUploadViewToken } from "./services/uploadTokens.js";
 
 const LOCAL_ORIGIN_REGEX =
@@ -238,6 +239,7 @@ export async function createBlombrainApp(opts: AppServerOptions): Promise<Fastif
   await app.register(memoriesRoutes);
   await app.register(backupRoutes);
   await app.register(speechRoutes);
+  await app.register(promptTemplatesRoutes);
 
   if (existsSync(FRONTEND_DIST)) {
     await app.register(fastifyStatic, { root: FRONTEND_DIST });

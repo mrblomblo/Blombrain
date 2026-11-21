@@ -11,6 +11,15 @@ import {
   autoNameConversation,
   stopChatCompletion,
   patchConversationTools,
+  updateConversation,
+  fetchConversationWorkspaceFiles,
+  fetchConversationWorkspaceFile,
+  fetchWorkspaceFilesByPath,
+  fetchWorkspaceFileByPath,
+  fetchConversationGitStatus,
+  fetchWorkspaceGitStatusByPath,
+  revertWorkspaceCheckpoint,
+  fetchFolders,
 } from "../api";
 import { encodeToWav } from "../audio";
 import type {
@@ -20,6 +29,9 @@ import type {
   ConversationSamplingOverrides,
   ScratchpadEntryInfo,
   SlashToolSelection,
+  WorkspaceApprovalMode,
+  WorkspaceGitStatusResponse,
+  WorkspaceSource,
 } from "../types";
 import { artifactStore } from "./artifact.svelte";
 import { settingsStore } from "./settings.svelte";
@@ -561,6 +573,26 @@ class ChatStore {
   conversationSamplingOverrides = $state<ConversationSamplingOverrides | null>(null);
   /** Ephemeral conversation scratchpad entries. */
   scratchpadEntries = $state<ScratchpadEntryInfo[]>([]);
+  /** Folder ID of the active conversation (if filed). */
+  conversationFolderId = $state<string | null>(null);
+  /** Conversation's own attached workspace directory path (null if none or inheriting from folder). */
+  conversationWorkspacePath = $state<string | null>(null);
+  /** Whether write tools are enabled on the conversation's own workspace. */
+  conversationWorkspaceWriteEnabled = $state<boolean>(false);
+  /** Approval mode ("auto" | "ask") for write tools on the conversation's own workspace. */
+  conversationWorkspaceApprovalMode = $state<WorkspaceApprovalMode>("auto");
+  /** Effective workspace path for this conversation (own override or inherited from folder). */
+  effectiveWorkspacePath = $state<string | null>(null);
+  /** Effective write access flag for this conversation's workspace. */
+  effectiveWorkspaceWriteEnabled = $state<boolean>(false);
+  /** Effective write approval mode ("auto" | "ask") for this conversation's workspace. */
+  effectiveWorkspaceApprovalMode = $state<WorkspaceApprovalMode>("auto");
+  /** Source of the effective workspace ("conversation" | "folder" | null). */
+  workspaceSource = $state<WorkspaceSource>(null);
+  /** Filtered relative file paths inside the effective workspace for @ autocomplete. */
+  workspaceFiles = $state<string[]>([]);
+  /** Git status for the effective workspace (null if none or not a git repository). */
+  workspaceGitStatus = $state<WorkspaceGitStatusResponse | null>(null);
 
   /** Maps parentId ("ROOT" for root messages) to the selected child message ID */
   branchSelections = $state<Record<string, string>>({});
@@ -735,6 +767,16 @@ class ChatStore {
       this.conversationSystemPromptOverride = detail.systemPromptOverride ?? null;
       this.conversationSamplingOverrides = detail.samplingOverrides ?? null;
       this.scratchpadEntries = detail.scratchpad ?? [];
+      this.conversationFolderId = detail.folderId ?? null;
+      this.conversationWorkspacePath = detail.workspacePath ?? null;
+      this.conversationWorkspaceWriteEnabled = Boolean(detail.workspaceWriteEnabled);
+      this.conversationWorkspaceApprovalMode = detail.workspaceApprovalMode ?? "auto";
+      this.effectiveWorkspacePath = detail.effectiveWorkspacePath ?? null;
+      this.effectiveWorkspaceWriteEnabled = Boolean(detail.effectiveWorkspaceWriteEnabled);
+      this.effectiveWorkspaceApprovalMode = detail.effectiveWorkspaceApprovalMode ?? "auto";
+      this.workspaceSource = detail.workspaceSource ?? null;
+      this.workspaceFiles = [];
+      void this.refreshWorkspaceFiles(detail.id);
       if (detail.model) this.selectedModel = detail.model;
       this.loadBranchSelections(detail.id);
       artifactStore.close();
@@ -773,10 +815,252 @@ class ChatStore {
     this.conversationSystemPromptOverride = null;
     this.conversationSamplingOverrides = null;
     this.scratchpadEntries = [];
+    this.conversationFolderId = folderId;
+    this.conversationWorkspacePath = null;
+    this.conversationWorkspaceWriteEnabled = false;
+    this.conversationWorkspaceApprovalMode = "auto";
+    this.effectiveWorkspacePath = null;
+    this.effectiveWorkspaceWriteEnabled = false;
+    this.effectiveWorkspaceApprovalMode = "auto";
+    this.workspaceSource = null;
+    this.workspaceFiles = [];
     this.streamingConvId = null;
     this.streamingAssistantId = null;
     artifactStore.close();
     artifactStore.loadConversationArtifacts(null);
+    if (folderId) {
+      void this.syncUnsavedFolderWorkspace(folderId);
+    }
+  }
+
+  async syncUnsavedFolderWorkspace(folderId: string | null) {
+    if (!folderId) return;
+    try {
+      const folders = await fetchFolders();
+      if (this.activeConversationId !== null || this.activeFolderId !== folderId) return;
+      if (this.conversationWorkspacePath) return;
+      const folder = folders.find((f) => f.id === folderId);
+      if (folder?.workspacePath) {
+        this.effectiveWorkspacePath = folder.workspacePath;
+        this.effectiveWorkspaceWriteEnabled = Boolean(folder.workspaceWriteEnabled);
+        this.effectiveWorkspaceApprovalMode = folder.workspaceApprovalMode ?? "auto";
+        this.workspaceSource = "folder";
+        try {
+          const res = await fetchWorkspaceFilesByPath(folder.workspacePath);
+          if (this.activeConversationId === null && this.effectiveWorkspacePath === folder.workspacePath) {
+            this.workspaceFiles = res.files ?? [];
+          }
+        } catch {
+          this.workspaceFiles = [];
+        }
+      } else {
+        this.effectiveWorkspacePath = null;
+        this.effectiveWorkspaceWriteEnabled = false;
+        this.effectiveWorkspaceApprovalMode = "auto";
+        this.workspaceSource = null;
+        this.workspaceFiles = [];
+      }
+    } catch { }
+  }
+
+  async refreshWorkspaceFiles(convId: string | null = this.activeConversationId) {
+    if (!convId) {
+      if (this.conversationWorkspacePath) {
+        try {
+          const res = await fetchWorkspaceFilesByPath(this.conversationWorkspacePath);
+          if (this.activeConversationId === null) {
+            this.workspaceFiles = res.files ?? [];
+            if (res.effectiveWorkspacePath) {
+              this.conversationWorkspacePath = res.effectiveWorkspacePath;
+              this.effectiveWorkspacePath = res.effectiveWorkspacePath;
+            }
+            fetchWorkspaceGitStatusByPath(this.effectiveWorkspacePath ?? this.conversationWorkspacePath)
+              .then((gs) => {
+                if (this.activeConversationId === null) this.workspaceGitStatus = gs;
+              })
+              .catch(() => {
+                this.workspaceGitStatus = null;
+              });
+          }
+        } catch (err) {
+          console.warn("[chatStore] failed to refresh unsaved workspace files:", err);
+          this.workspaceFiles = [];
+          this.workspaceGitStatus = null;
+        }
+      } else if (this.activeFolderId) {
+        await this.syncUnsavedFolderWorkspace(this.activeFolderId);
+      } else {
+        this.workspaceFiles = [];
+        this.workspaceGitStatus = null;
+      }
+      return;
+    }
+    try {
+      const res = await fetchConversationWorkspaceFiles(convId);
+      if (this.activeConversationId !== convId) return;
+      this.workspaceFiles = res.files ?? [];
+      this.effectiveWorkspacePath = res.effectiveWorkspacePath ?? null;
+      this.effectiveWorkspaceWriteEnabled = Boolean(res.workspaceWriteEnabled);
+      this.workspaceSource = res.workspaceSource ?? null;
+      if (this.effectiveWorkspacePath) {
+        fetchConversationGitStatus(convId)
+          .then((gs) => {
+            if (this.activeConversationId === convId) this.workspaceGitStatus = gs;
+          })
+          .catch(() => {
+            if (this.activeConversationId === convId) this.workspaceGitStatus = null;
+          });
+      } else {
+        this.workspaceGitStatus = null;
+      }
+    } catch (err) {
+      console.warn("[chatStore] failed to refresh workspace files:", err);
+    }
+  }
+
+  /** Called on window focus / visibility return to pick up external workspace edits cleanly. */
+  async refreshExternalWorkspaceChanges() {
+    if (!this.effectiveWorkspacePath) return;
+    await this.refreshWorkspaceFiles(this.activeConversationId);
+    if (artifactStore.isOpen && artifactStore.activeId) {
+      if (artifactStore.activeId.startsWith("workspace:")) {
+        const relPath = artifactStore.activeId.slice("workspace:".length);
+        try {
+          const preview = this.activeConversationId
+            ? await fetchConversationWorkspaceFile(this.activeConversationId, relPath)
+            : await fetchWorkspaceFileByPath(this.effectiveWorkspacePath, relPath);
+          if (artifactStore.activeId === `workspace:${relPath}`) {
+            artifactStore.code = preview.content;
+          }
+        } catch { }
+      } else {
+        await artifactStore.refreshArtifactContent(artifactStore.activeId);
+      }
+    }
+  }
+
+  async setConversationWorkspace(
+    workspacePath: string | null,
+    workspaceWriteEnabled: boolean = false,
+    workspaceApprovalMode: WorkspaceApprovalMode = this.effectiveWorkspaceApprovalMode,
+  ) {
+    const cleanPath = workspacePath?.trim() || null;
+    if (this.activeConversationId) {
+      const updated = await updateConversation(this.activeConversationId, {
+        workspacePath: cleanPath,
+        workspaceWriteEnabled: cleanPath ? workspaceWriteEnabled : false,
+        workspaceApprovalMode: cleanPath ? workspaceApprovalMode : "auto",
+      });
+      this.conversationWorkspacePath = updated.workspacePath ?? null;
+      this.conversationWorkspaceWriteEnabled = Boolean(updated.workspaceWriteEnabled);
+      this.conversationWorkspaceApprovalMode = updated.workspaceApprovalMode ?? "auto";
+      this.effectiveWorkspacePath = updated.effectiveWorkspacePath ?? null;
+      this.effectiveWorkspaceWriteEnabled = Boolean(updated.effectiveWorkspaceWriteEnabled);
+      this.effectiveWorkspaceApprovalMode = updated.effectiveWorkspaceApprovalMode ?? "auto";
+      this.workspaceSource = updated.workspaceSource ?? null;
+      await this.refreshWorkspaceFiles(this.activeConversationId);
+      _invalidateConversations?.();
+    } else {
+      if (cleanPath) {
+        // Validate directory & fetch file index immediately even on an unsaved new chat
+        const res = await fetchWorkspaceFilesByPath(cleanPath);
+        const resolvedPath = res.effectiveWorkspacePath || cleanPath;
+        this.conversationWorkspacePath = resolvedPath;
+        this.conversationWorkspaceWriteEnabled = Boolean(workspaceWriteEnabled);
+        this.conversationWorkspaceApprovalMode = workspaceApprovalMode;
+        this.effectiveWorkspacePath = resolvedPath;
+        this.effectiveWorkspaceWriteEnabled = Boolean(workspaceWriteEnabled);
+        this.effectiveWorkspaceApprovalMode = workspaceApprovalMode;
+        this.workspaceSource = "conversation";
+        this.workspaceFiles = res.files ?? [];
+      } else {
+        this.conversationWorkspacePath = null;
+        this.conversationWorkspaceWriteEnabled = false;
+        this.conversationWorkspaceApprovalMode = "auto";
+        this.workspaceFiles = [];
+        if (this.activeFolderId) {
+          await this.syncUnsavedFolderWorkspace(this.activeFolderId);
+        } else {
+          this.effectiveWorkspacePath = null;
+          this.effectiveWorkspaceWriteEnabled = false;
+          this.effectiveWorkspaceApprovalMode = "auto";
+          this.workspaceSource = null;
+        }
+      }
+    }
+  }
+
+  async setConversationWorkspaceWriteEnabled(
+    writeEnabled: boolean,
+    approvalMode: WorkspaceApprovalMode = this.effectiveWorkspaceApprovalMode,
+  ) {
+    if (this.activeConversationId) {
+      const patch =
+        !this.conversationWorkspacePath &&
+        this.workspaceSource === "folder" &&
+        this.effectiveWorkspacePath
+          ? {
+              workspacePath: this.effectiveWorkspacePath,
+              workspaceWriteEnabled: writeEnabled,
+              workspaceApprovalMode: approvalMode,
+            }
+          : {
+              workspaceWriteEnabled: writeEnabled,
+              workspaceApprovalMode: approvalMode,
+            };
+      const updated = await updateConversation(this.activeConversationId, patch);
+      this.conversationWorkspacePath = updated.workspacePath ?? null;
+      this.conversationWorkspaceWriteEnabled = Boolean(updated.workspaceWriteEnabled);
+      this.conversationWorkspaceApprovalMode = updated.workspaceApprovalMode ?? "auto";
+      this.effectiveWorkspacePath = updated.effectiveWorkspacePath ?? null;
+      this.effectiveWorkspaceWriteEnabled = Boolean(updated.effectiveWorkspaceWriteEnabled);
+      this.effectiveWorkspaceApprovalMode = updated.effectiveWorkspaceApprovalMode ?? "auto";
+      this.workspaceSource = updated.workspaceSource ?? null;
+      _invalidateConversations?.();
+    } else if (this.effectiveWorkspacePath) {
+      if (!this.conversationWorkspacePath) {
+        this.conversationWorkspacePath = this.effectiveWorkspacePath;
+        this.workspaceSource = "conversation";
+      }
+      this.conversationWorkspaceWriteEnabled = writeEnabled;
+      this.conversationWorkspaceApprovalMode = approvalMode;
+      this.effectiveWorkspaceWriteEnabled = writeEnabled;
+      this.effectiveWorkspaceApprovalMode = approvalMode;
+    }
+  }
+
+  async revertCheckpoint(checkpointId: string, callId?: string | null) {
+    if (!this.activeConversationId) return;
+    await revertWorkspaceCheckpoint(this.activeConversationId, checkpointId);
+    for (const msg of this.messages) {
+      if (msg.toolExecutions) {
+        for (const te of msg.toolExecutions) {
+          if (te.checkpointId === checkpointId || (callId && te.callId === callId)) {
+            te.reverted = true;
+          }
+        }
+      }
+      if (msg.content && msg.content.includes("<tool_execution>")) {
+        msg.content = msg.content.replace(
+          /<tool_execution>([\s\S]*?)<\/tool_execution>/g,
+          (full, jsonStr) => {
+            try {
+              const parsed = JSON.parse(jsonStr);
+              if (parsed.checkpointId === checkpointId || (callId && parsed.callId === callId)) {
+                parsed.reverted = true;
+                return `<tool_execution>${JSON.stringify(parsed)}</tool_execution>`;
+              }
+            } catch { }
+            return full;
+          },
+        );
+      }
+    }
+    await this.refreshWorkspaceFiles(this.activeConversationId);
+    await artifactStore.loadConversationArtifacts(this.activeConversationId);
+    if (artifactStore.isOpen && artifactStore.activeId && !artifactStore.activeId.startsWith("workspace:")) {
+      await artifactStore.refreshArtifactContent(artifactStore.activeId);
+    }
   }
 
   openFolder(folderId: string) {
@@ -1135,9 +1419,21 @@ class ChatStore {
           model: this.selectedModel ?? undefined,
           toolsEnabled: this.conversationToolsEnabled,
           folderId: targetFolderId ?? undefined,
+          workspacePath: this.conversationWorkspacePath ?? undefined,
+          workspaceWriteEnabled: this.conversationWorkspaceWriteEnabled,
+          workspaceApprovalMode: this.conversationWorkspaceApprovalMode,
         });
         this.activeConversationId = conv.id;
         this.activeFolderId = null;
+        this.conversationFolderId = conv.folderId ?? null;
+        this.conversationWorkspacePath = conv.workspacePath ?? null;
+        this.conversationWorkspaceWriteEnabled = Boolean(conv.workspaceWriteEnabled);
+        this.conversationWorkspaceApprovalMode = conv.workspaceApprovalMode ?? "auto";
+        this.effectiveWorkspacePath = conv.effectiveWorkspacePath ?? null;
+        this.effectiveWorkspaceWriteEnabled = Boolean(conv.effectiveWorkspaceWriteEnabled);
+        this.effectiveWorkspaceApprovalMode = conv.effectiveWorkspaceApprovalMode ?? "auto";
+        this.workspaceSource = conv.workspaceSource ?? null;
+        void this.refreshWorkspaceFiles(conv.id);
         newConvId = conv.id;
         this.activeConversationTitle = conv.title;
         _invalidateConversations?.();
@@ -1408,6 +1704,15 @@ class ChatStore {
 
         if (evt.status === "completed" || evt.status === "error" || evt.status === "cancelled") {
           rawBuffer += `\n<tool_execution>${JSON.stringify(evt)}</tool_execution>\n`;
+          if (
+            evt.status === "completed" &&
+            (evt.toolName === "workspace_write" ||
+              evt.toolName === "workspace_edit" ||
+              evt.toolName === "workspace_delete" ||
+              evt.toolName === "workspace_rename")
+          ) {
+            void this.refreshWorkspaceFiles();
+          }
         }
 
         const parsed = parseThinking(rawBuffer);
@@ -1648,6 +1953,73 @@ class ChatStore {
       onMeta: (meta) => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);
         if (msg) msg.stats = meta.stats;
+      },
+      onToolExecution: (evt) => {
+        const msg = this.messages.find((m) => m.id === asstMsg.id);
+        if (!msg) return;
+        if (!msg.toolExecutions) msg.toolExecutions = [];
+        const idx = msg.toolExecutions.findIndex((t) => t.callId === evt.callId);
+        if (idx >= 0) {
+          msg.toolExecutions[idx] = evt;
+        } else {
+          msg.toolExecutions.push(evt);
+        }
+        if (evt.status === "completed" || evt.status === "error" || evt.status === "cancelled") {
+          rawBuffer += `\n<tool_execution>${JSON.stringify(evt)}</tool_execution>\n`;
+          if (
+            evt.status === "completed" &&
+            (evt.toolName === "workspace_write" ||
+              evt.toolName === "workspace_edit" ||
+              evt.toolName === "workspace_delete" ||
+              evt.toolName === "workspace_rename")
+          ) {
+            void this.refreshWorkspaceFiles();
+          }
+        }
+        const parsed = parseThinking(rawBuffer);
+        msg.thinkingContent = parsed.thinkingContent;
+        msg.thinkingDone = parsed.thinkingDone;
+        msg.content = rawBuffer;
+      },
+      onToolProgress: (evt) => {
+        const msg = this.messages.find((m) => m.id === asstMsg.id);
+        if (!msg) return;
+        if (!msg.toolExecutions) msg.toolExecutions = [];
+        const idx = msg.toolExecutions.findIndex((t) => t.callId === evt.callId);
+        if (idx >= 0) {
+          msg.toolExecutions[idx] = {
+            ...msg.toolExecutions[idx],
+            status: "polling",
+            progress: evt.progress,
+            total: evt.total,
+            message: evt.message,
+            jobId: evt.jobId,
+            elapsedMs: evt.elapsedMs,
+            attempts: evt.attempts,
+          };
+        } else {
+          msg.toolExecutions.push({
+            callId: evt.callId,
+            toolName: evt.toolName ?? "",
+            args: (evt as any).args ?? {},
+            status: "polling",
+            progress: evt.progress,
+            total: evt.total,
+            message: evt.message,
+            jobId: evt.jobId,
+            elapsedMs: evt.elapsedMs,
+            attempts: evt.attempts,
+          });
+        }
+      },
+      onContentReplace: (content) => {
+        const msg = this.messages.find((m) => m.id === asstMsg.id);
+        if (!msg) return;
+        rawBuffer = content;
+        const parsed = parseThinking(rawBuffer);
+        msg.thinkingContent = parsed.thinkingContent;
+        msg.thinkingDone = parsed.thinkingDone;
+        msg.content = rawBuffer;
       },
       onContextTrimmed: (evt) => {
         const msg = this.messages.find((m) => m.id === asstMsg.id);

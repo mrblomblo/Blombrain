@@ -22,7 +22,9 @@
   import ArtifactPanel from "./lib/components/ArtifactPanel.svelte";
   import LoginScreen from "./lib/components/LoginScreen.svelte";
   import CommandPaletteModal from "./lib/components/CommandPaletteModal.svelte";
+  import PromptTemplatesModal from "./lib/components/PromptTemplatesModal.svelte";
   import WindowControls from "./lib/components/WindowControls.svelte";
+  import WorkspacePopover from "./lib/components/WorkspacePopover.svelte";
   import {
     upsertScratchpadEntry,
     deleteScratchpadEntryApi,
@@ -55,6 +57,7 @@
   let SettingsModalComponent = $state<any>(null);
   let commandPaletteOpen = $state(false);
   let commandPaletteView = $state<"commands" | "shortcuts">("commands");
+  let promptTemplatesOpen = $state(false);
   let showSessionParams = $state(false);
   let showScratchpad = $state(false);
   let newScratchKey = $state("");
@@ -147,6 +150,21 @@
 
   let isNewChat = $derived(chatStore.activePath.length === 0);
   let isFramedTauri = $derived(desktopWindow.isTauri && !desktopWindow.isMaximized);
+  let windowInnerWidth = $state(typeof window !== "undefined" ? window.innerWidth : 1280);
+  let mainAreaWidth = $state(0);
+
+  $effect(() => {
+    const minSplitPanelWidth = desktopWindow.isTauri ? 500 : 410;
+    artifactStore.forceExpanded =
+      windowInnerWidth < 1024 ||
+      (mainAreaWidth > 0 && mainAreaWidth * 0.48 < minSplitPanelWidth);
+  });
+
+  $effect(() => {
+    if (windowInnerWidth >= 768 && mobileSidebarOpen) {
+      mobileSidebarOpen = false;
+    }
+  });
 
   $effect(() => {
     if (mobileSidebarOpen) {
@@ -181,9 +199,23 @@
     };
     window.addEventListener("popstate", onPopstate);
 
+    let lastWorkspaceRefreshAt = 0;
+    const triggerWorkspaceAutoRefresh = () => {
+      if (document.visibilityState === "hidden") return;
+      if (!chatStore.effectiveWorkspacePath) return;
+      const now = Date.now();
+      if (now - lastWorkspaceRefreshAt < 1500) return;
+      lastWorkspaceRefreshAt = now;
+      void chatStore.refreshExternalWorkspaceChanges();
+    };
+    window.addEventListener("focus", triggerWorkspaceAutoRefresh);
+    document.addEventListener("visibilitychange", triggerWorkspaceAutoRefresh);
+
     return () => {
       detachWindowListeners();
       window.removeEventListener("popstate", onPopstate);
+      window.removeEventListener("focus", triggerWorkspaceAutoRefresh);
+      document.removeEventListener("visibilitychange", triggerWorkspaceAutoRefresh);
     };
   });
 
@@ -212,7 +244,7 @@
   }
 </script>
 
-<svelte:window onkeydown={handleGlobalKeydown} />
+<svelte:window bind:innerWidth={windowInnerWidth} onkeydown={handleGlobalKeydown} />
 
 <div
   class="relative h-dvh w-screen overflow-hidden {isFramedTauri
@@ -292,11 +324,14 @@
       {/if}
 
       <!-- Main Content Area with conditional Artifact Panel -->
-      <div class="relative flex min-w-0 flex-1 h-full overflow-hidden">
+      <div
+        bind:clientWidth={mainAreaWidth}
+        class="relative flex min-w-0 flex-1 h-full overflow-hidden"
+      >
         <!-- Main Content Pane -->
         <main
           class="relative flex min-w-0 flex-1 flex-col h-full overflow-hidden transition-all duration-300 ease-in-out {artifactStore.isOpen &&
-          !artifactStore.isExpanded
+          !artifactStore.effectiveExpanded
             ? 'lg:mr-[48%]'
             : ''}"
         >
@@ -316,9 +351,12 @@
               </button>
 
               <!-- Model Picker -->
-              <div class="min-w-0 shrink max-w-[240px]">
+              <div class="shrink-0 max-w-[260px]">
                 <ModelPicker />
               </div>
+
+              <!-- Per-Conversation Project Workspace Popover -->
+              <WorkspacePopover />
 
               <!-- Per-Conversation Session Parameters Override Popover -->
               <div class="relative shrink-0">
@@ -337,7 +375,7 @@
                     : 'border-line bg-bg-elevated text-fg-muted hover:text-fg hover:bg-bg-hover'}"
                 >
                   <SlidersHorizontal size={13} />
-                  <span class="hidden @[440px]:inline">Params</span>
+                  <span class="hidden @[740px]:inline">Params</span>
                 </button>
 
                 {#if showSessionParams}
@@ -459,8 +497,8 @@
                       : 'border-line bg-bg-elevated text-fg-muted hover:text-fg hover:bg-bg-hover'}"
                   >
                     <StickyNote size={13} class="text-accent" />
-                    <span class="hidden @[540px]:inline">Scratchpad</span>
-                    <span class="rounded-full bg-accent/20 px-1.5 py-0.2 font-mono text-[10px] text-accent">
+                    <span class="hidden @[800px]:inline">Scratchpad</span>
+                    <span class="hidden @[640px]:inline rounded-full bg-accent/20 px-1.5 py-0.2 font-mono text-[10px] text-accent">
                       {chatStore.scratchpadEntries.length}
                     </span>
                   </button>
@@ -574,8 +612,8 @@
                     : 'border-line bg-bg-elevated text-fg-muted hover:text-fg hover:bg-bg-hover'}"
                 >
                   <Code size={13} />
-                  <span class="hidden @[360px]:inline">Artifacts</span>
-                  <span class="rounded-full bg-accent/20 px-1.5 py-0.2 font-mono text-[10px] text-accent">
+                  <span class="hidden @[640px]:inline">Artifacts</span>
+                  <span class="hidden @[560px]:inline rounded-full bg-accent/20 px-1.5 py-0.2 font-mono text-[10px] text-accent">
                     {artifactStore.conversationArtifacts.length}
                   </span>
                 </button>
@@ -592,7 +630,7 @@
                 class="flex h-8 items-center gap-1.5 rounded-lg border border-line bg-bg-elevated px-2 text-xs text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors cursor-pointer"
               >
                 <Search size={13} />
-                <kbd class="hidden @[400px]:inline font-mono text-[10px] text-fg-subtle">
+                <kbd class="hidden @[600px]:inline font-mono text-[10px] text-fg-subtle">
                   Ctrl+K
                 </kbd>
               </button>
@@ -620,7 +658,7 @@
         {#if artifactStore.isOpen}
           <aside
             transition:panelFly={{ duration: 300 }}
-            class="absolute right-0 top-0 bottom-0 h-full overflow-hidden bg-bg transition-all duration-300 ease-in-out border-l border-line {artifactStore.isExpanded
+            class="absolute right-0 top-0 bottom-0 h-full overflow-hidden bg-bg transition-all duration-300 ease-in-out border-l border-line {artifactStore.effectiveExpanded
               ? 'w-full z-40 shadow-2xl'
               : 'w-full lg:w-[48%] z-30'}"
           >
@@ -641,7 +679,17 @@
           initialView={commandPaletteView}
           onClose={() => (commandPaletteOpen = false)}
           onOpenSettings={() => (settingsOpen = true)}
+          onOpenPromptTemplates={() => (promptTemplatesOpen = true)}
           onToggleSidebar={() => (desktopSidebarOpen = !desktopSidebarOpen)}
+        />
+        <PromptTemplatesModal
+          isOpen={promptTemplatesOpen}
+          onclose={() => (promptTemplatesOpen = false)}
+          onselect={(tpl) => {
+            const cur = chatStore.draftText;
+            const sep = cur && !/\s$/.test(cur) ? " " : "";
+            chatStore.draftText = `${cur}${sep}/${tpl.name} `;
+          }}
         />
         <AttachmentModal />
         <ConfirmModal />
@@ -649,7 +697,9 @@
         {#if desktopWindow.isTauri && desktopWindow.activeModalCount > 0}
           <div
             data-tauri-drag-region="deep"
-            class="fixed top-0 left-0 right-0 z-[100] flex h-14 items-center justify-end px-2.5"
+            class="fixed top-0 {mobileSidebarOpen && desktopWindow.activeModalCount === 1
+              ? 'left-64 right-0 md:left-0'
+              : 'left-0 right-0'} z-[100] flex h-14 items-center justify-end px-2.5"
           >
             <WindowControls standalone />
           </div>
