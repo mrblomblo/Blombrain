@@ -408,13 +408,13 @@
     ontouchmove={handleTouchMove}
     onmousedown={handleMouseDown}
     onkeydown={handleKeyDown}
-    class="relative flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-both mr-1 px-2 sm:px-6 pb-4 pt-0"
+    class="relative flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-both px-2 sm:px-6 pb-4 pt-0"
   >
     {#if activeMessages.length === 0}
       <div
         in:fly={{ y: 40, duration: 350, opacity: 0, easing: quintOut }}
         out:fly={{ y: 40, duration: 300, opacity: 0, easing: quintOut }}
-        class="absolute inset-0 flex flex-col items-center justify-center gap-6 px-2 sm:px-4 overflow-y-auto py-8"
+        class="absolute inset-0 flex flex-col items-center justify-center gap-6 px-2 sm:px-6 overflow-y-auto scrollbar-gutter-both py-8"
       >
         {#if activeFolder}
           <div class="w-full max-w-3xl lg:max-w-4xl xl:max-w-5xl flex flex-col gap-5">

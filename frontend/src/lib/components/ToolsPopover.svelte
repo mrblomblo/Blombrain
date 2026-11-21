@@ -197,6 +197,8 @@
                 >
                   <Pin size={11} />
                 </button>
+              {:else}
+                <span class="h-5 w-5 shrink-0" aria-hidden="true"></span>
               {/if}
               {#if server.status === "connected"}
                 <span class="h-1.5 w-1.5 rounded-full bg-success shrink-0"></span>
@@ -258,6 +260,8 @@
                 >
                   <Pin size={11} />
                 </button>
+              {:else}
+                <span class="h-5 w-5 shrink-0" aria-hidden="true"></span>
               {/if}
             </div>
           {/each}

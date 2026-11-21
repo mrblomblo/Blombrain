@@ -9,6 +9,8 @@
   import { copyToClipboard } from "../utils/clipboard";
   import { decodeBase64 } from "../markdown";
   import { decorateTriggerTokensInElement } from "../utils/inputTriggers";
+  import { themeStore } from "../theme.svelte";
+  import { getCachedMermaidSvg, renderMermaidDiagram } from "../utils/mermaidRenderer";
 
   interface Props {
     content: string;
@@ -97,6 +99,7 @@
   /** Update container DOM incrementally using morphdom */
   $effect(() => {
     const currentHtml = html;
+    const activeTheme = themeStore.current;
     const validAt = highlightTriggers ? triggerCatalogStore.validAtSet : null;
     const validSlash = highlightTriggers ? triggerCatalogStore.validSlashSet : null;
     if (!containerEl) return;
@@ -104,6 +107,25 @@
     const tempDiv = document.createElement("div");
     tempDiv.className = containerEl.className;
     tempDiv.innerHTML = currentHtml;
+
+    // Synchronously apply any already-cached Mermaid SVGs to prevent flicker
+    tempDiv.querySelectorAll<HTMLElement>(".mermaid-diagram-slot").forEach((slot) => {
+      const hash = slot.getAttribute("data-mermaid-hash");
+      if (!hash) return;
+      const cachedSvg = getCachedMermaidSvg(hash, activeTheme);
+      if (cachedSvg) {
+        slot.innerHTML = cachedSvg;
+        slot.setAttribute("data-rendered-hash", hash);
+        slot.setAttribute("data-rendered-theme", activeTheme);
+        const expandBtn = slot
+          .closest(".mermaid-block-wrapper")
+          ?.querySelector<HTMLElement>(".expand-mermaid-btn");
+        if (expandBtn && !isArtifactPreview) {
+          expandBtn.classList.remove("hidden");
+          expandBtn.classList.add("flex");
+        }
+      }
+    });
 
     if (highlightTriggers && validAt && validSlash) {
       decorateTriggerTokensInElement(tempDiv, validAt, validSlash);
@@ -113,7 +135,7 @@
       onNodeAdded: (node) => {
         if (node.nodeType === Node.ELEMENT_NODE) {
           const el = node as HTMLElement;
-          if (streaming && !el.closest(".code-block-wrapper")) {
+          if (streaming && !el.closest(".code-block-wrapper, .mermaid-block-wrapper")) {
             el.classList.add("fade-in-node");
           }
           // Observe any new sentinels
@@ -138,7 +160,51 @@
         return node;
       },
       onBeforeElUpdated: (fromEl, toEl) => {
+        // Preserve already-rendered Mermaid diagram SVG when hash and theme match
+        if (fromEl.classList.contains("mermaid-diagram-slot")) {
+          const renderedHash = fromEl.getAttribute("data-rendered-hash");
+          const renderedTheme = fromEl.getAttribute("data-rendered-theme");
+          const targetHash = toEl.getAttribute("data-mermaid-hash");
+          if (
+            renderedHash &&
+            renderedHash === targetHash &&
+            renderedTheme === activeTheme &&
+            fromEl.querySelector("svg")
+          ) {
+            return false;
+          }
+          // During streaming, keep the last good diagram rather than flashing "Rendering diagram..."
+          if (streaming && fromEl.querySelector("svg") && !toEl.querySelector("svg")) {
+            toEl.innerHTML = fromEl.innerHTML;
+            if (renderedHash) toEl.setAttribute("data-rendered-hash", renderedHash);
+            if (renderedTheme) toEl.setAttribute("data-rendered-theme", renderedTheme);
+            return false;
+          }
+        }
+
         if (!streaming) return true;
+
+        if (fromEl.classList.contains("mermaid-block-wrapper")) {
+          const view = fromEl.getAttribute("data-view");
+          if (view) toEl.setAttribute("data-view", view);
+        }
+
+        if (
+          fromEl.classList.contains("mermaid-diagram-pane") ||
+          fromEl.classList.contains("mermaid-source-pane") ||
+          fromEl.classList.contains("mermaid-error-banner")
+        ) {
+          toEl.classList.toggle("hidden", fromEl.classList.contains("hidden"));
+        }
+
+        if (fromEl.classList.contains("expand-mermaid-btn")) {
+          toEl.classList.toggle("hidden", fromEl.classList.contains("hidden"));
+          toEl.classList.toggle("flex", fromEl.classList.contains("flex"));
+        }
+
+        if (fromEl.classList.contains("mermaid-view-btn-text")) {
+          toEl.textContent = fromEl.textContent;
+        }
 
         // Preserve dynamically toggled classes on code block headers
         if (fromEl.classList.contains("code-block-header")) {
@@ -196,7 +262,7 @@
           toEl.textContent = fromEl.textContent;
         }
 
-        if (fromEl.closest(".code-block-wrapper, .artifact-card")) {
+        if (fromEl.closest(".code-block-wrapper, .mermaid-block-wrapper, .artifact-card")) {
           return true;
         }
 
@@ -237,6 +303,101 @@
       },
     });
   });
+
+  /** Lazy-render Mermaid diagram blocks asynchronously (debounced while streaming) */
+  $effect(() => {
+    void html;
+    const activeTheme = themeStore.current;
+    const isCurrentlyStreaming = streaming;
+    if (!containerEl) return;
+
+    const slots = Array.from(
+      containerEl.querySelectorAll<HTMLElement>(".mermaid-diagram-slot"),
+    );
+    if (slots.length === 0) return;
+
+    let cancelled = false;
+    const renderPending = async () => {
+      for (const slot of slots) {
+        if (cancelled || !slot.isConnected) return;
+        const hash = slot.getAttribute("data-mermaid-hash");
+        const b64 = slot.getAttribute("data-mermaid-code");
+        if (!hash || !b64) continue;
+
+        if (
+          slot.getAttribute("data-rendered-hash") === hash &&
+          slot.getAttribute("data-rendered-theme") === activeTheme &&
+          slot.querySelector("svg")
+        ) {
+          continue;
+        }
+
+        const code = decodeBase64(b64).trim();
+        if (!code) continue;
+
+        const result = await renderMermaidDiagram(code, hash, activeTheme);
+        if (
+          cancelled ||
+          !slot.isConnected ||
+          slot.getAttribute("data-mermaid-hash") !== hash ||
+          themeStore.current !== activeTheme
+        ) {
+          return;
+        }
+
+        const wrapper = slot.closest<HTMLElement>(".mermaid-block-wrapper");
+        const errBanner = wrapper?.querySelector<HTMLElement>(".mermaid-error-banner");
+        const expandBtn = wrapper?.querySelector<HTMLElement>(".expand-mermaid-btn");
+
+        if ("svg" in result) {
+          slot.innerHTML = result.svg;
+          slot.setAttribute("data-rendered-hash", hash);
+          slot.setAttribute("data-rendered-theme", activeTheme);
+          if (errBanner) {
+            errBanner.textContent = "";
+            errBanner.classList.add("hidden");
+          }
+          if (expandBtn && !isArtifactPreview) {
+            expandBtn.classList.remove("hidden");
+            expandBtn.classList.add("flex");
+          }
+        } else if (!isCurrentlyStreaming) {
+          slot.textContent = "Unable to render diagram";
+          if (errBanner) {
+            errBanner.textContent = result.error;
+            errBanner.classList.remove("hidden");
+          }
+        }
+      }
+    };
+
+    const delayMs = isCurrentlyStreaming ? 320 : 0;
+    const timer = setTimeout(() => {
+      void renderPending();
+    }, delayMs);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  });
+
+  function openMermaidInPanel(wrapper: HTMLElement) {
+    if (isArtifactPreview) return;
+    const svgEl = wrapper.querySelector<SVGElement>(".mermaid-diagram-slot svg");
+    if (!svgEl) return;
+    const hash = wrapper.getAttribute("data-mermaid-hash") || "diagram";
+    artifactStore.openArtifact(
+      {
+        id: `mermaid-${hash}`,
+        filename: `diagram-${hash.slice(0, 6)}.svg`,
+        code: svgEl.outerHTML,
+        language: "svg",
+        title: "Mermaid Diagram",
+      },
+      false,
+    );
+  }
 
   /**
    * Set up a single IntersectionObserver for all code block sticky headers.
@@ -430,11 +591,35 @@
       return;
     }
 
+    // Handle Mermaid View Toggle Button (Diagram <-> Source)
+    const mermaidToggleBtn = target.closest<HTMLButtonElement>(".toggle-mermaid-view-btn");
+    if (mermaidToggleBtn) {
+      e.preventDefault();
+      const wrapper = mermaidToggleBtn.closest<HTMLElement>(".mermaid-block-wrapper");
+      if (!wrapper) return;
+      const showSource = wrapper.dataset.view !== "source";
+      wrapper.dataset.view = showSource ? "source" : "diagram";
+      wrapper.querySelector(".mermaid-diagram-pane")?.classList.toggle("hidden", showSource);
+      wrapper.querySelector(".mermaid-source-pane")?.classList.toggle("hidden", !showSource);
+      const label = mermaidToggleBtn.querySelector(".mermaid-view-btn-text");
+      if (label) label.textContent = showSource ? "Diagram" : "Source";
+      return;
+    }
+
+    // Handle Mermaid Expand Button
+    const mermaidExpandBtn = target.closest<HTMLButtonElement>(".expand-mermaid-btn");
+    if (mermaidExpandBtn) {
+      e.preventDefault();
+      const wrapper = mermaidExpandBtn.closest<HTMLElement>(".mermaid-block-wrapper");
+      if (wrapper) openMermaidInPanel(wrapper);
+      return;
+    }
+
     // Handle Code Block Copy Button
     const copyBtn = target.closest<HTMLButtonElement>(".copy-code-btn");
     if (copyBtn) {
       e.preventDefault();
-      const wrapper = copyBtn.closest<HTMLElement>(".code-block-wrapper");
+      const wrapper = copyBtn.closest<HTMLElement>(".code-block-wrapper, .mermaid-block-wrapper");
       let codeToCopy = "";
       if (wrapper?.dataset.code) {
         codeToCopy = decodeBase64(wrapper.dataset.code);
@@ -493,6 +678,17 @@
     }
   }
 
+  function handleContainerDblClick(e: MouseEvent) {
+    const target = e.target as HTMLElement | null;
+    const diagramSlot = target?.closest<HTMLElement>(".mermaid-diagram-slot");
+    if (!diagramSlot) return;
+    const wrapper = diagramSlot.closest<HTMLElement>(".mermaid-block-wrapper");
+    if (wrapper) {
+      e.preventDefault();
+      openMermaidInPanel(wrapper);
+    }
+  }
+
   function handleContainerMouseOver(e: MouseEvent) {
     const target = e.target as HTMLElement;
     const inlineCode = target.closest<HTMLElement>(".inline-code");
@@ -547,6 +743,7 @@
   bind:this={containerEl}
   class="prose max-w-none text-fg leading-relaxed text-sm {className}"
   onclick={handleContainerClick}
+  ondblclick={handleContainerDblClick}
   onkeydown={handleContainerKeydown}
   onmouseover={handleContainerMouseOver}
   onmouseout={handleContainerMouseOut}

@@ -1,6 +1,7 @@
 import { Marked } from "marked";
 import hljs from "highlight.js";
 import DOMPurify from "dompurify";
+import { extractAndRenderMath } from "./utils/mathMarkdown";
 
 export const artifactRegistry = new Map<string, { id: string; title: string; lang: string }>();
 
@@ -30,6 +31,75 @@ export function decodeBase64(b64: string): string {
   const binString = atob(b64);
   const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0)!);
   return new TextDecoder().decode(bytes);
+}
+
+function hashString(str: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function renderMermaidWrapperHtml(text: string): string {
+  const hash = hashString(text);
+  const b64 = encodeBase64(text);
+  const lineCount = text.split("\n").length;
+  let highlightedSource = escapeHtml(text);
+  try {
+    if (hljs.getLanguage("markdown")) {
+      highlightedSource = hljs.highlight(text, { language: "mermaid" in hljs ? "mermaid" : "markdown" }).value;
+    }
+  } catch {
+    highlightedSource = escapeHtml(text);
+  }
+  const formattedLines = formatCodeLines(highlightedSource);
+
+  return `<div class="mermaid-block-wrapper relative my-4 rounded-md border border-line shadow-sm overflow-hidden" data-code="${b64}" data-mermaid-hash="${hash}" data-mermaid-code="${b64}" data-view="diagram">
+  <div class="mermaid-block-header pl-4 pr-1.5 py-1.5 border-b border-line/50 bg-bg text-[11px] font-mono text-fg-muted flex items-center justify-between gap-2">
+    <span class="truncate">mermaid <span class="text-fg-subtle/70">(${lineCount} line${lineCount === 1 ? "" : "s"})</span></span>
+    <div class="flex items-center gap-1 shrink-0">
+      <button
+        type="button"
+        class="expand-mermaid-btn hidden items-center gap-1 rounded-sm border border-line bg-bg-elevated px-2 py-0.5 text-[11px] font-mono font-medium text-fg-muted transition-all hover:bg-bg-hover hover:text-fg shadow-xs cursor-pointer"
+        aria-label="Open diagram in artifact panel"
+        title="Open diagram in side panel"
+      >
+        <span>Expand</span>
+      </button>
+      <button
+        type="button"
+        class="toggle-mermaid-view-btn flex items-center gap-1 rounded-sm border border-line bg-bg-elevated px-2 py-0.5 text-[11px] font-mono font-medium text-fg-muted transition-all hover:bg-bg-hover hover:text-fg shadow-xs cursor-pointer"
+        aria-label="Toggle Mermaid diagram and source"
+        title="Toggle between rendered diagram and Mermaid source"
+      >
+        <span class="mermaid-view-btn-text">Source</span>
+      </button>
+      <button
+        type="button"
+        class="copy-code-btn flex items-center gap-1.5 rounded-sm border border-line bg-bg-elevated px-2 py-0.5 text-[11px] font-mono font-medium text-fg-muted transition-all hover:bg-bg-hover hover:text-fg shadow-xs cursor-pointer"
+        aria-label="Copy Mermaid source"
+      >
+        <svg class="copy-icon w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+        </svg>
+        <svg class="check-icon hidden w-3.5 h-3.5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        <span class="btn-text">Copy</span>
+      </button>
+    </div>
+  </div>
+  <div class="mermaid-diagram-pane bg-bg-elevated p-4 overflow-x-auto">
+    <div class="mermaid-diagram-slot flex min-h-16 items-center justify-center text-xs font-mono text-fg-subtle" data-mermaid-hash="${hash}" data-mermaid-code="${b64}">Rendering diagram...</div>
+    <div class="mermaid-error-banner hidden mt-2 rounded-md border border-danger/35 bg-danger/10 px-2.5 py-1.5 text-[11px] text-danger"></div>
+  </div>
+  <div class="mermaid-source-pane hidden code-block-body overflow-x-auto bg-bg-elevated font-mono text-xs leading-relaxed py-2">
+    ${formattedLines}
+  </div>
+</div>`;
 }
 
 function escapeHtml(str: string): string {
@@ -226,6 +296,9 @@ marked.use({
     code(this: any, { text, lang }: { text: string; lang?: string }) {
       const isStreaming = !!(this.options as any)?.isStreaming;
       const rawLang = (lang || "").trim().split(/\s+/)[0].toLowerCase();
+      if (rawLang === "mermaid") {
+        return renderMermaidWrapperHtml(text);
+      }
       const validLang = hljs.getLanguage(rawLang) ? rawLang : "";
       const displayLang = validLang || rawLang || "code";
 
@@ -362,10 +435,13 @@ export function renderMarkdown(
       }
     );
 
-    // Step 2: normal markdown pass.
-    const rawHtml = (marked.parse(processedContent, { isArtifactPreview, isStreaming } as any) as unknown) as string;
+    // Step 1.5: extract and render LaTeX math outside protected code blocks/spans.
+    const { content: mathProcessed, slots: mathSlots } = extractAndRenderMath(processedContent);
 
-    // Step 3: swap tokens for the real card markup.
+    // Step 2: normal markdown pass.
+    const rawHtml = (marked.parse(mathProcessed, { isArtifactPreview, isStreaming } as any) as unknown) as string;
+
+    // Step 3: swap tokens for the real card markup and rendered KaTeX HTML.
     let finalHtml = rawHtml;
     for (let i = 0; i < extractedCards.length; i++) {
       const card = extractedCards[i];
@@ -374,14 +450,29 @@ export function renderMarkdown(
       finalHtml = finalHtml.split(`<p>${token}</p>`).join(cardHtml);
       finalHtml = finalHtml.split(token).join(cardHtml);
     }
+    for (let i = 0; i < mathSlots.length; i++) {
+      const slot = mathSlots[i];
+      if (slot.displayMode) {
+        finalHtml = finalHtml.split(`<p>${slot.token}</p>`).join(slot.html);
+      }
+      finalHtml = finalHtml.split(slot.token).join(slot.html);
+    }
 
     if (typeof window === "undefined") {
       return finalHtml;
     }
 
     return DOMPurify.sanitize(finalHtml, {
+      ADD_TAGS: [
+        "math", "semantics", "mrow", "mi", "mo", "mn", "msup", "msub",
+        "msubsup", "mfrac", "msqrt", "mroot", "mtext", "mspace", "mtable",
+        "mtr", "mtd", "mover", "munder", "munderover", "annotation",
+      ],
       ADD_ATTR: [
-        "target", "rel", "data-code",
+        "target", "rel", "aria-hidden", "encoding", "xmlns", "style",
+        "viewBox", "preserveAspectRatio", "d", "x1", "y1", "x2", "y2",
+        "width", "height", "data-code", "data-view",
+        "data-mermaid-hash", "data-mermaid-code",
         "data-artifact-id", "data-artifact-filename",
         "data-artifact-lang", "data-artifact-title"
       ],
